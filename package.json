@@ -1,0 +1,15 @@
+{
+  "name": "talentflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sistema de onboarding y offboarding de empleados basado en microservicios",
+  "workspaces": [
+    "shared",
+    "services/*"
+  ],
+  "scripts": {
+    "dev:empleados": "npm run dev --workspace=@talentflow/empleados",
+    "start:empleados": "npm run start --workspace=@talentflow/empleados",
+    "test": "npm run test --workspaces --if-present"
+  }
+}

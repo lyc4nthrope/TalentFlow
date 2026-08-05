@@ -1,0 +1,10 @@
+services:
+  empleados:
+    build:
+      context: .
+      dockerfile: services/empleados/Dockerfile
+    container_name: talentflow-empleados
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
