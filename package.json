@@ -5,11 +5,11 @@
   "description": "Sistema de onboarding y offboarding de empleados basado en microservicios",
   "workspaces": [
     "shared",
-    "services/*"
+    "microservicios/*"
   ],
   "scripts": {
-    "dev:empleados": "npm run dev --workspace=@talentflow/empleados",
-    "start:empleados": "npm run start --workspace=@talentflow/empleados",
+    "dev:empleados": "npm run dev --workspace=@talentflow/gestion-empleados",
+    "start:empleados": "npm run start --workspace=@talentflow/gestion-empleados",
     "test": "npm run test --workspaces --if-present"
   }
 }

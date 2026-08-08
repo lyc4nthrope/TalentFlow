@@ -1,4 +1,4 @@
-# Servicio de Empleados (Reto 1)
+# Microservicio de Gestión de Empleados (Reto 1)
 
 Servicio web para la gestión básica de empleados. Primera pieza del sistema de onboarding y offboarding basado en microservicios.
 
@@ -59,7 +59,7 @@ El modelo canónico vive en `@talentflow/shared`.
 Desde la raíz del proyecto:
 
 ```bash
-docker build -f services/empleados/Dockerfile -t servidor-empleados .
+docker build -f microservicios/gestion-empleados/Dockerfile -t servidor-empleados .
 docker run -p 8080:8080 servidor-empleados
 ```
 

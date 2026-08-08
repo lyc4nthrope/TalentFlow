@@ -2,7 +2,7 @@ services:
   empleados:
     build:
       context: .
-      dockerfile: services/empleados/Dockerfile
+      dockerfile: microservicios/gestion-empleados/Dockerfile
     container_name: talentflow-empleados
     ports:
       - "8080:8080"

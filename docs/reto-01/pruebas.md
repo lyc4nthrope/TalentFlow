@@ -1,6 +1,6 @@
 # Reto 1 - Evidencia de pruebas
 
-Servicio: `@talentflow/empleados` · Fecha: 2026-08-05
+Servicio: `@talentflow/gestion-empleados` · Fecha: 2026-08-05
 
 ## Resumen
 

@@ -1,13 +1,13 @@
 {
-  "name": "@talentflow/empleados",
+  "name": "@talentflow/gestion-empleados",
   "version": "0.1.0",
-  "description": "Servicio de gestión de empleados (Reto 1)",
+  "description": "Microservicio de gestión de empleados (Reto 1)",
   "main": "src/server.js",
   "private": true,
   "scripts": {
     "dev": "node src/server.js",
     "start": "node src/server.js",
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"tests/*.test.js\""
   },
   "dependencies": {
     "@talentflow/shared": "file:../../shared",

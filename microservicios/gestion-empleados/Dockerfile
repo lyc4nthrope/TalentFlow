@@ -4,11 +4,11 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY shared ./shared
-COPY services/empleados ./services/empleados
+COPY microservicios/gestion-empleados ./microservicios/gestion-empleados
 
 RUN npm ci
 
-WORKDIR /app/services/empleados
+WORKDIR /app/microservicios/gestion-empleados
 
 EXPOSE 8080
 

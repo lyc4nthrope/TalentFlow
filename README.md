@@ -6,19 +6,19 @@ Sistema de onboarding y offboarding de empleados basado en una arquitectura orie
 
 ```
 TalentFlow/
-├── shared/                  # Modelo canónico compartido (@talentflow/shared)
-├── services/                # Servicios (cada reto agrega o evoluciona un servicio)
-│   └── empleados/           # Reto 1
-├── docs/                    # Evidencia y decisiones por reto
-├── docker-compose.yml       # Orquesta todos los servicios
-└── package.json             # npm workspaces
+├── shared/                        # Modelo canónico compartido (@talentflow/shared)
+├── microservicios/                # Microservicios (cada reto agrega o evoluciona uno)
+│   └── gestion-empleados/         # Reto 1
+├── docs/                          # Evidencia y decisiones por reto
+├── docker-compose.yml             # Orquesta todos los microservicios
+└── package.json                   # npm workspaces
 ```
 
 ## Mapa de retos
 
-| Reto | Servicio | Estado | Qué se agregó | Cómo correr |
-|------|----------|--------|---------------|-------------|
-| 1 | empleados | ✅ Completado | POST/GET, modelo canónico, validaciones, Docker, 19 pruebas | `npm run dev:empleados` |
+| Reto | Microservicio | Estado | Qué se agregó | Cómo correr |
+|------|---------------|--------|---------------|-------------|
+| 1 | gestion-empleados | ✅ Completado | POST/GET, modelo canónico, validaciones, Docker, 19 pruebas | `npm run dev:empleados` |
 
 ## Comandos comunes
 
