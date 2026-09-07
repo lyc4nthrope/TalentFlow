@@ -1,10 +1,103 @@
+version: '3.8'
+
 services:
-  empleados:
+  # Base de Datos Empleados (PostgreSQL)
+  database-empleados:
+    image: postgres:16-alpine
+    container_name: db-empleados
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_EMPLEADOS_NAME:-db_empleados}
+      POSTGRES_USER: ${DB_EMPLEADOS_USER:-user_empleados}
+      POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASS:-pass_empleados}
+    ports:
+      - "5432:5432"
+    volumes:
+      - vol-empleados:/var/lib/postgresql/data
+      - ./microservicios/gestion-empleados/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_EMPLEADOS_USER:-user_empleados} -d ${DB_EMPLEADOS_NAME:-db_empleados}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Base de Datos Departamentos (MySQL)
+  database-departamentos:
+    image: mysql:8.0
+    container_name: db-departamentos
+    restart: always
+    environment:
+      MYSQL_DATABASE: ${DB_DEPTO_NAME:-db_deptos}
+      MYSQL_USER: ${DB_DEPTO_USER:-user_deptos}
+      MYSQL_PASSWORD: ${DB_DEPTO_PASS:-pass_deptos}
+      MYSQL_ROOT_PASSWORD: ${DB_DEPTO_ROOT_PASS:-root_pass}
+    ports:
+      - "5433:3306"
+    volumes:
+      - vol-departamentos:/var/lib/mysql
+      - ./microservicios/gestion-departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Microservicio Empleados (Node.js)
+  empleados-service:
     build:
       context: .
-      dockerfile: microservicios/gestion-empleados/Dockerfile
-    container_name: talentflow-empleados
+      dockerfile: ./microservicios/gestion-empleados/Dockerfile
+      target: runner
+    container_name: ms-empleados
+    restart: on-failure
     ports:
       - "8080:8080"
     environment:
-      - PORT=8080
+      PORT: 8080
+      DB_HOST: database-empleados
+      DB_PORT: 5432
+      DB_NAME: ${DB_EMPLEADOS_NAME:-db_empleados}
+      DB_USER: ${DB_EMPLEADOS_USER:-user_empleados}
+      DB_PASS: ${DB_EMPLEADOS_PASS:-pass_empleados}
+      DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8081
+    depends_on:
+      database-empleados:
+        condition: service_healthy
+    networks:
+      - microservices-network
+
+  # Microservicio Departamentos (PHP)
+  departamentos-service:
+    build:
+      context: ./microservicios/gestion-departamentos
+      dockerfile: Dockerfile
+      target: runner
+    container_name: ms-departamentos
+    restart: on-failure
+    ports:
+      - "8081:8081"
+    environment:
+      PORT: 8081
+      DB_HOST: database-departamentos
+      DB_PORT: 3306
+      DB_NAME: ${DB_DEPTO_NAME:-db_deptos}
+      DB_USER: ${DB_DEPTO_USER:-user_deptos}
+      DB_PASS: ${DB_DEPTO_PASS:-pass_deptos}
+    depends_on:
+      database-departamentos:
+        condition: service_healthy
+    networks:
+      - microservices-network
+
+networks:
+  microservices-network:
+    driver: bridge
+
+volumes:
+  vol-empleados:
+  vol-departamentos:
