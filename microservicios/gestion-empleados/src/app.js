@@ -1,6 +1,9 @@
 const express = require("express");
+const swaggerUi = require("swagger-ui-express");
 
 const { errores } = require("@talentflow/shared");
+const { crearRouterEmpleados } = require("./routes/empleados.routes");
+const { openapiSpec } = require("./openapi");
 
 const { AppError } = errores;
 
@@ -9,15 +12,10 @@ function crearApp(servicioEmpleados) {
 
   app.use(express.json());
 
-  app.post("/empleados", (req, res) => {
-    const empleado = servicioEmpleados.registrar(req.body ?? {});
-    res.status(200).json(empleado);
-  });
+  app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
+  app.get("/openapi.json", (req, res) => res.json(openapiSpec));
 
-  app.get("/empleados/:id", (req, res) => {
-    const empleado = servicioEmpleados.consultarPorId(req.params.id);
-    res.status(200).json(empleado);
-  });
+  app.use(crearRouterEmpleados(servicioEmpleados));
 
   app.use((req, res) => {
     res.status(404).json({ error: "Recurso no encontrado" });

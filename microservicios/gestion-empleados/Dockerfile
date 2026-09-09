@@ -8,7 +8,7 @@ COPY microservicios/gestion-empleados ./microservicios/gestion-empleados
 
 RUN npm ci
 
-COPY shared ./shared/src
+COPY shared ./shared
 COPY microservicios/gestion-empleados ./microservicios/gestion-empleados
 
 FROM node:20-alpine AS runner
