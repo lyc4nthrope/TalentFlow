@@ -28,6 +28,10 @@ function crearRepositorioEmpleadosEnMemoria() {
         }
       }
       return null;
+    },
+
+    async listar() {
+      return Array.from(empleados.values());
     }
   };
 }
