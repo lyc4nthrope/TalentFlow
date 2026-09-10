@@ -50,6 +50,7 @@ describe("API de empleados", () => {
       });
 
       assert.equal(respuesta.status, 201);
+      assert.equal(respuesta.headers.get("location"), "/empleados/E001");
       const cuerpo = await respuesta.json();
       assert.equal(cuerpo.id, "E001");
       assert.equal(cuerpo.nombre, "Juan");
@@ -65,7 +66,10 @@ describe("API de empleados", () => {
 
       assert.equal(respuesta.status, 400);
       const cuerpo = await respuesta.json();
-      assert.match(cuerpo.error, /juan\.perez@empresa\.com/);
+      assert.equal(cuerpo.status, 400);
+      assert.equal(cuerpo.error, "Bad Request");
+      assert.match(cuerpo.message, /juan\.perez@empresa\.com/);
+      assert.equal(cuerpo.errors[0].field, "email");
     });
 
     it("responde 400 con mensaje descriptivo cuando el numeroEmpleado ya está registrado", async () => {
@@ -77,7 +81,8 @@ describe("API de empleados", () => {
 
       assert.equal(respuesta.status, 400);
       const cuerpo = await respuesta.json();
-      assert.match(cuerpo.error, /EMP-2026-001/);
+      assert.match(cuerpo.message, /EMP-2026-001/);
+      assert.equal(cuerpo.errors[0].field, "numeroEmpleado");
     });
 
     it("responde 400 cuando falta un campo obligatorio", async () => {
@@ -99,7 +104,7 @@ describe("API de empleados", () => {
 
       assert.equal(respuesta.status, 400);
       const cuerpo = await respuesta.json();
-      assert.equal(cuerpo.error, "Cuerpo JSON inválido");
+      assert.equal(cuerpo.message, "Cuerpo JSON inválido");
     });
 
     it("responde 400 cuando el departamento no existe (Reto 2)", async () => {
@@ -119,7 +124,8 @@ describe("API de empleados", () => {
 
       assert.equal(respuesta.status, 400);
       const cuerpo = await respuesta.json();
-      assert.match(cuerpo.error, /departamento IT no existe/);
+      assert.match(cuerpo.message, /departamento IT no existe/);
+      assert.equal(cuerpo.errors[0].field, "departamentoId");
 
       server.close();
     });
@@ -151,7 +157,8 @@ describe("API de empleados", () => {
 
       assert.equal(respuesta.status, 404);
       const cuerpo = await respuesta.json();
-      assert.equal(cuerpo.error, "El empleado con id E999 no existe");
+      assert.equal(cuerpo.error, "Not Found");
+      assert.equal(cuerpo.message, "El empleado con id E999 no existe");
     });
   });
 
@@ -161,7 +168,8 @@ describe("API de empleados", () => {
 
       assert.equal(respuesta.status, 404);
       const cuerpo = await respuesta.json();
-      assert.equal(cuerpo.error, "Recurso no encontrado");
+      assert.equal(cuerpo.message, "Recurso no encontrado");
+      assert.equal(cuerpo.path, "/otra-ruta");
     });
 
     it("responde 404 con 'Recurso no encontrado' para un método no soportado", async () => {
@@ -171,7 +179,7 @@ describe("API de empleados", () => {
 
       assert.equal(respuesta.status, 404);
       const cuerpo = await respuesta.json();
-      assert.equal(cuerpo.error, "Recurso no encontrado");
+      assert.equal(cuerpo.message, "Recurso no encontrado");
     });
   });
 });

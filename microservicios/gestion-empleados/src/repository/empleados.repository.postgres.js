@@ -1,6 +1,4 @@
-const { errores } = require("@talentflow/shared");
-
-const { AppError } = errores;
+const { AppError } = require("../errores");
 
 function filaAEmpleado(fila) {
   if (!fila) return null;
@@ -50,12 +48,21 @@ function crearRepositorioEmpleadosPostgres(pool) {
           // Violación de restricción UNIQUE (red de seguridad ante condiciones de carrera:
           // dos peticiones simultáneas pasaron la verificación previa en el servicio).
           if (error.constraint?.includes("email")) {
-            throw new AppError(`El email ${empleado.email} ya está registrado`, 400);
+            throw new AppError(`El email ${empleado.email} ya está registrado`, 400, [
+              { field: "email", message: "Ya está registrado", rejectedValue: empleado.email }
+            ]);
           }
           if (error.constraint?.includes("numero_empleado")) {
             throw new AppError(
               `El numeroEmpleado ${empleado.numeroEmpleado} ya está registrado`,
-              400
+              400,
+              [
+                {
+                  field: "numeroEmpleado",
+                  message: "Ya está registrado",
+                  rejectedValue: empleado.numeroEmpleado
+                }
+              ]
             );
           }
           throw new AppError(`El empleado con id ${empleado.id} ya existe`, 400);

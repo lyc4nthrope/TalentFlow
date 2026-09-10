@@ -1,7 +1,5 @@
-const { empleado: modeloEmpleado, errores } = require("@talentflow/shared");
-
-const { AppError } = errores;
-const { crearEmpleado } = modeloEmpleado;
+const { AppError } = require("../errores");
+const { crearEmpleado } = require("../dominio/empleado");
 
 function crearServicioEmpleados(repositorio, clienteDepartamentos) {
   async function registrar(datos) {
@@ -9,17 +7,31 @@ function crearServicioEmpleados(repositorio, clienteDepartamentos) {
 
     const emailYaExiste = await repositorio.buscarPorEmail(empleado.email);
     if (emailYaExiste) {
-      throw new AppError(`El email ${empleado.email} ya está registrado`, 400);
+      throw new AppError(`El email ${empleado.email} ya está registrado`, 400, [
+        { field: "email", message: "Ya está registrado", rejectedValue: empleado.email }
+      ]);
     }
 
     const numeroYaExiste = await repositorio.buscarPorNumeroEmpleado(empleado.numeroEmpleado);
     if (numeroYaExiste) {
-      throw new AppError(`El numeroEmpleado ${empleado.numeroEmpleado} ya está registrado`, 400);
+      throw new AppError(`El numeroEmpleado ${empleado.numeroEmpleado} ya está registrado`, 400, [
+        {
+          field: "numeroEmpleado",
+          message: "Ya está registrado",
+          rejectedValue: empleado.numeroEmpleado
+        }
+      ]);
     }
 
     const departamentoExiste = await clienteDepartamentos.existe(empleado.departamentoId);
     if (!departamentoExiste) {
-      throw new AppError(`El departamento ${empleado.departamentoId} no existe`, 400);
+      throw new AppError(`El departamento ${empleado.departamentoId} no existe`, 400, [
+        {
+          field: "departamentoId",
+          message: "No existe",
+          rejectedValue: empleado.departamentoId
+        }
+      ]);
     }
 
     return repositorio.guardar(empleado);

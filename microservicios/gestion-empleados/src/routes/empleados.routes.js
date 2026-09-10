@@ -6,7 +6,7 @@ function crearRouterEmpleados(servicioEmpleados) {
   router.post("/empleados", async (req, res, next) => {
     try {
       const empleado = await servicioEmpleados.registrar(req.body ?? {});
-      res.status(201).json(empleado);
+      res.status(201).location(`/empleados/${empleado.id}`).json(empleado);
     } catch (error) {
       next(error);
     }

@@ -10,7 +10,6 @@
     "test": "node --test \"tests/*.test.js\""
   },
   "dependencies": {
-    "@talentflow/shared": "file:../../shared",
     "express": "^4.19.2",
     "pg": "^8.23.0",
     "swagger-ui-express": "^5.0.1"

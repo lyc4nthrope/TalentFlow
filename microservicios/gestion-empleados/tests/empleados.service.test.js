@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 const { crearServicioEmpleados } = require("../src/services/empleados.service");
 const { crearRepositorioEmpleadosEnMemoria } = require("../src/repository/empleados.repository.memoria");
-const { AppError } = require("@talentflow/shared").errores;
+const { AppError } = require("../src/errores");
 
 const EMPLEADO_VALIDO = {
   id: "E001",

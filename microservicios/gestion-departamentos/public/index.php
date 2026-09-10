@@ -4,6 +4,30 @@ require __DIR__ . '/../src/Database.php';
 require __DIR__ . '/../src/DepartamentoRepository.php';
 require __DIR__ . '/../src/OpenApi.php';
 
+const FRASES_ESTADO = [
+    400 => 'Bad Request',
+    404 => 'Not Found',
+    409 => 'Conflict',
+    500 => 'Internal Server Error',
+];
+
+function responderError(int $status, string $mensaje, array $errores = []): void
+{
+    http_response_code($status);
+    $cuerpo = [
+        'status' => $status,
+        'error' => FRASES_ESTADO[$status] ?? 'Error',
+        'message' => $mensaje,
+        'timestamp' => gmdate('Y-m-d\TH:i:s\Z'),
+        'path' => parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH),
+    ];
+    if (!empty($errores)) {
+        $cuerpo['errors'] = $errores;
+    }
+    echo json_encode($cuerpo);
+    exit;
+}
+
 $metodo = $_SERVER['REQUEST_METHOD'];
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
@@ -25,9 +49,7 @@ header('Content-Type: application/json; charset=utf-8');
 try {
     $repositorio = new DepartamentoRepository(Database::obtenerConexion());
 } catch (PDOException $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'No fue posible conectar con la base de datos']);
-    exit;
+    responderError(500, 'No fue posible conectar con la base de datos');
 }
 
 // --- POST /departamentos ---
@@ -36,9 +58,7 @@ if ($metodo === 'POST' && $uri === '/departamentos') {
     $datos = json_decode($cuerpo, true);
 
     if ($cuerpo !== '' && json_last_error() !== JSON_ERROR_NONE) {
-        http_response_code(400);
-        echo json_encode(['error' => 'Cuerpo JSON inválido']);
-        exit;
+        responderError(400, 'Cuerpo JSON inválido');
     }
     $datos = $datos ?? [];
 
@@ -49,15 +69,19 @@ if ($metodo === 'POST' && $uri === '/departamentos') {
         }
     }
     if (!empty($faltantes)) {
-        http_response_code(400);
-        echo json_encode(['error' => 'Faltan los campos obligatorios: ' . implode(', ', $faltantes)]);
-        exit;
+        responderError(
+            400,
+            'Faltan los campos obligatorios: ' . implode(', ', $faltantes),
+            array_map(fn ($campo) => ['field' => $campo, 'message' => 'Es un campo obligatorio'], $faltantes)
+        );
     }
 
     if ($repositorio->buscarPorId($datos['id']) !== null) {
-        http_response_code(400);
-        echo json_encode(['error' => "El departamento con id {$datos['id']} ya está registrado"]);
-        exit;
+        responderError(
+            400,
+            "El departamento con id {$datos['id']} ya está registrado",
+            [['field' => 'id', 'message' => 'Ya está registrado', 'rejectedValue' => $datos['id']]]
+        );
     }
 
     try {
@@ -67,16 +91,17 @@ if ($metodo === 'POST' && $uri === '/departamentos') {
         // así que una violación de esa restricción (código SQLSTATE 23000) confirma
         // duplicado aunque dos peticiones lleguen casi al mismo tiempo.
         if ($e->getCode() === '23000') {
-            http_response_code(400);
-            echo json_encode(['error' => "El departamento con id {$datos['id']} ya está registrado"]);
-            exit;
+            responderError(
+                400,
+                "El departamento con id {$datos['id']} ya está registrado",
+                [['field' => 'id', 'message' => 'Ya está registrado', 'rejectedValue' => $datos['id']]]
+            );
         }
-        http_response_code(500);
-        echo json_encode(['error' => 'Error interno del servidor']);
-        exit;
+        responderError(500, 'Error interno del servidor');
     }
 
     http_response_code(201);
+    header("Location: /departamentos/{$departamento['id']}");
     echo json_encode($departamento);
     exit;
 }
@@ -91,14 +116,11 @@ if ($metodo === 'GET' && $uri === '/departamentos') {
 if ($metodo === 'GET' && preg_match('#^/departamentos/([^/]+)$#', $uri, $coincidencias)) {
     $departamento = $repositorio->buscarPorId($coincidencias[1]);
     if ($departamento === null) {
-        http_response_code(404);
-        echo json_encode(['error' => "El departamento con id {$coincidencias[1]} no existe"]);
-        exit;
+        responderError(404, "El departamento con id {$coincidencias[1]} no existe");
     }
     echo json_encode($departamento);
     exit;
 }
 
 // --- Ruta no soportada ---
-http_response_code(404);
-echo json_encode(['error' => 'Recurso no encontrado']);
+responderError(404, 'Recurso no encontrado');

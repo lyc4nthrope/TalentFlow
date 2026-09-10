@@ -1,6 +1,4 @@
-const { errores } = require("@talentflow/shared");
-
-const { AppError } = errores;
+const { AppError } = require("../errores");
 
 function esperar(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));

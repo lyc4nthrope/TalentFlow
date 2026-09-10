@@ -21,7 +21,22 @@ const empleadoSchema = {
 const errorSchema = {
   type: "object",
   properties: {
-    error: { type: "string" }
+    status: { type: "integer", example: 400 },
+    error: { type: "string", example: "Bad Request" },
+    message: { type: "string", example: "El email juan.perez@empresa.com ya está registrado" },
+    timestamp: { type: "string", format: "date-time" },
+    path: { type: "string", example: "/empleados" },
+    errors: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          field: { type: "string" },
+          message: { type: "string" },
+          rejectedValue: {}
+        }
+      }
+    }
   }
 };
 
@@ -54,6 +69,12 @@ const openapiSpec = {
         responses: {
           201: {
             description: "Empleado registrado",
+            headers: {
+              Location: {
+                description: "URL del empleado creado",
+                schema: { type: "string", example: "/empleados/E001" }
+              }
+            },
             content: { "application/json": { schema: { $ref: "#/components/schemas/Empleado" } } }
           },
           400: {

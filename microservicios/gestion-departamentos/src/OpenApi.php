@@ -14,7 +14,22 @@ function obtenerEspecificacionOpenApi(): array
     $errorSchema = [
         'type' => 'object',
         'properties' => [
-            'error' => ['type' => 'string'],
+            'status' => ['type' => 'integer', 'example' => 400],
+            'error' => ['type' => 'string', 'example' => 'Bad Request'],
+            'message' => ['type' => 'string', 'example' => 'El departamento con id IT ya está registrado'],
+            'timestamp' => ['type' => 'string', 'format' => 'date-time'],
+            'path' => ['type' => 'string', 'example' => '/departamentos'],
+            'errors' => [
+                'type' => 'array',
+                'items' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'field' => ['type' => 'string'],
+                        'message' => ['type' => 'string'],
+                        'rejectedValue' => [],
+                    ],
+                ],
+            ],
         ],
     ];
 
@@ -46,6 +61,12 @@ function obtenerEspecificacionOpenApi(): array
                     'responses' => [
                         '201' => [
                             'description' => 'Departamento registrado',
+                            'headers' => [
+                                'Location' => [
+                                    'description' => 'URL del departamento creado',
+                                    'schema' => ['type' => 'string', 'example' => '/departamentos/IT'],
+                                ],
+                            ],
                             'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Departamento']]],
                         ],
                         '400' => [

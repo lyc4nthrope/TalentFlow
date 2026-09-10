@@ -4,7 +4,6 @@
   "private": true,
   "description": "Sistema de onboarding y offboarding de empleados basado en microservicios",
   "workspaces": [
-    "shared",
     "microservicios/*"
   ],
   "scripts": {

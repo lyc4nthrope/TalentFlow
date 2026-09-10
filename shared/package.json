@@ -1,7 +1,0 @@
-{
-  "name": "@talentflow/shared",
-  "version": "0.1.0",
-  "description": "Modelo canónico compartido entre los servicios de TalentFlow",
-  "main": "src/index.js",
-  "private": true
-}
