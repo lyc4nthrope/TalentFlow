@@ -45,6 +45,35 @@ TalentFlow/
 
 > **Nota — no existe código compartido entre microservicios.** Hasta el Reto 1 existía un paquete `shared/` con el modelo de empleado y la clase de error, importado por `gestion-empleados`. Es un patrón de monolito (un "shared kernel" entre servicios) y se corrigió en el Reto 2: ese código ahora vive únicamente dentro de `microservicios/gestion-empleados/src/` (`errores.js` y `dominio/empleado.js`). Ningún microservicio importa código de negocio de otro ni de un paquete común — si dos servicios necesitan la misma validación, cada uno la implementa por su cuenta; la única comunicación permitida entre ellos es HTTP. `package.json` en la raíz sigue usando `npm workspaces`, pero solo como conveniencia de desarrollo (instalar una vez, correr `npm test` en todos) — ninguna dependencia real cruza de un servicio a otro, y el `Dockerfile` de cada servicio no depende del código de ningún otro.
 
+## Flujo de trabajo con ramas (Git)
+
+> Esto es únicamente la **estructura de ramas en Git** del equipo, no una implementación de DevOps completa — todavía no hay integración continua (CI), despliegue automático ni entornos separados por rama. Esa parte se evaluará e implementará más adelante en el proyecto final, si el curso lo requiere.
+
+| Rama | Rol |
+|---|---|
+| `main` | Producción. Siempre debe reflejar el sistema funcionando y evaluado. Nadie trabaja directo aquí: solo recibe merges desde `dev`. |
+| `dev` | Integración. Rama base donde se junta el trabajo de todo el equipo antes de llegar a producción. |
+| `davidcr08` | Rama personal de David. |
+| `DillanSnayderBuitrago` | Rama personal de Dillan. |
+| `Vale292005` | Rama personal de Vale. |
+| `lyc4nthrope` | Rama personal de Cristhian. |
+
+Flujo:
+
+1. Cada integrante trabaja en su propia rama (la que lleva su usuario de GitHub) — nunca directo en `dev` ni en `main`.
+2. Al terminar una funcionalidad, se abre un Pull Request de la rama personal hacia `dev`.
+3. `dev` es donde se integra y se prueba el trabajo de todos junto.
+4. Cuando `dev` está estable (`docker compose up --build` y `npm test` pasando), se hace un Pull Request de `dev` hacia `main`.
+
+Antes de empezar a trabajar cada día, actualizar la rama personal desde `dev`:
+
+```bash
+git checkout dev
+git pull origin dev
+git checkout <tu-rama>
+git merge dev
+```
+
 ## Cómo levantar todo desde cero
 
 Un solo comando, sin pasos manuales (el esquema de cada base de datos se crea automáticamente desde `init.sql` la primera vez que el volumen está vacío):
