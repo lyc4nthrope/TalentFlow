@@ -8,7 +8,6 @@ const { openapiSpec } = require("./openapi");
 const FRASES_ESTADO = {
   400: "Bad Request",
   404: "Not Found",
-  409: "Conflict",
   500: "Internal Server Error",
   503: "Service Unavailable"
 };

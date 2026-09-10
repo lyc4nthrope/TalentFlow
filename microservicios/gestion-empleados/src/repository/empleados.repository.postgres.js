@@ -65,7 +65,9 @@ function crearRepositorioEmpleadosPostgres(pool) {
               ]
             );
           }
-          throw new AppError(`El empleado con id ${empleado.id} ya existe`, 400);
+          throw new AppError(`El empleado con id ${empleado.id} ya existe`, 400, [
+            { field: "id", message: "Ya está registrado", rejectedValue: empleado.id }
+          ]);
         }
         throw error;
       }

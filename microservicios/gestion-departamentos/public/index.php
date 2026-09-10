@@ -7,19 +7,20 @@ require __DIR__ . '/../src/OpenApi.php';
 const FRASES_ESTADO = [
     400 => 'Bad Request',
     404 => 'Not Found',
-    409 => 'Conflict',
     500 => 'Internal Server Error',
 ];
 
 function responderError(int $status, string $mensaje, array $errores = []): void
 {
+    global $uri;
+
     http_response_code($status);
     $cuerpo = [
         'status' => $status,
         'error' => FRASES_ESTADO[$status] ?? 'Error',
         'message' => $mensaje,
         'timestamp' => gmdate('Y-m-d\TH:i:s\Z'),
-        'path' => parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH),
+        'path' => $uri,
     ];
     if (!empty($errores)) {
         $cuerpo['errors'] = $errores;
