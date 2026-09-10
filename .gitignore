@@ -8,3 +8,5 @@ build/
 !.env.example
 coverage/
 secrets/
+.vscode/
+.atl/
