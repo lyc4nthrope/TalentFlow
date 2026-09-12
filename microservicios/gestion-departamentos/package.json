@@ -1,0 +1,9 @@
+{
+   "name": "@talentflow/gestion-departamentos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Microservicio de gestión de departamentos (PHP nativo + MySQL)",
+  "scripts": {
+    "test": "php test/test_departamentos.php"
+  }
+}

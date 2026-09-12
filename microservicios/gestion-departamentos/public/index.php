@@ -47,6 +47,31 @@ if ($metodo === 'GET' && $uri === '/openapi.json') {
 
 header('Content-Type: application/json; charset=utf-8');
 
+// --- Health check (antes de instanciar el repositorio: debe seguir funcionando aunque la BD falle) ---
+if ($metodo === 'GET' && $uri === '/health') {
+    $dbStatus = 'UP';
+    try {
+        Database::obtenerConexion()->query('SELECT 1');
+    } catch (PDOException $e) {
+        $dbStatus = 'DOWN';
+    }
+
+    $statusGeneral = $dbStatus === 'UP' ? 'UP' : 'DOWN';
+
+    http_response_code($statusGeneral === 'UP' ? 200 : 503);
+    echo json_encode([
+        'status' => $statusGeneral,
+        'timestamp' => gmdate('Y-m-d\TH:i:s\Z'),
+        'components' => [
+            'app' => 'UP',
+            'db' => $dbStatus,
+        ],
+    ]);
+    exit;
+}
+
+// --- Instanciar el repositorio para las rutas de negocio ---
+// (no se necesita en /docs, /openapi.json ni /health, por eso va después de esos)
 try {
     $repositorio = new DepartamentoRepository(Database::obtenerConexion());
 } catch (PDOException $e) {
