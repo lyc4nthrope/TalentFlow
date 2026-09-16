@@ -8,4 +8,4 @@ COPY . .
 
 EXPOSE 8081
 
-CMD ["php", "-S", "0.0.0.0:8081", "-t", "public", "public/index.php"]
+CMD ["php", "-S", "0.0.0.0:8082", "-t", "public", "public/index.php"]
