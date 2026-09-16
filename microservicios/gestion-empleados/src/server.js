@@ -14,7 +14,7 @@ const clienteDepartamentos = crearClienteDepartamentos({
   baseUrl: DEPARTAMENTOS_SERVICE_URL,
   timeoutMs: process.env.DEPARTAMENTOS_TIMEOUT_MS
     ? Number(process.env.DEPARTAMENTOS_TIMEOUT_MS)
-    : 2000,
+    : 5000,
   maxReintentos: process.env.DEPARTAMENTOS_MAX_REINTENTOS
     ? Number(process.env.DEPARTAMENTOS_MAX_REINTENTOS)
     : 3
