@@ -21,23 +21,25 @@ const handleProxyError = (err, req, res) => {
     });
 };
 
+// Nota: se monta en '/' (sin prefijo) y se usa pathFilter en vez de mount-path,
+// porque Express recorta el prefijo del mount antes de invocar el proxy y
+// pathRewrite solo puede reponer un string fijo, rompiendo rutas con parámetros
+// como /empleados/:id (verificado: producía /empleadosE001 en vez de /empleados/E001).
 app.use(
-    ['/empleados', '/docs', '/openapi.json'],
     createProxyMiddleware({
         target: EMPLEADOS_URL,
         changeOrigin: true,
-        pathRewrite: { '^/': '/empleados' }, // Fuerza a mantener la ruta /empleados
-        onError: handleProxyError
+        pathFilter: ['/empleados'],
+        on: { error: handleProxyError }
     })
 );
 
 app.use(
-    '/departamentos',
     createProxyMiddleware({
         target: DEPARTAMENTOS_URL,
         changeOrigin: true,
-        pathRewrite: { '^/': '/departamentos' },
-        onError: handleProxyError
+        pathFilter: ['/departamentos'],
+        on: { error: handleProxyError }
     })
 );
 
