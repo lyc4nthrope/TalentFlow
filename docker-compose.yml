@@ -47,6 +47,29 @@ services:
       timeout: 3s
       retries: 10
 
+  # API Gateway para exponer un único puerto al cliente
+  api-gateway:
+    build:
+      context: ./microservicios/api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      EMPLEADOS_SERVICE_URL: http://empleados-service:8081
+      DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
+    depends_on:
+#      empleados-service:
+ #       condition: service_healthy
+  #    departamentos-service:
+   #     condition: service_healthy
+      - empleados-service
+      - departamentos-service
+    networks:
+      - microservices-network
+
   # Microservicio Empleados (Node.js)
   empleados-service:
     build:
@@ -55,22 +78,25 @@ services:
       target: runner
     container_name: ms-empleados
     restart: on-failure
-    ports:
-      - "8080:8080"
+    expose:
+      - "8081"
     environment:
-      PORT: 8080
+      PORT: 8081
       DB_HOST: database-empleados
       DB_PORT: 5432
       DB_NAME: ${DB_EMPLEADOS_NAME:-db_empleados}
       DB_USER: ${DB_EMPLEADOS_USER:-user_empleados}
       DB_PASS: ${DB_EMPLEADOS_PASS:-pass_empleados}
-      DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8081
+      DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
     depends_on:
       database-empleados:
+        condition: service_healthy
+      departamentos-service:
         condition: service_healthy
     networks:
       - microservices-network
 
+  # Microservicio Departamentos (PHP)
   # Microservicio Departamentos (PHP)
   departamentos-service:
     build:
@@ -79,10 +105,10 @@ services:
       target: runner
     container_name: ms-departamentos
     restart: on-failure
-    ports:
-      - "8081:8081"
+    expose:
+      - "8082"
     environment:
-      PORT: 8081
+      PORT: 8082
       DB_HOST: database-departamentos
       DB_PORT: 3306
       DB_NAME: ${DB_DEPTO_NAME:-db_deptos}
@@ -91,6 +117,12 @@ services:
     depends_on:
       database-departamentos:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@fsockopen(\"127.0.0.1\", 8082) ? 0 : 1);'"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     networks:
       - microservices-network
 
