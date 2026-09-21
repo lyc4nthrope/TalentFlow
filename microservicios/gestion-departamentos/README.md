@@ -64,7 +64,7 @@ Sin Composer ni autoload: el servicio no tiene dependencias externas, así que s
 
 | Variable | Descripción |
 |---|---|
-| `PORT` | Puerto donde escucha el servicio (8081 en Docker) |
+| `PORT` | Puerto donde escucha el servicio (8082 en Docker, no publicado al host desde el Reto 3 — ver README raíz) |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS` | Conexión a MySQL |
 
 ## Base de datos
@@ -81,7 +81,7 @@ docker compose up --build
 
 ## Documentación OpenAPI
 
-Swagger UI disponible en `http://localhost:8081/docs` (especificación en `/openapi.json`).
+Desde el Reto 3 este servicio ya no publica puerto al host (`expose`, no `ports`), así que su Swagger UI (`/docs`, `/openapi.json`) no es alcanzable desde fuera de la red de Docker. El Gateway solo enruta `/departamentos/*`, no `/docs` (ver README raíz).
 
 ## Pendientes conocidos
 

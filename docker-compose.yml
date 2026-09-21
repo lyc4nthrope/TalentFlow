@@ -10,8 +10,8 @@ services:
       POSTGRES_DB: ${DB_EMPLEADOS_NAME:-db_empleados}
       POSTGRES_USER: ${DB_EMPLEADOS_USER:-user_empleados}
       POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASS:-pass_empleados}
-    ports:
-      - "5432:5432"
+    expose:
+      - "5432"
     volumes:
       - vol-empleados:/var/lib/postgresql/data
       - ./microservicios/gestion-empleados/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -34,8 +34,8 @@ services:
       MYSQL_USER: ${DB_DEPTO_USER:-user_deptos}
       MYSQL_PASSWORD: ${DB_DEPTO_PASS:-pass_deptos}
       MYSQL_ROOT_PASSWORD: ${DB_DEPTO_ROOT_PASS:-root_pass}
-    ports:
-      - "5433:3306"
+    expose:
+      - "3306"
     volumes:
       - vol-departamentos:/var/lib/mysql
       - ./microservicios/gestion-departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -61,10 +61,6 @@ services:
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
     depends_on:
-#      empleados-service:
- #       condition: service_healthy
-  #    departamentos-service:
-   #     condition: service_healthy
       - empleados-service
       - departamentos-service
     networks:

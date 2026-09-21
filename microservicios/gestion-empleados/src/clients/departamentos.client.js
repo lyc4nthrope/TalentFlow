@@ -7,9 +7,9 @@ function esperar(ms){
 
 function crearClienteDepartamentos({
   baseUrl,
-  timeoutMs = 3000,
+  timeoutMs = 5000,
   errorThresholdPercentage = 50,
-  resetTimeout = 10000,
+  resetTimeout = 30000,
   maxReintentos = 3,
   fetchImpl = fetch
 } = {}) {
@@ -53,6 +53,7 @@ function crearClienteDepartamentos({
     timeout: (timeoutMs * (maxReintentos + 1)) + 5000,
     errorThresholdPercentage,
     resetTimeout,
+    volumeThreshold: 4,
     capacity: 10
   };
 

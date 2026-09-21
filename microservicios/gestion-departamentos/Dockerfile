@@ -6,6 +6,6 @@ WORKDIR /app
 
 COPY . .
 
-EXPOSE 8081
+EXPOSE 8082
 
 CMD ["php", "-S", "0.0.0.0:8082", "-t", "public", "public/index.php"]
