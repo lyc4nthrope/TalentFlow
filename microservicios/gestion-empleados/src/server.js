@@ -20,7 +20,21 @@ const clienteDepartamentos = crearClienteDepartamentos({
     : 3
 });
 const servicio = crearServicioEmpleados(repositorio, clienteDepartamentos);
-const app = crearApp(servicio);
+const app = crearApp(servicio, clienteDepartamentos);
+
+// Cuando el Circuit Breaker vuelve a CERRAR (departamentos-service se restableció),
+// revisa automáticamente a los empleados que quedaron PENDIENTE y los mueve a
+// ACEPTADO o RECHAZADO según la respuesta real del servicio.
+clienteDepartamentos.onRecuperado(() => {
+  servicio
+    .reconciliarPendientes()
+    .then((resultados) => {
+      if (resultados.length > 0) {
+        console.info(`🔁 Reconciliados ${resultados.length} empleado(s) pendiente(s):`, resultados);
+      }
+    })
+    .catch((error) => console.error("Error reconciliando empleados pendientes:", error));
+});
 
 app.listen(PUERTO, () => {
   console.log(`Servicio de empleados escuchando en http://localhost:${PUERTO}`);

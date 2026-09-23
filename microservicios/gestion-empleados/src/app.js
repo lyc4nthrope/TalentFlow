@@ -12,13 +12,24 @@ const FRASES_ESTADO = {
   503: "Service Unavailable"
 };
 
-function crearApp(servicioEmpleados) {
+function crearApp(servicioEmpleados, clienteDepartamentos = { estadoActual: () => "DESCONOCIDO" }) {
   const app = express();
 
   app.use(express.json());
 
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
   app.get("/openapi.json", (req, res) => res.json(openapiSpec));
+
+  // Bajo /empleados/* a propósito: así queda alcanzable a través del Gateway sin
+  // agregar una ruta nueva al enrutamiento del Reto 3 (que enruta exactamente
+  // /empleados/* y /departamentos/*, nada más). Debe ir ANTES del router de
+  // empleados para no chocar con GET /empleados/:id.
+  app.get("/empleados/circuito-departamentos", (req, res) => {
+    res.status(200).json({
+      dependencia: "departamentos-service",
+      estado: clienteDepartamentos.estadoActual()
+    });
+  });
 
   app.use(crearRouterEmpleados(servicioEmpleados));
 

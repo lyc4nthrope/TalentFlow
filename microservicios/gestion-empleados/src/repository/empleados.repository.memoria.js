@@ -32,6 +32,19 @@ function crearRepositorioEmpleadosEnMemoria() {
 
     async listar() {
       return Array.from(empleados.values());
+    },
+
+    async listarPendientes() {
+      return Array.from(empleados.values()).filter(
+        (empleado) => empleado.validacionDepartamento === "PENDIENTE"
+      );
+    },
+
+    async actualizarValidacionDepartamento(id, validacionDepartamento) {
+      const empleado = empleados.get(id);
+      if (empleado) {
+        empleados.set(id, { ...empleado, validacionDepartamento });
+      }
     }
   };
 }

@@ -18,7 +18,7 @@ const EMPLEADO_VALIDO = {
 };
 
 // Doble de prueba: simula el servicio de departamentos sin necesitar uno real corriendo.
-const clienteDepartamentosFalso = { existe: async () => true };
+const clienteDepartamentosFalso = { existe: async () => "EXISTE" };
 
 describe("API de empleados", () => {
   let servidor;
@@ -109,7 +109,7 @@ describe("API de empleados", () => {
 
     it("responde 400 cuando el departamento no existe (Reto 2)", async () => {
       const repositorio = crearRepositorioEmpleadosEnMemoria();
-      const servicioSinDepto = crearServicioEmpleados(repositorio, { existe: async () => false });
+      const servicioSinDepto = crearServicioEmpleados(repositorio, { existe: async () => "NO_EXISTE" });
       const appSinDepto = crearApp(servicioSinDepto);
       const server = await new Promise((resolve) => {
         const s = appSinDepto.listen(0, () => resolve(s));
@@ -126,6 +126,57 @@ describe("API de empleados", () => {
       const cuerpo = await respuesta.json();
       assert.match(cuerpo.message, /departamento IT no existe/);
       assert.equal(cuerpo.errors[0].field, "departamentoId");
+
+      server.close();
+    });
+
+    it("responde 201 con validacionDepartamento PENDIENTE cuando departamentos no responde (Reto 3)", async () => {
+      const repositorio = crearRepositorioEmpleadosEnMemoria();
+      const servicioConDeptoCaido = crearServicioEmpleados(repositorio, {
+        existe: async () => "PENDIENTE"
+      });
+      const appConDeptoCaido = crearApp(servicioConDeptoCaido);
+      const server = await new Promise((resolve) => {
+        const s = appConDeptoCaido.listen(0, () => resolve(s));
+      });
+      const { port } = server.address();
+
+      const respuesta = await fetch(`http://127.0.0.1:${port}/empleados`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...EMPLEADO_VALIDO,
+          id: "E-PENDIENTE",
+          email: "pendiente@empresa.com",
+          numeroEmpleado: "EMP-PENDIENTE"
+        })
+      });
+
+      assert.equal(respuesta.status, 201);
+      const cuerpo = await respuesta.json();
+      assert.equal(cuerpo.validacionDepartamento, "PENDIENTE");
+
+      server.close();
+    });
+  });
+
+  describe("GET /empleados/circuito-departamentos", () => {
+    it("expone el estado actual del circuito hacia departamentos-service", async () => {
+      const repositorio = crearRepositorioEmpleadosEnMemoria();
+      const servicio = crearServicioEmpleados(repositorio, { existe: async () => "EXISTE" });
+      const clienteConEstado = { estadoActual: () => "OPEN" };
+      const appConEstado = crearApp(servicio, clienteConEstado);
+      const server = await new Promise((resolve) => {
+        const s = appConEstado.listen(0, () => resolve(s));
+      });
+      const { port } = server.address();
+
+      const respuesta = await fetch(`http://127.0.0.1:${port}/empleados/circuito-departamentos`);
+
+      assert.equal(respuesta.status, 200);
+      const cuerpo = await respuesta.json();
+      assert.equal(cuerpo.dependencia, "departamentos-service");
+      assert.equal(cuerpo.estado, "OPEN");
 
       server.close();
     });

@@ -14,6 +14,13 @@ const empleadoSchema = {
       type: "string",
       enum: ["ACTIVO", "EN_VACACIONES", "RETIRADO"],
       example: "ACTIVO"
+    },
+    validacionDepartamento: {
+      type: "string",
+      enum: ["PENDIENTE", "ACEPTADO", "RECHAZADO"],
+      description:
+        "PENDIENTE si se registró con departamentos-service caído (Circuit Breaker abierto); se reconcilia solo a ACEPTADO o RECHAZADO cuando el servicio se restablece.",
+      example: "ACEPTADO"
     }
   }
 };
@@ -68,7 +75,8 @@ const openapiSpec = {
         },
         responses: {
           201: {
-            description: "Empleado registrado",
+            description:
+              "Empleado registrado. Si departamentos-service no respondió (Circuit Breaker abierto), se registra igual con validacionDepartamento=PENDIENTE y se reconcilia automáticamente cuando el servicio se restablece.",
             headers: {
               Location: {
                 description: "URL del empleado creado",
@@ -79,11 +87,7 @@ const openapiSpec = {
           },
           400: {
             description:
-              "Email duplicado, numeroEmpleado duplicado, campos faltantes o departamento inexistente",
-            content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } }
-          },
-          503: {
-            description: "El servicio de departamentos no respondió tras los reintentos",
+              "Email duplicado, numeroEmpleado duplicado, campos faltantes o departamento inexistente (verificado con departamentos-service disponible)",
             content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } }
           }
         }
@@ -96,6 +100,27 @@ const openapiSpec = {
             content: {
               "application/json": {
                 schema: { type: "array", items: { $ref: "#/components/schemas/Empleado" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/empleados/circuito-departamentos": {
+      get: {
+        summary: "Estado del Circuit Breaker hacia departamentos-service",
+        responses: {
+          200: {
+            description: "Estado actual del circuito",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    dependencia: { type: "string", example: "departamentos-service" },
+                    estado: { type: "string", enum: ["CLOSED", "OPEN", "HALF_OPEN"], example: "CLOSED" }
+                  }
+                }
               }
             }
           }

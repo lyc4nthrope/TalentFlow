@@ -15,7 +15,8 @@ function filaAEmpleado(fila) {
       fila.fecha_ingreso instanceof Date
         ? fila.fecha_ingreso.toISOString().slice(0, 10)
         : fila.fecha_ingreso,
-    estado: fila.estado
+    estado: fila.estado,
+    validacionDepartamento: fila.validacion_departamento
   };
 }
 
@@ -24,8 +25,8 @@ function crearRepositorioEmpleadosPostgres(pool) {
     async guardar(empleado) {
       const texto = `
         INSERT INTO empleados
-          (id, nombre, apellido, email, numero_empleado, cargo, area, departamento_id, fecha_ingreso, estado)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          (id, nombre, apellido, email, numero_empleado, cargo, area, departamento_id, fecha_ingreso, estado, validacion_departamento)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING *
       `;
       const valores = [
@@ -38,7 +39,8 @@ function crearRepositorioEmpleadosPostgres(pool) {
         empleado.area,
         empleado.departamentoId,
         empleado.fechaIngreso,
-        empleado.estado
+        empleado.estado,
+        empleado.validacionDepartamento ?? "ACEPTADO"
       ];
       try {
         const resultado = await pool.query(texto, valores);
@@ -97,6 +99,20 @@ function crearRepositorioEmpleadosPostgres(pool) {
     async listar() {
       const resultado = await pool.query("SELECT * FROM empleados ORDER BY creado_en ASC");
       return resultado.rows.map(filaAEmpleado);
+    },
+
+    async listarPendientes() {
+      const resultado = await pool.query(
+        "SELECT * FROM empleados WHERE validacion_departamento = 'PENDIENTE' ORDER BY creado_en ASC"
+      );
+      return resultado.rows.map(filaAEmpleado);
+    },
+
+    async actualizarValidacionDepartamento(id, validacionDepartamento) {
+      await pool.query("UPDATE empleados SET validacion_departamento = $1 WHERE id = $2", [
+        validacionDepartamento,
+        id
+      ]);
     }
   };
 }
