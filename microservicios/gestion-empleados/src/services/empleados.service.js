@@ -1,5 +1,5 @@
 const { AppError } = require("../errores");
-const { crearEmpleado } = require("../dominio/empleado");
+const { crearEmpleado, ESTADO_PENDIENTE_VALIDACION } = require("../dominio/empleado");
 
 function crearServicioEmpleados(repositorio, clienteDepartamentos) {
   async function registrar(datos) {
@@ -23,8 +23,11 @@ function crearServicioEmpleados(repositorio, clienteDepartamentos) {
       ]);
     }
 
+    // existe(): true = existe, false = confirmado que NO existe (404 real),
+    // null = no se pudo verificar (Circuit Breaker abierto o reintentos agotados).
     const departamentoExiste = await clienteDepartamentos.existe(empleado.departamentoId);
-    if (!departamentoExiste) {
+
+    if (departamentoExiste === false) {
       throw new AppError(`El departamento ${empleado.departamentoId} no existe`, 400, [
         {
           field: "departamentoId",
@@ -32,6 +35,14 @@ function crearServicioEmpleados(repositorio, clienteDepartamentos) {
           rejectedValue: empleado.departamentoId
         }
       ]);
+    }
+
+    if (departamentoExiste === null) {
+      // Circuit Breaker abierto o dependencia caída tras agotar reintentos:
+      // no se rechaza el registro, queda pendiente de validar cuando el
+      // circuito se recupere (decisión de equipo — disponibilidad sobre
+      // consistencia inmediata, con reconciliación al cerrar el circuito).
+      return repositorio.guardar({ ...empleado, estado: ESTADO_PENDIENTE_VALIDACION });
     }
 
     return repositorio.guardar(empleado);

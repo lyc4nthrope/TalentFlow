@@ -1,7 +1,6 @@
 const CircuitBreaker = require("opossum");
-const { AppError } = require("../errores");
 
-function esperar(ms){
+function esperar(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -17,31 +16,31 @@ function crearClienteDepartamentos({
   async function intentarUnaVez(departamentoId) {
     const controlador = new AbortController();
     const timer = setTimeout(() => controlador.abort(), timeoutMs);
-    try{
-      const respuesta = await fetchImpl(`${baseUrl}/departamentos/${departamentoId}`,{
+    try {
+      const respuesta = await fetchImpl(`${baseUrl}/departamentos/${departamentoId}`, {
         signal: controlador.signal
       });
 
-      if(respuesta.status === 404){
+      if (respuesta.status === 404) {
         return false;
       }
-      if(!respuesta.ok){
-        throw new Error(`Respuesta inesperada del servicio departamnetos`);
+      if (!respuesta.ok) {
+        throw new Error(`Respuesta inesperada del servicio departamentos`);
       }
       return true;
-    }finally{
+    } finally {
       clearTimeout(timer);
     }
   }
 
   async function realizarPeticionConReintentos(departamentoId) {
     let ultimoError;
-    for(let intento = 0; intento <= maxReintentos; intento += 1){
-      try{
+    for (let intento = 0; intento <= maxReintentos; intento += 1) {
+      try {
         return await intentarUnaVez(departamentoId);
-      } catch(error){
+      } catch (error) {
         ultimoError = error;
-        if(intento < maxReintentos){
+        if (intento < maxReintentos) {
           await esperar(200);
         }
       }
@@ -59,23 +58,22 @@ function crearClienteDepartamentos({
 
   const breaker = new CircuitBreaker(realizarPeticionConReintentos, breakerOptions);
 
-  breaker.fallback((departamentoId, err) => {
-    throw new AppError(
-      `No fue posible verificar el departamento, el servicio no resolvió`,
-      503
-    );
-  });
+  // El fallback ya NO lanza un error de negocio (antes lanzaba AppError 503).
+  // Devuelve null para que el llamador (servicioEmpleados) pueda distinguir
+  // tres casos: true (existe), false (confirmado que no existe, 404 real),
+  // null (no se pudo verificar: circuito abierto o reintentos agotados).
+  // La decisión de qué hacer con "null" es del servicio de negocio, no del cliente HTTP.
+  breaker.fallback(() => null);
 
-  breaker.on("open", () => console.warn("⚠️ Circuit Breaker ABIERTO para Departamentos"));
+  breaker.on("open", () => console.warn(" Circuit Breaker ABIERTO para Departamentos"));
   breaker.on("halfOpen", () => console.info("🔄 Circuit Breaker HALF-OPEN para Departamentos"));
-  breaker.on("close", () => console.info("✅ Circuit Breaker CERRADO para Departamentos"));
+  breaker.on("close", () => console.info(" Circuit Breaker CERRADO para Departamentos"));
 
-  // 4. Exponer el método 'existe' envolviéndolo en el circuito
   async function existe(departamentoId) {
     return await breaker.fire(departamentoId);
   }
 
-  return { existe };
+  return { existe, breaker };
 }
 
 module.exports = { crearClienteDepartamentos };

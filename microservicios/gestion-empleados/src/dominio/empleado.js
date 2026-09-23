@@ -8,6 +8,12 @@ const ESTADOS_EMPLEADO = Object.freeze({
 
 const ESTADO_INICIAL = ESTADOS_EMPLEADO.ACTIVO;
 
+// No forma parte de ESTADOS_EMPLEADO a propósito: es un estado que el SISTEMA asigna
+// cuando no pudo verificar el departamento (Circuit Breaker abierto), nunca algo que
+// un cliente pueda solicitar directamente en el body del POST. Por eso validarEstado()
+// sigue validando solo contra ESTADOS_EMPLEADO más abajo, sin tocarla.
+const ESTADO_PENDIENTE_VALIDACION = "PENDIENTE_VALIDACION";
+
 const CAMPOS_EMPLEADO = Object.freeze([
   "id",
   "nombre",
@@ -88,6 +94,7 @@ function crearEmpleado(datos) {
 module.exports = {
   ESTADOS_EMPLEADO,
   ESTADO_INICIAL,
+  ESTADO_PENDIENTE_VALIDACION,
   CAMPOS_EMPLEADO,
   CAMPOS_OBLIGATORIOS,
   crearEmpleado
