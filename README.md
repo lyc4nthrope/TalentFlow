@@ -136,14 +136,14 @@ docker compose down -v
 
 ## Arranque ordenado — evidencia
 
-`depends_on` por sí solo solo espera a que el *contenedor* arranque, no a que el servicio esté listo. Por eso cada base de datos tiene un `healthcheck` (`pg_isready` / `mysqladmin ping`) y cada microservicio usa `depends_on: condition: service_healthy`. El Gateway depende de ambos microservicios con `depends_on` simple (sin `condition`, porque ninguno de los dos define un `healthcheck` propio en `docker-compose.yml` todavía); si el Gateway arranca antes de que un servicio esté listo, sus peticiones fallan con el `503` descrito arriba hasta que el servicio responde — no se cae, se degrada. Verificado en este repo: al ejecutar `docker compose up --build` desde cero, los logs no reportan errores de conexión, y `docker compose ps` muestra:
+`depends_on` por sí solo solo espera a que el *contenedor* arranque, no a que el servicio esté listo. Por eso cada base de datos tiene un `healthcheck` (`pg_isready` / `mysqladmin ping`), `departamentos-service` tiene el suyo propio (`fsockopen` a su propio puerto), y `empleados-service` usa `depends_on: condition: service_healthy` contra **ambos**: su base de datos y `departamentos-service` — esto se agregó porque el profesor señaló, revisando el Reto 2, que faltaba esa dependencia explícita. El Gateway sigue con `depends_on` simple (sin `condition`) hacia los dos microservicios: si arranca antes de que alguno esté listo, sus peticiones fallan con el `503` descrito arriba hasta que el servicio responde — no se cae, se degrada. Verificado en este repo: al ejecutar `docker compose up --build` desde cero, `departamentos-service` queda `(healthy)` ANTES de que `empleados-service` arranque, y `docker compose ps` muestra:
 
 ```
 NAME               SERVICE                  STATUS                 PORTS
 api-gateway        api-gateway              Up                     0.0.0.0:8080->8080/tcp
 db-departamentos   database-departamentos   Up (healthy)           (sin publicar)
 db-empleados       database-empleados       Up (healthy)           (sin publicar)
-ms-departamentos   departamentos-service    Up                     (sin publicar)
+ms-departamentos   departamentos-service    Up (healthy)           (sin publicar)
 ms-empleados       empleados-service        Up                     (sin publicar)
 ```
 
