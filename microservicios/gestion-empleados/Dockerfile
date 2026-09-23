@@ -17,6 +17,6 @@ COPY --from=builder /app/microservicios/gestion-empleados ./microservicios/gesti
 
 WORKDIR /app/microservicios/gestion-empleados
 
-EXPOSE 8080
+EXPOSE 8081
 
 CMD ["npm", "start"]

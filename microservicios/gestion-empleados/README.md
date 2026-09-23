@@ -90,9 +90,11 @@ Todo el código de este servicio vive dentro de esta carpeta: no depende de ning
 
 | Variable | Descripción |
 |---|---|
-| `PORT` | Puerto donde escucha el servicio (8080 en Docker) |
+| `PORT` | Puerto donde escucha el servicio (8081 en Docker, no publicado al host desde el Reto 3 — ver README raíz) |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS` | Conexión a PostgreSQL |
-| `DEPARTAMENTOS_SERVICE_URL` | URL base de `departamentos-service` (dentro de la red de Docker: `http://departamentos-service:8081`, nunca `localhost`) |
+| `DEPARTAMENTOS_SERVICE_URL` | URL base de `departamentos-service` (dentro de la red de Docker: `http://departamentos-service:8082`, nunca `localhost`) |
+| `DEPARTAMENTOS_TIMEOUT_MS` | Timeout por intento hacia `departamentos-service` (por defecto 5000ms desde el Reto 3) |
+| `DEPARTAMENTOS_MAX_REINTENTOS` | Reintentos antes de que el Circuit Breaker cuente el fallo (por defecto 3) |
 
 ## Base de datos
 
@@ -127,7 +129,7 @@ Los tests unitarios usan el repositorio en memoria (`empleados.repository.memori
 
 ## Documentación OpenAPI
 
-Swagger UI disponible en `http://localhost:8080/docs` (especificación en `/openapi.json`).
+Desde el Reto 3 este servicio ya no publica puerto al host (`expose`, no `ports` — ver README raíz), así que su Swagger UI (`/docs`, `/openapi.json`) no es alcanzable desde fuera de la red de Docker. Para verla: `docker compose exec empleados-service` no sirve para HTTP; hay que exponer el puerto temporalmente o usar `docker compose port empleados-service 8081` + un túnel puntual. El Gateway (Reto 3) solo enruta `/empleados/*`, no `/docs`, a propósito: la tabla de rutas del reto exige exactamente esas dos rutas y nada más.
 
 ## Evidencia
 
