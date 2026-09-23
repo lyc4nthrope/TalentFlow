@@ -192,15 +192,40 @@ Desde el Reto 3, ninguno de los dos servicios publica puerto al host y el Gatewa
 
 **Corrección de documentación:** una versión anterior de este README decía que los reintentos usaban "espera creciente (1s → 2s → 4s)". Se verificó el código (`departamentos.client.js`) y eso no es así: la espera entre reintentos es **fija, 200ms**. Se corrige aquí para que la documentación no contradiga el código.
 
-### Estrategia de fallback: rechazar con `503`
+### Estrategia de fallback: registrar como `PENDIENTE` y reconciliar al recuperarse
 
-Cuando el circuito está `OPEN`, `empleados-service` responde `503` con `{"message": "No fue posible verificar el departamento, el servicio no resolvió"}` — **rechaza el registro**, no lo acepta como "pendiente de validación".
+> **Decisión revisada.** La primera versión de este README elegía "rechazar con 503". El profesor, revisando el sistema, pidió explícitamente la otra opción que plantea el reto: que el registro no se bloquee, que quede pendiente, y que al restablecerse el servicio se revise automáticamente y se lleve a aceptado o rechazado. Se implementó así; esta sección documenta la decisión final, no la original.
 
-Se eligió esta opción (de las tres que plantea el reto) porque:
-- El modelo canónico de empleado (Reto 1) no tiene un estado para "pendiente de validación"; agregarlo solo para este caso introduciría un estado que el resto del sistema (listar, consultar por id) tendría que empezar a tratar como caso especial.
-- Aceptar un `departamentoId` sin verificar puede dejar datos inconsistentes que alguien tendría que reconciliar más tarde — y el reto exige explicar cómo se reconciliaría si se elige esa opción, lo cual habría sido una responsabilidad nueva sin dueño claro en el equipo.
-- Es la opción más conservadora frente a la pregunta que el propio reto anticipa que va a repetirse ("¿prefiere disponibilidad o consistencia?", Retos 4 y 12): aquí se prioriza consistencia porque el dato de un empleado es sensible (RR. HH.), no un contador ni una métrica.
-- No requiere reconciliación de estado porque nunca se guarda un registro a medias.
+Cuando `departamentos-service` no responde (circuito `OPEN`, o la llamada falla tras agotar los reintentos), `empleados-service` **registra igual** al empleado — no lo bloquea — y lo marca en un campo independiente, `validacionDepartamento = "PENDIENTE"`. La respuesta sigue siendo `201 Created`, con ese campo en el cuerpo:
+
+```json
+{ "id": "E900", "nombre": "Ana", "...": "...", "validacionDepartamento": "PENDIENTE" }
+```
+
+**Por qué un campo aparte y no el `estado` del empleado.** El pseudocódigo del reto (sección 2.4) sugiere `estado: "PENDIENTE_VALIDACION"`, pero `estado` en este sistema ya es el ciclo de vida laboral (`ACTIVO` / `EN_VACACIONES` / `RETIRADO`, desde el Reto 1). Reutilizar ese mismo campo mezclaría dos cosas distintas: si un empleado está de vacaciones y a la vez pendiente de validar su departamento, un solo campo no puede representar ambas. Se agregó `validacion_departamento` como columna independiente (`PENDIENTE` / `ACEPTADO` / `RECHAZADO`, ver `init.sql`), con el mismo significado que pide el reto pero sin chocar con un campo que ya tenía otro dueño.
+
+**Cómo se reconcilia (lo que el reto exige explicar si se elige esta opción):**
+
+1. `departamentos.client.js` expone `onRecuperado(callback)`, suscrito al evento `close` del Circuit Breaker de `opossum` — se dispara exactamente cuando el circuito pasa de abierto a cerrado tras una llamada de prueba exitosa.
+2. `server.js` conecta ese evento a `servicio.reconciliarPendientes()`: sin intervención manual, apenas el circuito cierra.
+3. `reconciliarPendientes()` (en `empleados.service.js`) trae todos los empleados con `validacionDepartamento = 'PENDIENTE'` (`repositorio.listarPendientes()`) y, por cada uno, vuelve a preguntarle a `departamentos-service` si su `departamentoId` existe:
+   - Existe → `ACEPTADO`.
+   - No existe → `RECHAZADO`.
+   - Si el circuito se reabre a mitad de la revisión, ese empleado se deja como estaba: se reintenta en el próximo cierre.
+4. Queda registrado en el log del contenedor: `🔁 Reconciliados N empleado(s) pendiente(s)`.
+
+**Justificación de negocio** (la pregunta que el reto anticipa: ¿disponibilidad o consistencia?): aquí se prioriza **disponibilidad** — RR. HH. sigue registrando empleados aunque departamentos esté caído — aceptando la consistencia eventual de que un empleado puede quedar unos segundos u horas con un departamento sin verificar. Es una decisión de negocio válida siempre que la reconciliación sea automática y visible (por eso el log, y por eso el campo es consultable en `GET /empleados/:id`).
+
+### Estado del circuito — diagnóstico
+
+`GET /empleados/circuito-departamentos` (alcanzable a través del Gateway, porque cae bajo el prefijo `/empleados/*` sin agregar una ruta nueva al Gateway) devuelve el estado observable del Circuit Breaker:
+
+```bash
+curl http://localhost:8080/empleados/circuito-departamentos
+# {"dependencia":"departamentos-service","estado":"CLOSED"}
+```
+
+`estado` es uno de `CLOSED` / `OPEN` / `HALF_OPEN`. Útil para demostrarle al profesor el estado sin depender de leer logs o de medir tiempos de respuesta.
 
 ### Cómo reproducir la prueba (verificado en este repo)
 
@@ -215,24 +240,33 @@ curl -X POST http://localhost:8080/departamentos \
 # 2. Apagar departamentos-service
 docker compose stop departamentos-service
 
-# 3. Registrar empleados y observar el tiempo de respuesta de cada uno
-for i in 1 2 3 4 5 6 7 8; do
-  curl -s -o /dev/null -w "Petición $i -> HTTP %{http_code} | %{time_total}s\n" \
-    -X POST http://localhost:8080/empleados -H "Content-Type: application/json" \
-    -d "{\"id\":\"E90$i\",\"nombre\":\"Test$i\",\"apellido\":\"A\",\"email\":\"t$i@test.com\",\"numeroEmpleado\":\"90$i\",\"cargo\":\"Dev\",\"area\":\"IT\",\"departamentoId\":\"IT\",\"fechaIngreso\":\"2026-01-01\"}"
+# 3. Registrar empleados: YA NO se rechazan, quedan PENDIENTE con 201
+for i in 1 2 3 4 5 6; do
+  curl -s -X POST http://localhost:8080/empleados -H "Content-Type: application/json" \
+    -d "{\"id\":\"E90$i\",\"nombre\":\"Test$i\",\"apellido\":\"A\",\"email\":\"t$i@test.com\",\"numeroEmpleado\":\"90$i\",\"cargo\":\"Dev\",\"area\":\"IT\",\"departamentoId\":\"IT\",\"fechaIngreso\":\"2026-01-01\"}" \
+    -w " -> HTTP %{http_code} | %{time_total}s\n"
 done
-# Observado en este repo: peticiones 1-4 ~0.63s (circuito CLOSED, reintentando de verdad),
-# peticiones 5-8 ~0.005s (circuito OPEN, fallback instantáneo sin tocar la red).
+curl http://localhost:8080/empleados/circuito-departamentos
+# Observado en este repo: todas responden 201 con "validacionDepartamento":"PENDIENTE".
+# Las primeras ~4 tardan ~0.63s (circuito CLOSED, reintentando de verdad); desde
+# la 5ª, ~0.005s (circuito OPEN). El campo PENDIENTE aparece en las 6, sin importar
+# si el circuito ya estaba abierto o todavía cerrado cuando se registró cada una.
 
 # 4. Restaurar el servicio y esperar el reseteo del circuito
 docker compose start departamentos-service
-sleep 35
+sleep 32
 
-# 5. Verificar la recuperación automática con un departamento inexistente
+# 5. El circuito no se autoprueba solo: necesita UNA petición real después del
+#    resetTimeout para pasar de HALF_OPEN a CLOSED. Esa misma petición dispara
+#    la reconciliación automática de todos los pendientes.
 curl -X POST http://localhost:8080/empleados -H "Content-Type: application/json" \
-  -d '{"id":"E999","nombre":"Recuperado","apellido":"T","email":"r@test.com","numeroEmpleado":"999","cargo":"Dev","area":"IT","departamentoId":"NO-EXISTE","fechaIngreso":"2026-01-01"}'
-# Observado en este repo: HTTP 400 "El departamento NO-EXISTE no existe" — es decir,
-# volvió a consultar de verdad a departamentos-service, sin reiniciar nada manualmente.
+  -d '{"id":"E999","nombre":"Trigger","apellido":"T","email":"trigger@test.com","numeroEmpleado":"999","cargo":"Dev","area":"IT","departamentoId":"IT","fechaIngreso":"2026-01-01"}'
+curl http://localhost:8080/empleados/circuito-departamentos   # -> CLOSED
+curl http://localhost:8080/empleados/E901                     # -> "validacionDepartamento":"ACEPTADO"
+# Observado en este repo (verificado con un departamento real y otro inexistente
+# entre los pendientes): los que sí tenían un departamento válido quedaron
+# ACEPTADO, el que apuntaba a uno inexistente quedó RECHAZADO — ambos sin
+# reiniciar nada manualmente, solo por la próxima petición real tras el reseteo.
 ```
 
 ## Decisiones técnicas (Reto 2)
@@ -261,7 +295,7 @@ Se usan **ambas** estrategias, no solo una: **consulta previa** (para responder 
 
 ### Timeout y reintentos hacia `departamentos-service` (Reto 2, actualizado en el Reto 3)
 
-`empleados-service` llama a `departamentos-service` con `timeout` de 5s por intento y hasta 3 reintentos con espera fija de 200ms entre cada uno (no exponencial). Si se agotan los reintentos, **el registro del empleado se rechaza** (no se acepta como "pendiente de validación"): el modelo canónico no tiene un estado para eso, y aceptar un `departamentoId` sin verificar podría dejar datos inconsistentes. Se responde `503` (no `400`): la falla es de una dependencia caída, no un error del cliente. Desde el Reto 3 esta llamada además está protegida por un **Circuit Breaker** (ver sección dedicada más abajo) que deja de intentar contra una dependencia que ya se sabe caída. Ver `microservicios/gestion-empleados/src/clients/departamentos.client.js`.
+`empleados-service` llama a `departamentos-service` con `timeout` de 5s por intento y hasta 3 reintentos con espera fija de 200ms entre cada uno (no exponencial). Si se agotan los reintentos, **el registro del empleado se acepta igual, marcado `validacionDepartamento: "PENDIENTE"`** (decisión revisada en el Reto 3 — ver la sección de Circuit Breaker más abajo para la justificación y cómo se reconcilia). Desde el Reto 3 esta llamada además está protegida por un **Circuit Breaker** que deja de intentar contra una dependencia que ya se sabe caída. Ver `microservicios/gestion-empleados/src/clients/departamentos.client.js`.
 
 ## Alineación con la clase de API RESTful
 
@@ -282,7 +316,7 @@ Tras la clase "Introducción a APIs RESTful" se auditó el proyecto contra sus d
 |------|---|---|---|---|
 | 1 | gestion-empleados | ✅ Completado | POST/GET, modelo canónico, validaciones, Docker, 19 pruebas | `npm run dev:empleados` |
 | 2 | gestion-empleados + gestion-departamentos | ✅ Completado | Persistencia en Postgres/MySQL, segundo servicio en PHP, comunicación HTTP con timeout/reintentos, healthchecks, OpenAPI | `docker compose up --build` |
-| 3 | api-gateway + gestion-empleados + gestion-departamentos | ✅ Completado | API Gateway como único punto de entrada (`:8080`), microservicios y bases de datos sin puertos al host, Circuit Breaker (`opossum`) en `empleados → departamentos` con fallback de rechazo `503` | `docker compose up --build` (base: `http://localhost:8080`) |
+| 3 | api-gateway + gestion-empleados + gestion-departamentos | ✅ Completado | API Gateway como único punto de entrada (`:8080`), microservicios y bases de datos sin puertos al host, Circuit Breaker (`opossum`) en `empleados → departamentos` con fallback de registro `PENDIENTE` + reconciliación automática al recuperarse | `docker compose up --build` (base: `http://localhost:8080`) |
 
 Cada microservicio tiene su propio README con sus endpoints y configuración: [`gestion-empleados`](microservicios/gestion-empleados/README.md), [`gestion-departamentos`](microservicios/gestion-departamentos/README.md).
 
