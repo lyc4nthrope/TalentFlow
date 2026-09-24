@@ -1,8 +1,8 @@
-> **Borrador** — actualizado para reflejar el estado real del código en el Reto 2. Pendiente de confirmación por el resto del equipo antes de darlo por definitivo.
+> **Borrador** — actualizado para reflejar el estado real del código en el Reto 3. Pendiente de confirmación por el resto del equipo antes de darlo por definitivo.
 
 # Microservicio de Gestión de Empleados
 
-Servicio web para la gestión de empleados. Evolucionó del Reto 1 (almacenamiento en memoria) al Reto 2: persistencia en PostgreSQL y validación cruzada del departamento contra `departamentos-service`.
+Servicio web para la gestión de empleados. Evolucionó del Reto 1 (almacenamiento en memoria) al Reto 2 (persistencia en PostgreSQL y validación cruzada del departamento) y al Reto 3 (Circuit Breaker en esa comunicación, detrás de un API Gateway).
 
 ## Endpoints
 
@@ -32,8 +32,10 @@ Validaciones, en este orden:
 
 1. Unicidad de `email` — si ya existe, `400 Bad Request`.
 2. Unicidad de `numeroEmpleado` — si ya existe, `400 Bad Request`.
-3. Existencia del `departamentoId` — se consulta a `departamentos-service` por HTTP; si no existe, `400 Bad Request`. Si el servicio de departamentos no responde tras reintentos, `503 Service Unavailable`.
-4. Si todo pasa: `201 Created` con el empleado registrado (`estado: "ACTIVO"` por defecto) y header `Location: /empleados/{id}`.
+3. Existencia del `departamentoId` — se consulta a `departamentos-service` por HTTP, a través de un Circuit Breaker (ver sección siguiente):
+   - Si el departamento **no existe** (404 real de `departamentos-service`), `400 Bad Request`.
+   - Si **no se pudo verificar** (Circuit Breaker abierto o dependencia caída), el registro **no se rechaza**: se acepta con `estado: "PENDIENTE_VALIDACION"` (ver justificación abajo).
+4. Si el departamento existe (o no se pudo verificar): `201 Created` con el empleado registrado y header `Location: /empleados/{id}`. El `estado` es `"ACTIVO"` por defecto, salvo que quede pendiente de validación (punto anterior).
 
 Las respuestas de error siguen el formato `{ status, error, message, timestamp, path, errors? }` (alineado con la clase de API RESTful).
 
@@ -58,30 +60,35 @@ GET /empleados/{id}
 
 Cualquier otra ruta o método responde **404** con `Recurso no encontrado`.
 
-## Comunicación con departamentos-service
+## Comunicación con departamentos-service (Reto 3: Circuit Breaker)
 
-`empleados-service` valida `departamentoId` llamando a `GET {DEPARTAMENTOS_SERVICE_URL}/departamentos/{id}` con:
+`empleados-service` valida `departamentoId` llamando a `GET {DEPARTAMENTOS_SERVICE_URL}/departamentos/{id}`, envuelto en un Circuit Breaker (`opossum`) para no degradar el servicio cuando la dependencia está caída:
 
-- **Timeout** de 2 segundos por intento.
-- **Hasta 3 reintentos** con espera creciente: 1s → 2s → 4s.
-- Si se agotan los reintentos sin respuesta, el registro se **rechaza** con `503` (no se acepta como "pendiente de validación" — ver el comentario en `src/clients/departamentos.client.js` para la justificación completa).
+- **Timeout** de 5 segundos por intento (`DEPARTAMENTOS_TIMEOUT_MS`), con **hasta 3 reintentos** (`DEPARTAMENTOS_MAX_REINTENTOS`) antes de que el circuito cuente el fallo.
+- **Umbral de apertura**: 4 llamadas mínimas en la ventana (`volumeThreshold`) con 50 % de fallos (`errorThresholdPercentage`).
+- **Estado `OPEN`**: las llamadas se bloquean de inmediato (sin tocar la red) y se ejecuta el fallback.
+- **Estado `HALF_OPEN`**: tras 30 segundos (`resetTimeout`), la siguiente petición real se deja pasar como prueba.
+
+**Decisión de negocio del fallback** (disponibilidad sobre consistencia inmediata): cuando no se puede verificar el departamento, el empleado **se registra igual**, con `estado: "PENDIENTE_VALIDACION"` — RRHH sigue pudiendo trabajar mientras `departamentos-service` está caído, en vez de bloquear todos los registros con un `503`. El estado que el cliente pidió originalmente (`ACTIVO`, `EN_VACACIONES`, etc.) se conserva internamente como `estadoDeseado`.
+
+**Reconciliación automática**: cuando el circuito pasa a `CLOSED` (la dependencia volvió a responder), se dispara automáticamente una revalidación de todos los empleados en `PENDIENTE_VALIDACION`: si el departamento ya existe, el empleado pasa a su `estadoDeseado` original; si sigue sin poder verificarse, queda pendiente para el próximo cierre del circuito. No requiere reiniciar ningún contenedor ni intervención manual — ver el listener `breaker.on("close", ...)` en `src/server.js`.
 
 ## Estructura del código
 
 ```
 src/
-├── clients/departamentos.client.js          # Cliente HTTP hacia departamentos-service (timeout + reintentos)
+├── clients/departamentos.client.js          # Cliente HTTP + Circuit Breaker (opossum) hacia departamentos-service
 ├── db/pool.js                               # Pool de conexión a PostgreSQL
-├── dominio/empleado.js                      # Modelo canónico + validaciones (propio de este servicio)
+├── dominio/empleado.js                      # Modelo canónico + validaciones + estado PENDIENTE_VALIDACION (propio de este servicio)
 ├── repository/
 │   ├── empleados.repository.postgres.js     # Persistencia real (usada en Docker/producción)
 │   └── empleados.repository.memoria.js      # Implementación en memoria (usada en tests unitarios)
 ├── routes/empleados.routes.js               # Definición de rutas Express
-├── services/empleados.service.js            # Lógica de negocio y validaciones
+├── services/empleados.service.js            # Lógica de negocio, validaciones y reconciliarPendientes()
 ├── openapi.js                               # Especificación OpenAPI + Swagger UI (/docs)
 ├── errores.js                               # Clase AppError
 ├── app.js                                   # Capa HTTP (Express) + manejo de errores
-└── server.js                                # Punto de entrada
+└── server.js                                # Punto de entrada; conecta el evento "close" del circuito con la reconciliación
 ```
 
 Todo el código de este servicio vive dentro de esta carpeta: no depende de ningún paquete compartido con otros microservicios (antes existía `@talentflow/shared`; se eliminó en el Reto 2 porque ese patrón es de monolito, no de microservicios — ver nota en el README raíz).
@@ -98,7 +105,7 @@ Todo el código de este servicio vive dentro de esta carpeta: no depende de ning
 
 ## Base de datos
 
-PostgreSQL. El esquema se crea automáticamente desde `init.sql` (montado en `/docker-entrypoint-initdb.d/`) la primera vez que el volumen `vol-empleados` está vacío.
+PostgreSQL. El esquema se crea automáticamente desde `init.sql` (montado en `/docker-entrypoint-initdb.d/`) la primera vez que el volumen `vol-empleados` está vacío. Desde el Reto 3, la tabla `empleados` incluye `PENDIENTE_VALIDACION` en el `CHECK` de `estado`, más la columna `estado_deseado` para la reconciliación.
 
 ## Construcción y ejecución (Docker)
 
@@ -125,7 +132,7 @@ Requiere una instancia de PostgreSQL accesible con las variables de entorno de a
 npm test
 ```
 
-Los tests unitarios usan el repositorio en memoria (`empleados.repository.memoria.js`), no PostgreSQL.
+Los tests unitarios usan el repositorio en memoria (`empleados.repository.memoria.js`), no PostgreSQL. Incluyen casos para el registro con `PENDIENTE_VALIDACION` y para `reconciliarPendientes()`.
 
 ## Documentación OpenAPI
 
