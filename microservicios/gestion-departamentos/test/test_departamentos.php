@@ -17,10 +17,15 @@
  *
  * Uso:
  *   php test_departamentos.php
- *   TEST_BASE_URL=http://localhost:8081 php test_departamentos.php
+ *   TEST_BASE_URL=http://localhost:8080 php test_departamentos.php
+ *
+ * Nota (Reto 3): desde que existe el API Gateway, departamentos-service ya no
+ * publica su puerto al host (pasó de "ports: 8081:8081" a "expose: 8082").
+ * Por eso el default ahora apunta al Gateway (:8080), que enruta /departamentos
+ * hacia el servicio interno — las rutas y respuestas no cambiaron, solo el puerto.
  */
 
-$baseUrl = getenv('TEST_BASE_URL') ?: 'http://localhost:8081';
+$baseUrl = getenv('TEST_BASE_URL') ?: 'http://localhost:8080';
 
 $totalPruebas = 0;
 $totalFallos = 0;

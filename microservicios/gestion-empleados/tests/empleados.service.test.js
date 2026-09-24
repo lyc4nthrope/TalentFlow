@@ -17,6 +17,8 @@ const EMPLEADO_VALIDO = {
   fechaIngreso: "2026-02-10"
 };
 
+// existe: true = existe, false = confirmado que no existe, null = no se pudo
+// verificar (Circuit Breaker abierto o reintentos agotados).
 function clienteDepartamentosFalso({ existe = true } = {}) {
   return { existe: async () => existe };
 }
@@ -134,25 +136,78 @@ describe("Servicio de empleados", () => {
       );
     });
 
-    it("propaga el error 503 cuando el servicio de departamentos no responde", async () => {
-      const clienteQueFalla = {
-        existe: async () => {
-          throw new AppError("No fue posible verificar el departamento IT", 503);
-        }
-      };
-      const servicioConFallo = crearServicioEmpleados(
+    // Antes: "propaga el error 503 cuando el servicio de departamentos no responde".
+    // Ya no es correcto: cuando el Circuit Breaker está abierto o los reintentos se
+    // agotan, existe() devuelve null (nunca lanza), y el registro NO se rechaza —
+    // se acepta con PENDIENTE_VALIDACION (decisión de equipo, Reto 3).
+    it("registra con PENDIENTE_VALIDACION cuando no se pudo verificar el departamento (Circuit Breaker abierto)", async () => {
+      const servicioSinVerificar = crearServicioEmpleados(
         crearRepositorioEmpleadosEnMemoria(),
-        clienteQueFalla
+        clienteDepartamentosFalso({ existe: null })
       );
 
-      await assert.rejects(
-        () => servicioConFallo.registrar(EMPLEADO_VALIDO),
-        (error) => {
-          assert.ok(error instanceof AppError);
-          assert.equal(error.codigoEstado, 503);
-          return true;
-        }
+      const registrado = await servicioSinVerificar.registrar(EMPLEADO_VALIDO);
+
+      assert.equal(registrado.estado, "PENDIENTE_VALIDACION");
+      // Se conserva el estado que el cliente pidió originalmente, para
+      // restaurarlo cuando reconciliarPendientes() confirme el departamento.
+      assert.equal(registrado.estadoDeseado, "ACTIVO");
+    });
+
+    it("preserva un estadoDeseado distinto de ACTIVO cuando se pide explícitamente", async () => {
+      const servicioSinVerificar = crearServicioEmpleados(
+        crearRepositorioEmpleadosEnMemoria(),
+        clienteDepartamentosFalso({ existe: null })
       );
+
+      const registrado = await servicioSinVerificar.registrar({
+        ...EMPLEADO_VALIDO,
+        estado: "EN_VACACIONES"
+      });
+
+      assert.equal(registrado.estado, "PENDIENTE_VALIDACION");
+      assert.equal(registrado.estadoDeseado, "EN_VACACIONES");
+    });
+  });
+
+  describe("reconciliarPendientes", () => {
+    it("valida los pendientes y restaura su estadoDeseado cuando el departamento ya existe", async () => {
+      const repo = crearRepositorioEmpleadosEnMemoria();
+      let departamentoDisponible = false;
+      const clienteIntermitente = { existe: async () => (departamentoDisponible ? true : null) };
+
+      const servicioIntermitente = crearServicioEmpleados(repo, clienteIntermitente);
+      const registrado = await servicioIntermitente.registrar(EMPLEADO_VALIDO);
+      assert.equal(registrado.estado, "PENDIENTE_VALIDACION");
+
+      departamentoDisponible = true;
+      const resultado = await servicioIntermitente.reconciliarPendientes();
+
+      assert.equal(resultado.total, 1);
+      assert.equal(resultado.reconciliados, 1);
+
+      const actualizado = await servicioIntermitente.consultarPorId("E001");
+      assert.equal(actualizado.estado, "ACTIVO");
+    });
+
+    it("deja al empleado pendiente si el departamento sigue sin poder verificarse", async () => {
+      const repo = crearRepositorioEmpleadosEnMemoria();
+      const servicioSinVerificar = crearServicioEmpleados(repo, clienteDepartamentosFalso({ existe: null }));
+
+      await servicioSinVerificar.registrar(EMPLEADO_VALIDO);
+      const resultado = await servicioSinVerificar.reconciliarPendientes();
+
+      assert.equal(resultado.total, 1);
+      assert.equal(resultado.reconciliados, 0);
+
+      const sigue = await servicioSinVerificar.consultarPorId("E001");
+      assert.equal(sigue.estado, "PENDIENTE_VALIDACION");
+    });
+
+    it("no hace nada cuando no hay empleados pendientes", async () => {
+      const resultado = await servicio.reconciliarPendientes();
+      assert.equal(resultado.total, 0);
+      assert.equal(resultado.reconciliados, 0);
     });
   });
 
