@@ -53,7 +53,17 @@ function crearClienteDepartamentos({
     errorThresholdPercentage,
     resetTimeout,
     volumeThreshold: 4,
-    capacity: 10
+    capacity: 10,
+    // La ventana por defecto de opossum es de 10s (rollingCountTimeout), pero cada
+    // llamada completa (timeout de conexión + reintentos) puede tardar ~10s cuando
+    // departamentos está totalmente caído (no hay ECONNREFUSED inmediato, hay que
+    // esperar el timeout de conexión TCP en cada intento). Con la ventana por
+    // defecto, las estadísticas de una llamada caducan antes de que la siguiente
+    // termine, y el circuito nunca junta el volumeThreshold necesario para abrir.
+    // Se amplía a 60s (10 cubos de 6s) para que varias llamadas lentas sí caigan
+    // dentro de la misma ventana estadística.
+    rollingCountTimeout: 60000,
+    rollingCountBuckets: 10
   };
 
   const breaker = new CircuitBreaker(realizarPeticionConReintentos, breakerOptions);
@@ -65,9 +75,9 @@ function crearClienteDepartamentos({
   // La decisión de qué hacer con "null" es del servicio de negocio, no del cliente HTTP.
   breaker.fallback(() => null);
 
-  breaker.on("open", () => console.warn(" Circuit Breaker ABIERTO para Departamentos"));
+  breaker.on("open", () => console.warn("⚠️ Circuit Breaker ABIERTO para Departamentos"));
   breaker.on("halfOpen", () => console.info("🔄 Circuit Breaker HALF-OPEN para Departamentos"));
-  breaker.on("close", () => console.info(" Circuit Breaker CERRADO para Departamentos"));
+  breaker.on("close", () => console.info("✅ Circuit Breaker CERRADO para Departamentos"));
 
   async function existe(departamentoId) {
     return await breaker.fire(departamentoId);

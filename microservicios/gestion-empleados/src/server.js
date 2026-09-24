@@ -20,6 +20,17 @@ const clienteDepartamentos = crearClienteDepartamentos({
     : 3
 });
 const servicio = crearServicioEmpleados(repositorio, clienteDepartamentos);
+
+// Cuando el Circuit Breaker pasa a CLOSED (departamentos volvió a responder),
+// se dispara la reconciliación de los empleados que quedaron en
+// PENDIENTE_VALIDACION mientras el circuito estuvo abierto (decisión de equipo:
+// "reactivo al propio Circuit Breaker", ver docs/arquitectura.md).
+clienteDepartamentos.breaker.on("close", () => {
+  servicio.reconciliarPendientes().catch((error) => {
+    console.error("Error al reconciliar empleados pendientes de validación:", error);
+  });
+});
+
 const app = crearApp(servicio);
 
 app.listen(PUERTO, () => {

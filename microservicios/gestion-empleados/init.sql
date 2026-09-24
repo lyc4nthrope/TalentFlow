@@ -1,6 +1,7 @@
 -- Modelo de base de datos para el microservicio de gestión de empleados
 -- Motor: PostgreSQL (ver docker-compose.yml -> database-empleados)
 
+
 CREATE TABLE IF NOT EXISTS empleados (
     id                VARCHAR(20)  PRIMARY KEY,
     nombre            VARCHAR(100) NOT NULL,
@@ -12,9 +13,12 @@ CREATE TABLE IF NOT EXISTS empleados (
     departamento_id   VARCHAR(20)  NOT NULL,
     fecha_ingreso     DATE         NOT NULL,
     estado            VARCHAR(20)  NOT NULL DEFAULT 'ACTIVO'
-                       CHECK (estado IN ('ACTIVO', 'EN_VACACIONES', 'RETIRADO')),
+                       CHECK (estado IN ('ACTIVO', 'EN_VACACIONES', 'RETIRADO', 'PENDIENTE_VALIDACION')),
+    estado_deseado    VARCHAR(20)
+                       CHECK (estado_deseado IS NULL OR estado_deseado IN ('ACTIVO', 'EN_VACACIONES', 'RETIRADO')),
     creado_en         TIMESTAMP    NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_empleados_departamento_id ON empleados (departamento_id);
 CREATE INDEX IF NOT EXISTS idx_empleados_email ON empleados (email);
+CREATE INDEX IF NOT EXISTS idx_empleados_estado ON empleados (estado);

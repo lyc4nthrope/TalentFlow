@@ -1,5 +1,9 @@
 const { AppError } = require("../errores");
-const { crearEmpleado, ESTADO_PENDIENTE_VALIDACION } = require("../dominio/empleado");
+const {
+  crearEmpleado,
+  ESTADO_INICIAL,
+  ESTADO_PENDIENTE_VALIDACION
+} = require("../dominio/empleado");
 
 function crearServicioEmpleados(repositorio, clienteDepartamentos) {
   async function registrar(datos) {
@@ -23,8 +27,6 @@ function crearServicioEmpleados(repositorio, clienteDepartamentos) {
       ]);
     }
 
-    // existe(): true = existe, false = confirmado que NO existe (404 real),
-    // null = no se pudo verificar (Circuit Breaker abierto o reintentos agotados).
     const departamentoExiste = await clienteDepartamentos.existe(empleado.departamentoId);
 
     if (departamentoExiste === false) {
@@ -38,11 +40,13 @@ function crearServicioEmpleados(repositorio, clienteDepartamentos) {
     }
 
     if (departamentoExiste === null) {
-      // Circuit Breaker abierto o dependencia caída tras agotar reintentos:
-      // no se rechaza el registro, queda pendiente de validar cuando el
-      // circuito se recupere (decisión de equipo — disponibilidad sobre
-      // consistencia inmediata, con reconciliación al cerrar el circuito).
-      return repositorio.guardar({ ...empleado, estado: ESTADO_PENDIENTE_VALIDACION });
+      // Se preserva el estado que el cliente realmente pidió (estadoDeseado) para
+      // restaurarlo cuando reconciliarPendientes() confirme el departamento.
+      return repositorio.guardar({
+        ...empleado,
+        estado: ESTADO_PENDIENTE_VALIDACION,
+        estadoDeseado: empleado.estado
+      });
     }
 
     return repositorio.guardar(empleado);
@@ -60,10 +64,37 @@ function crearServicioEmpleados(repositorio, clienteDepartamentos) {
     return repositorio.listar();
   }
 
+  // Se dispara cuando el Circuit Breaker cierra (departamentos volvió a responder).
+  // Revalida cada empleado en PENDIENTE_VALIDACION contra departamentos y, si ya
+  // existe, lo pasa a su estadoDeseado original. Si sigue sin existir o el circuito
+  // vuelve a abrirse a mitad de la reconciliación, se deja pendiente para el próximo cierre.
+  async function reconciliarPendientes() {
+    const pendientes = await repositorio.buscarPendientesDeValidacion();
+    let reconciliados = 0;
+
+    for (const empleado of pendientes) {
+      const existeAhora = await clienteDepartamentos.existe(empleado.departamentoId);
+      if (existeAhora === true) {
+        await repositorio.actualizarEstado(empleado.id, empleado.estadoDeseado || ESTADO_INICIAL);
+        reconciliados += 1;
+      }
+      // false o null: se deja igual, se reintentará en el próximo cierre del circuito.
+    }
+
+    if (pendientes.length > 0) {
+      console.info(
+        `🔁 Reconciliación: ${reconciliados}/${pendientes.length} empleados pendientes validados`
+      );
+    }
+
+    return { total: pendientes.length, reconciliados };
+  }
+
   return {
     registrar,
     consultarPorId,
-    listar
+    listar,
+    reconciliarPendientes
   };
 }
 

@@ -2,7 +2,7 @@ const { AppError } = require("../errores");
 
 function filaAEmpleado(fila) {
   if (!fila) return null;
-  return {
+  const empleado = {
     id: fila.id,
     nombre: fila.nombre,
     apellido: fila.apellido,
@@ -17,6 +17,12 @@ function filaAEmpleado(fila) {
         : fila.fecha_ingreso,
     estado: fila.estado
   };
+  // Solo se incluye cuando el empleado está pendiente de validación; para el resto
+  // no aparece en la respuesta (no ensucia el esquema documentado en OpenAPI).
+  if (fila.estado_deseado) {
+    empleado.estadoDeseado = fila.estado_deseado;
+  }
+  return empleado;
 }
 
 function crearRepositorioEmpleadosPostgres(pool) {
@@ -24,8 +30,8 @@ function crearRepositorioEmpleadosPostgres(pool) {
     async guardar(empleado) {
       const texto = `
         INSERT INTO empleados
-          (id, nombre, apellido, email, numero_empleado, cargo, area, departamento_id, fecha_ingreso, estado)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          (id, nombre, apellido, email, numero_empleado, cargo, area, departamento_id, fecha_ingreso, estado, estado_deseado)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING *
       `;
       const valores = [
@@ -38,7 +44,8 @@ function crearRepositorioEmpleadosPostgres(pool) {
         empleado.area,
         empleado.departamentoId,
         empleado.fechaIngreso,
-        empleado.estado
+        empleado.estado,
+        empleado.estadoDeseado ?? null
       ];
       try {
         const resultado = await pool.query(texto, valores);
@@ -97,6 +104,25 @@ function crearRepositorioEmpleadosPostgres(pool) {
     async listar() {
       const resultado = await pool.query("SELECT * FROM empleados ORDER BY creado_en ASC");
       return resultado.rows.map(filaAEmpleado);
+    },
+
+    // Nuevo: empleados que quedaron pendientes de validar el departamento
+    // mientras el Circuit Breaker estaba abierto.
+    async buscarPendientesDeValidacion() {
+      const resultado = await pool.query(
+        "SELECT * FROM empleados WHERE estado = 'PENDIENTE_VALIDACION' ORDER BY creado_en ASC"
+      );
+      return resultado.rows.map(filaAEmpleado);
+    },
+
+    // Nuevo: usado por la reconciliación para restaurar el estado real del
+    // empleado una vez que se confirma que el departamento sí existe.
+    async actualizarEstado(id, nuevoEstado) {
+      const resultado = await pool.query(
+        "UPDATE empleados SET estado = $2, estado_deseado = NULL WHERE id = $1 RETURNING *",
+        [id, nuevoEstado]
+      );
+      return filaAEmpleado(resultado.rows[0]);
     }
   };
 }

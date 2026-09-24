@@ -1,3 +1,5 @@
+const { ESTADO_PENDIENTE_VALIDACION } = require("../dominio/empleado");
+
 function crearRepositorioEmpleadosEnMemoria() {
   const empleados = new Map();
 
@@ -32,6 +34,21 @@ function crearRepositorioEmpleadosEnMemoria() {
 
     async listar() {
       return Array.from(empleados.values());
+    },
+
+    async buscarPendientesDeValidacion() {
+      return Array.from(empleados.values()).filter(
+        (empleado) => empleado.estado === ESTADO_PENDIENTE_VALIDACION
+      );
+    },
+
+    async actualizarEstado(id, nuevoEstado) {
+      const empleado = empleados.get(id);
+      if (!empleado) return null;
+      const actualizado = { ...empleado, estado: nuevoEstado };
+      delete actualizado.estadoDeseado;
+      empleados.set(id, actualizado);
+      return actualizado;
     }
   };
 }
