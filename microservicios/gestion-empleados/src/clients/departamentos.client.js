@@ -48,12 +48,27 @@ function crearClienteDepartamentos({
     throw ultimoError;
   }
 
+
+
+    //  breakerOptions||
+    //  La ventana por defecto de opossum es de 10s (rollingCountTimeout), pero cada
+    // llamada completa (timeout de conexión + reintentos) tarda ~9.8s cuando
+    // departamentos está totalmente caído (contenedor detenido, no solo el proceso:
+    // no hay ECONNREFUSED inmediato, hay que esperar el timeout de conexión TCP en
+    // cada intento). Con la ventana por defecto, las estadísticas de una llamada
+    // caducan antes de que la siguiente termine, y el circuito nunca junta el
+    // volumeThreshold necesario para abrir. Se amplía a 60s (10 cubos de 6s) para
+    // que varias llamadas lentas sí caigan dentro de la misma ventana estadística.
+
+  
   const breakerOptions = {
-    timeout: (timeoutMs * (maxReintentos + 1)) + 5000,
+       timeout: (timeoutMs * (maxReintentos + 1)) + 5000,
     errorThresholdPercentage,
     resetTimeout,
     volumeThreshold: 4,
-    capacity: 10
+    capacity: 10,
+    rollingCountTimeout: 60000,
+    rollingCountBuckets: 10
   };
 
   const breaker = new CircuitBreaker(realizarPeticionConReintentos, breakerOptions);
