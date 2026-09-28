@@ -26,7 +26,7 @@ docker compose ps                                  # mostrar: solo api-gateway t
 curl -i http://localhost:8081/departamentos        # conexión rechazada
 curl -i http://localhost:8082/empleados            # conexión rechazada
 curl -i http://localhost:8080/departamentos        # 200 por el Gateway
-curl -i http://localhost:8080/health               # health propio del Gateway
+curl http://localhost:8080/health                  # Gateway UP + estado de cada servicio y del circuito (sistema: OK)
 ```
 
 **Decir:** "Solo el Gateway publica puerto; los servicios usan `expose`. El mismo recurso falla directo y funciona por la URL base `http://localhost:8080`."
@@ -55,6 +55,7 @@ for i in 1 2 3 4 5 6 7 8; do
 done
 curl http://localhost:8080/empleados/circuito-departamentos     # OPEN
 curl http://localhost:8080/empleados/V001                       # validacionDepartamento: PENDIENTE
+curl http://localhost:8080/health    # sistema: DEGRADADO, departamentos-service DOWN, circuito OPEN
 ```
 
 **Señalar:** peticiones 1-4 ≈ 0.6 s, desde la 5ª ≈ 0.01 s; en la terminal B aparece `⚠️ Circuit Breaker ABIERTO`.
@@ -73,6 +74,7 @@ curl -i -X POST http://localhost:8080/empleados -H "Content-Type: application/js
                                                                 # 400: consultó de verdad
 curl http://localhost:8080/empleados/circuito-departamentos     # CLOSED
 curl http://localhost:8080/empleados/V001                       # validacionDepartamento: ACEPTADO
+curl http://localhost:8080/health    # sistema: OK de nuevo
 ```
 
 **Señalar:** en la terminal B, `🔄 HALF-OPEN` → `✅ CERRADO` → `🔁 Reconciliados 8 empleado(s)`.

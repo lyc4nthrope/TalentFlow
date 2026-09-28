@@ -64,6 +64,17 @@ GET /empleados/circuito-departamentos
 
 - **200 OK**: `{ "dependencia": "departamentos-service", "estado": "CLOSED" | "OPEN" | "HALF_OPEN" }`.
 
+### Health check (interno)
+
+```
+GET /health
+```
+
+- **200 OK**: `{ "status": "UP", "service": "empleados-service", "components": { "app": "UP", "db": "UP", "circuitoDepartamentos": "CLOSED" } }`.
+- **503 Service Unavailable**: Postgres no responde en 2 s (`"db": "DOWN"`).
+
+Un circuito `OPEN` no lo marca `DOWN` (el servicio sigue atendiendo con el fallback). Lo usan el `healthcheck` de `docker-compose.yml` y el `GET /health` agregado del Gateway; no es alcanzable desde fuera (el Gateway solo enruta `/empleados/*`).
+
 ### Rutas no soportadas
 
 Cualquier otra ruta o método responde **404** con `Recurso no encontrado`.

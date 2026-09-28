@@ -58,7 +58,7 @@ Enrutamiento **exactamente** el exigido por el Reto 3 — ninguna ruta adicional
 
 | Ruta externa | Servicio interno | Notas |
 |---|---|---|
-| `GET /health` | (el propio Gateway) | Health check propio del Gateway, no hace proxy |
+| `GET /health` | (el propio Gateway) | Health check propio del Gateway (no hace proxy) + estado de cada servicio, su base de datos y el Circuit Breaker — ver [manual del Reto 3](docs/reto-03/README.md#3-dónde-veo-el-estado-de-cada-cosa) |
 | `/empleados/*` | `http://empleados-service:8081` | Cuerpo, cabeceras y código de estado se reenvían sin alterar |
 | `/departamentos/*` | `http://departamentos-service:8082` | Ídem |
 | cualquier otra ruta | — | `404` (no enrutada) |
@@ -137,15 +137,15 @@ docker compose down -v
 
 ## Arranque ordenado — evidencia
 
-`depends_on` por sí solo solo espera a que el *contenedor* arranque, no a que el servicio esté listo. Por eso cada base de datos tiene un `healthcheck` (`pg_isready` / `mysqladmin ping`), `departamentos-service` tiene el suyo propio (consulta su endpoint interno `GET /health`, que también verifica la conexión a MySQL), y `empleados-service` usa `depends_on: condition: service_healthy` contra **ambos**: su base de datos y `departamentos-service` — esto se agregó porque el profesor señaló, revisando el Reto 2, que faltaba esa dependencia explícita. El Gateway sigue con `depends_on` simple (sin `condition`) hacia los dos microservicios: si arranca antes de que alguno esté listo, sus peticiones fallan con el `503` descrito arriba hasta que el servicio responde — no se cae, se degrada. Verificado en este repo: al ejecutar `docker compose up --build` desde cero, `departamentos-service` queda `(healthy)` ANTES de que `empleados-service` arranque, y `docker compose ps` muestra:
+`depends_on` por sí solo solo espera a que el *contenedor* arranque, no a que el servicio esté listo. Por eso cada base de datos tiene un `healthcheck` (`pg_isready` / `mysqladmin ping`), `departamentos-service` tiene el suyo propio (consulta su endpoint interno `GET /health`, que también verifica la conexión a MySQL), `empleados-service` también (su `GET /health` interno verifica Postgres) y usa `depends_on: condition: service_healthy` contra **ambos**: su base de datos y `departamentos-service` — esto se agregó porque el profesor señaló, revisando el Reto 2, que faltaba esa dependencia explícita. El Gateway tiene su propio `healthcheck` (su `/health`) y sigue con `depends_on` simple (sin `condition`) hacia los dos microservicios: si arranca antes de que alguno esté listo, sus peticiones fallan con el `503` descrito arriba hasta que el servicio responde — no se cae, se degrada. Verificado en este repo: al ejecutar `docker compose up --build` desde cero, `departamentos-service` queda `(healthy)` ANTES de que `empleados-service` arranque, y `docker compose ps` muestra:
 
 ```
 NAME               SERVICE                  STATUS                 PORTS
-api-gateway        api-gateway              Up                     0.0.0.0:8080->8080/tcp
+api-gateway        api-gateway              Up (healthy)           0.0.0.0:8080->8080/tcp
 db-departamentos   database-departamentos   Up (healthy)           (sin publicar)
 db-empleados       database-empleados       Up (healthy)           (sin publicar)
 ms-departamentos   departamentos-service    Up (healthy)           (sin publicar)
-ms-empleados       empleados-service        Up                     (sin publicar)
+ms-empleados       empleados-service        Up (healthy)           (sin publicar)
 ```
 
 ## Persistencia de datos — evidencia
@@ -277,6 +277,7 @@ Todo en [`docs/reto-03/`](docs/reto-03/):
 
 | Entregable | Archivo |
 |---|---|
+| **Manual paso a paso**: levantar el sistema, ver el estado de cada componente y ejecutar todas las pruebas del reto | [`README.md`](docs/reto-03/README.md) |
 | Resultados reales de las pruebas 3.1, 3.2 y 3.3 del reto (acceso directo rechazado, salto de tiempo, recuperación automática, reconciliación) | [`pruebas.md`](docs/reto-03/pruebas.md) |
 | Script que ejecuta esas pruebas de punta a punta: `bash docs/reto-03/demo.sh` | [`demo.sh`](docs/reto-03/demo.sh) |
 | Colección **Bruno** con la URL base del sistema (`http://localhost:8080`) y tests por petición: `cd docs/reto-03/bruno && npx @usebruno/cli run --env Local` | [`bruno/`](docs/reto-03/bruno/) |

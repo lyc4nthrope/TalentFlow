@@ -20,6 +20,12 @@ empleado() { # $1=id $2=departamentoId
     "$1" "$1" "$1" "$2"
 }
 
+estado_sistema() {
+  printf 'GET /health -> '
+  curl -s "$BASE_URL/health"
+  echo
+}
+
 estado_circuito() {
   printf 'Estado del circuito: '
   curl -s "$BASE_URL/empleados/circuito-departamentos"
@@ -49,12 +55,13 @@ for url in "http://localhost:8081/departamentos" "http://localhost:8082/empleado
     printf 'GET %-40s -> conexión rechazada (curl exit %s)\n' "$url" "$?"
   fi
 done
-printf 'GET %s/health -> ' "$BASE_URL"; curl -s "$BASE_URL/health"; echo
+estado_sistema
 
 titulo "3.2 Manejo de errores del Gateway"
 docker compose stop departamentos-service >/dev/null 2>&1
 echo "departamentos-service detenido"
 curl -s -i "$BASE_URL/departamentos" | grep -iE '^HTTP|^content-type|^\{'
+estado_sistema
 docker compose start departamentos-service >/dev/null 2>&1
 esperar_departamentos_healthy
 echo "departamentos-service restaurado (healthy)"
@@ -99,6 +106,7 @@ for id in "R${RUN}01" "R${RUN}08" "R${RUN}BAD"; do
   curl -s "$BASE_URL/empleados/$id" | grep -o '"departamentoId":"[A-Z-]*"\|"validacionDepartamento":"[A-Z]*"' | tr '\n' ' '
   echo
 done
+estado_sistema
 echo "Log de empleados-service:"
 docker compose logs --no-log-prefix empleados-service 2>/dev/null \
   | grep -E 'ABIERTO|HALF-OPEN|CERRADO|Reconciliados' | tail -4 | cut -c1-80
