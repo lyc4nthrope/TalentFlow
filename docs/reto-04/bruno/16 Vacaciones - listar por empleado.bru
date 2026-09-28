@@ -1,0 +1,18 @@
+meta {
+  name: Vacaciones - listar por empleado
+  type: http
+  seq: 16
+}
+
+get {
+  url: {{baseUrl}}/vacaciones?empleadoId={{empleadoId}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("200 con el período programado", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().map((v) => v.id)).to.include(bru.getVar("vacacionesId"));
+  });
+}

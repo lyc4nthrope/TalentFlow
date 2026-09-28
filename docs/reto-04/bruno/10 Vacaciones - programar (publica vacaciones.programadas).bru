@@ -1,0 +1,32 @@
+meta {
+  name: Vacaciones - programar (publica vacaciones.programadas)
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/vacaciones
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "empleadoId": "{{empleadoId}}",
+    "fechaInicio": "{{vacInicio}}",
+    "fechaFin": "{{vacFin}}"
+  }
+}
+
+tests {
+  test("201 PROGRAMADA con Location", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().estado).to.equal("PROGRAMADA");
+    expect(res.getBody().id).to.match(/^V-\d{4}-\d{4}$/);
+    bru.setVar("vacacionesId", res.getBody().id);
+  });
+}
