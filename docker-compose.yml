@@ -59,10 +59,12 @@ services:
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
       NOTIFICACIONES_SERVICE_URL: http://notificaciones-service:8084
+      PERFILES_SERVICE_URL: http://perfiles-service:8083
     depends_on:
       - empleados-service
       - departamentos-service
       - notificaciones-service
+      - perfiles-service
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -198,6 +200,63 @@ services:
     networks:
       - microservices-network
 
+  # Base de Datos Perfiles (PostgreSQL) — propia del servicio (Reto 4)
+  database-perfiles:
+    image: postgres:16-alpine
+    container_name: db-perfiles
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_PERFILES_NAME:-db_perfiles}
+      POSTGRES_USER: ${DB_PERFILES_USER:-user_perfiles}
+      POSTGRES_PASSWORD: ${DB_PERFILES_PASS:-pass_perfiles}
+    expose:
+      - "5432"
+    volumes:
+      - vol-perfiles:/var/lib/postgresql/data
+      - ./microservicios/gestion-perfiles/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_PERFILES_USER:-user_perfiles} -d ${DB_PERFILES_NAME:-db_perfiles}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Microservicio Perfiles (Python + FastAPI) — consume eventos y expone REST (Reto 4)
+  perfiles-service:
+    build:
+      context: ./microservicios/gestion-perfiles
+      dockerfile: Dockerfile
+      target: runner
+    container_name: ms-perfiles
+    restart: on-failure
+    expose:
+      - "8083"
+    environment:
+      DB_HOST: database-perfiles
+      DB_PORT: 5432
+      DB_NAME: ${DB_PERFILES_NAME:-db_perfiles}
+      DB_USER: ${DB_PERFILES_USER:-user_perfiles}
+      DB_PASS: ${DB_PERFILES_PASS:-pass_perfiles}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+      RABBITMQ_COLA: perfiles.eventos
+    depends_on:
+      database-perfiles:
+        condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8083/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - microservices-network
+
   # Message Broker (RabbitMQ) — comunicación asincrónica por eventos (Reto 4)
   message-broker:
     image: rabbitmq:3.13-management-alpine
@@ -254,3 +313,4 @@ volumes:
   vol-departamentos:
   vol-rabbitmq:
   vol-notificaciones:
+  vol-perfiles:

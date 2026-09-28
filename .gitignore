@@ -10,3 +10,10 @@ coverage/
 secrets/
 .vscode/
 .atl/
+
+# Python (Reto 4: gestion-perfiles)
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/

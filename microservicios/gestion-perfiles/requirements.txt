@@ -1,0 +1,7 @@
+# Dependencias de ejecución (versiones fijas: builds reproducibles).
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+pydantic==2.13.5
+psycopg[binary]==3.3.6
+psycopg-pool==3.3.3
+aio-pika==10.1.0
