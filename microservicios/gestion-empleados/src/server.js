@@ -20,7 +20,9 @@ const clienteDepartamentos = crearClienteDepartamentos({
     : 3
 });
 const servicio = crearServicioEmpleados(repositorio, clienteDepartamentos);
-const app = crearApp(servicio, clienteDepartamentos);
+const app = crearApp(servicio, clienteDepartamentos, {
+  verificarBaseDeDatos: () => pool.query("SELECT 1")
+});
 
 // Cuando el Circuit Breaker vuelve a CERRAR (departamentos-service se restableció),
 // revisa automáticamente a los empleados que quedaron PENDIENTE y los mueve a
