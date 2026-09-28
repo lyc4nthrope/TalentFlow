@@ -2,45 +2,51 @@
 
 Sistema de onboarding y offboarding de empleados basado en una arquitectura orientada a microservicios.
 
-## Arquitectura (Reto 3 — API Gateway + Circuit Breaker)
+## Arquitectura (Reto 4 — comunicación asincrónica por eventos)
 
-Desde el Reto 3 el sistema tiene un **único punto de entrada**. Ningún microservicio ni base de datos publica puerto al host: todos usan `expose` (solo visibles dentro de la red de Docker). El único servicio con `ports:` es `api-gateway`.
+El sistema tiene un **único punto de entrada** (el API Gateway, Reto 3) y, desde el Reto 4, **comunicación asincrónica**: los servicios publican y consumen eventos a través de un **message broker (RabbitMQ)**. Un solo evento — por ejemplo `empleado.creado` — dispara reacciones automáticas e independientes en varios servicios (*fan-out*). Ningún microservicio ni base de datos publica puerto al host: solo el Gateway (`8080`) y la UI de administración del broker (`15672`, ver [por qué](#puertos-del-broker-la-única-excepción-al-gateway)).
 
 ```
-                         Cliente HTTP (curl, Postman, Bruno)
-                                       │
-                                única URL base
-                                       ▼
-                         ┌─────────────────────────┐
-                         │   api-gateway  :8080     │  ← único puerto publicado al host
-                         │  (Node.js + Express +    │
-                         │   http-proxy-middleware) │
-                         └────────────┬─────────────┘
-                       /empleados/*   │   /departamentos/*
-                    ┌──────────────────┴──────────────────┐
-                    ▼                                     ▼
-         empleados-service :8081                departamentos-service :8082
-         (Node.js + Express)                     (PHP nativo)
-                    │   HTTP REST + Circuit Breaker (opossum)
-                    └────────────────────────────────────► departamentos-service
-                    │                                     │
-                    ▼                                     ▼
-         database-empleados :5432                database-departamentos :3306
-         (PostgreSQL, expose interno)             (MySQL, expose interno)
-                    │                                     │
-                    ▼                                     ▼
-              vol-empleados                         vol-departamentos
+                          Cliente HTTP (curl, Postman, Bruno)
+                                         │  única URL base
+                                         ▼
+                           ┌───────────────────────────┐
+                           │     api-gateway  :8080     │ ← único puerto de la API
+                           └─────────────┬─────────────┘
+     /empleados   /departamentos  │  /perfiles   /notificaciones   /vacaciones
+        ┌───────────────┬─────────┴──────┬────────────────┬───────────────┐
+        ▼               ▼                ▼                ▼               ▼
+  empleados :8081  departamentos   perfiles :8083  notificaciones  vacaciones :8085
+  (Node.js)        :8082 (PHP)     (Python)        :8084 (Go)      (Java)
+     │  │  REST + Circuit Breaker ▲      ▲  ▲             ▲  ▲          │  ▲
+     │  └─────────────────────────┘      │  │             │  │          │  │
+     │ publica                   consume │  │ consume     │  │ consume  │  │ consume
+     │ empleado.creado/actualizado/      │  │             │  │          │  │
+     │ retirado                          │  │             │  │ publica  │  │
+     ▼                                   │  │             │  │ vacaciones.programadas
+  ┌──────────────────────────────────────┴──┴─────────────┴──┴──────────┴──┴──┐
+  │  message-broker (RabbitMQ) — exchange topic "talentflow.eventos"           │
+  │  colas: perfiles.eventos · notificaciones.eventos · vacaciones.eventos     │
+  └────────────────────────────────────────────────────────────────────────────┘
+  Cada servicio con su propia base de datos (nunca compartida):
+  db-empleados (PostgreSQL) · db-departamentos (MySQL) · db-perfiles · db-notificaciones · db-vacaciones (PostgreSQL)
 ```
 
-| Servicio | Lenguaje | Puerto interno | Puerto al host |
-|---|---|---|---|
-| **api-gateway** | Node.js + Express + `http-proxy-middleware` | 8080 | **8080 (único)** |
-| empleados-service | Node.js + Express | 8081 | — (`expose` interno) |
-| departamentos-service | PHP 8.2 (servidor nativo) | 8082 | — (`expose` interno) |
-| database-empleados | PostgreSQL 16 | 5432 | — (`expose` interno) |
-| database-departamentos | MySQL 8.0 | 3306 | — (`expose` interno) |
+### Servicios y lenguajes
 
-`empleados-service` no accede a la base de datos de `departamentos-service` ni viceversa: cada servicio solo habla con su propia base de datos y con el otro servicio por HTTP, siempre a través de su nombre de servicio en la red de Docker (nunca `localhost`, nunca IPs fijas).
+El proyecto final exige al menos **4 lenguajes distintos**; el ecosistema ya tiene **5**. Los tres servicios del Reto 4 están en lenguajes distintos entre sí y distintos de los de empleados y departamentos, como exige el reto:
+
+| Servicio | Lenguaje / framework | Rol | Puerto interno | Base de datos propia |
+|---|---|---|---|---|
+| **api-gateway** | **Node.js** + Express + `http-proxy-middleware` | Punto de entrada único | 8080 (**publicado**) | — |
+| empleados-service | **Node.js** + Express | REST + **productor** de eventos | 8081 | PostgreSQL 16 |
+| departamentos-service | **PHP** 8.2 (servidor nativo) | REST | 8082 | MySQL 8.0 |
+| perfiles-service | **Python** 3.13 + FastAPI | **Consume** eventos + REST | 8083 | PostgreSQL 16 |
+| notificaciones-service | **Go** 1.25 (`net/http`) | **Solo consume** eventos (puramente reactivo) | 8084 | PostgreSQL 16 |
+| vacaciones-service | **Java** 17 + Spring Boot 3.5 | REST + **productor** de eventos (+ réplica por eventos) | 8085 | PostgreSQL 16 |
+| message-broker | RabbitMQ 3.13 (management) | Mensajería | 5672 interno · UI 15672 (**publicada**) | — |
+
+Ningún servicio accede a la base de datos de otro: se comunican solo por **HTTP a través de su nombre en la red de Docker** (nunca `localhost` ni IPs fijas) o por **eventos**.
 
 ### El Gateway: por qué un Gateway de aplicación (no Nginx/Traefik)
 
@@ -58,9 +64,12 @@ Enrutamiento por prefijo, sin rutas adicionales en el Gateway. La documentación
 
 | Ruta externa | Servicio interno | Notas |
 |---|---|---|
-| `GET /health` | (el propio Gateway) | Health check propio del Gateway (no hace proxy) + estado de cada servicio, su base de datos y el Circuit Breaker — ver [manual del Reto 3](docs/reto-03/README.md#3-dónde-veo-el-estado-de-cada-cosa) |
+| `GET /health` | (el propio Gateway) | Salud propia del Gateway (no hace proxy) + estado de los 5 servicios, su base de datos, el Circuit Breaker y su conexión al broker; `problemas` explica por qué el sistema está `DEGRADADO` — ver [manual del Reto 4](docs/reto-04/README.md) |
 | `/empleados/*` | `http://empleados-service:8081` | Cuerpo, cabeceras y código de estado se reenvían sin alterar |
 | `/departamentos/*` | `http://departamentos-service:8082` | Ídem |
+| `/perfiles/*` | `http://perfiles-service:8083` | Ídem (Reto 4) |
+| `/notificaciones/*` | `http://notificaciones-service:8084` | Ídem (Reto 4) |
+| `/vacaciones/*` | `http://vacaciones-service:8085` | Ídem (Reto 4) |
 | cualquier otra ruta | — | `404` en JSON (`{"error", "message", "path"}`) del propio Gateway, no la página por defecto de Express |
 
 **URL base del sistema (desde el Reto 3 en adelante): `http://localhost:8080`**
@@ -73,14 +82,18 @@ Si el servicio destino no responde (caído, timeout de conexión), el Gateway re
 TalentFlow/
 ├── microservicios/
 │   ├── api-gateway/                   # Reto 3 (Node.js + Express) — único punto de entrada
-│   ├── gestion-empleados/             # Reto 1 + 2 + 3 (Node.js + Postgres, Circuit Breaker) — autónomo
-│   └── gestion-departamentos/         # Reto 2 (PHP + MySQL) — autónomo
-├── docs/                              # Evidencia y decisiones por reto
-├── docker-compose.yml                 # Orquesta todos los microservicios
-└── package.json                       # npm workspaces (solo tooling de desarrollo, ver nota abajo)
+│   ├── gestion-empleados/             # Retos 1-4 (Node.js + Postgres, Circuit Breaker, productor de eventos)
+│   ├── gestion-departamentos/         # Reto 2 (PHP + MySQL)
+│   ├── gestion-perfiles/              # Reto 4 (Python + FastAPI + Postgres) — consume eventos + REST
+│   ├── notificaciones/                # Reto 4 (Go + Postgres) — solo consume eventos
+│   └── gestion-vacaciones/            # Reto 4 (Java + Spring Boot + Postgres) — REST + productor de eventos
+├── infra/rabbitmq/                    # Reto 4: topología de eventos (exchange, colas, bindings) + su importación
+├── docs/                              # Manuales, evidencia y decisiones por reto (reto-03/, reto-04/, eventos.md…)
+├── docker-compose.yml                 # Orquesta todo el sistema (un solo comando)
+└── package.json                       # npm workspaces de los servicios Node (solo tooling de desarrollo)
 ```
 
-> **Nota — no existe código compartido entre microservicios.** Hasta el Reto 1 existía un paquete `shared/` con el modelo de empleado y la clase de error, importado por `gestion-empleados`. Es un patrón de monolito (un "shared kernel" entre servicios) y se corrigió en el Reto 2: ese código ahora vive únicamente dentro de `microservicios/gestion-empleados/src/` (`errores.js` y `dominio/empleado.js`). Ningún microservicio importa código de negocio de otro ni de un paquete común — si dos servicios necesitan la misma validación, cada uno la implementa por su cuenta; la única comunicación permitida entre ellos es HTTP. `package.json` en la raíz sigue usando `npm workspaces`, pero solo como conveniencia de desarrollo (instalar una vez, correr `npm test` en todos) — ninguna dependencia real cruza de un servicio a otro, y el `Dockerfile` de cada servicio no depende del código de ningún otro.
+> **Nota — no existe código compartido entre microservicios.** Hasta el Reto 1 existía un paquete `shared/` con el modelo de empleado y la clase de error, importado por `gestion-empleados`. Es un patrón de monolito (un "shared kernel" entre servicios) y se corrigió en el Reto 2: ese código ahora vive únicamente dentro de `microservicios/gestion-empleados/src/` (`errores.js` y `dominio/empleado.js`). Ningún microservicio importa código de negocio de otro ni de un paquete común — si dos servicios necesitan la misma validación, cada uno la implementa por su cuenta; la única comunicación permitida entre ellos es HTTP o eventos (desde el Reto 4). Por la misma razón, el envelope de los eventos está implementado por separado en cada servicio (cada uno en su lenguaje), fijado por el Catálogo de Eventos y verificado con pruebas. `package.json` en la raíz sigue usando `npm workspaces`, pero solo como conveniencia de desarrollo (instalar una vez, correr `npm test` en todos) — ninguna dependencia real cruza de un servicio a otro, y el `Dockerfile` de cada servicio no depende del código de ningún otro.
 
 ## Flujo de trabajo con ramas (Git)
 
@@ -113,7 +126,7 @@ git merge dev
 
 ## Cómo levantar todo desde cero
 
-Un solo comando, sin pasos manuales (el esquema de cada base de datos se crea automáticamente desde `init.sql` la primera vez que el volumen está vacío):
+Un solo comando, sin pasos manuales: el esquema de cada base de datos se crea desde su `init.sql` la primera vez que el volumen está vacío, y la topología del broker la importa `broker-init`. Levanta 13 contenedores (5 bases de datos, el broker, `broker-init`, que termina tras importar la topología, 5 servicios y el Gateway); tarda ~40 s en quedar todo `healthy` (`docker compose ps`).
 
 ```bash
 docker compose up --build
@@ -133,20 +146,29 @@ docker compose down -v
 
 ### Variables de entorno
 
-`docker-compose.yml` define valores por defecto para desarrollo (usuarios, contraseñas y nombres de base de datos). Para un entorno propio, cópialos a un `.env` en la raíz y ajusta lo necesario — ver `.env.example`. Las credenciales nunca están escritas en el código, solo en variables de entorno.
+`docker-compose.yml` define valores por defecto para desarrollo (usuarios, contraseñas y nombres de base de datos de las 5 bases, y el usuario del broker). Para un entorno propio: `cp .env.example .env` y ajustar los valores (`.env` no se versiona). Las credenciales nunca están escritas en el código, solo en variables de entorno; cada servicio arma sus URLs de conexión codificando usuario y contraseña.
 
 ## Arranque ordenado — evidencia
 
-`depends_on` por sí solo solo espera a que el *contenedor* arranque, no a que el servicio esté listo. Por eso cada base de datos tiene un `healthcheck` (`pg_isready` / `mysqladmin ping`), `departamentos-service` tiene el suyo propio (consulta su endpoint interno `GET /health`, que también verifica la conexión a MySQL), `empleados-service` también (su `GET /health` interno verifica Postgres) y usa `depends_on: condition: service_healthy` contra **ambos**: su base de datos y `departamentos-service` — esto se agregó porque el profesor señaló, revisando el Reto 2, que faltaba esa dependencia explícita. El Gateway tiene su propio `healthcheck` (su `/health`) y sigue con `depends_on` simple (sin `condition`) hacia los dos microservicios: si arranca antes de que alguno esté listo, sus peticiones fallan con el `503` descrito arriba hasta que el servicio responde — no se cae, se degrada. Verificado en este repo: al ejecutar `docker compose up --build` desde cero, `departamentos-service` queda `(healthy)` ANTES de que `empleados-service` arranque, y `docker compose ps` muestra:
+`depends_on` por sí solo solo espera a que el *contenedor* arranque, no a que el servicio esté listo. Por eso cada base de datos tiene un `healthcheck` (`pg_isready` / `mysqladmin ping`), `departamentos-service` tiene el suyo propio (consulta su endpoint interno `GET /health`, que también verifica la conexión a MySQL), `empleados-service` también (su `GET /health` interno verifica Postgres) y usa `depends_on: condition: service_healthy` contra **ambos**: su base de datos y `departamentos-service` — esto se agregó porque el profesor señaló, revisando el Reto 2, que faltaba esa dependencia explícita. El Gateway tiene su propio `healthcheck` (su `/health`) y sigue con `depends_on` simple (sin `condition`) hacia los dos microservicios: si arranca antes de que alguno esté listo, sus peticiones fallan con el `503` descrito arriba hasta que el servicio responde — no se cae, se degrada. Desde el Reto 4, los servicios que publican o consumen eventos (empleados, perfiles, notificaciones, vacaciones) esperan además a `broker-init` (`condition: service_completed_successfully`): la topología de eventos existe antes del primer mensaje, así ningún evento se descarta por no tener cola. Cada servicio nuevo espera también a su propia base de datos (`service_healthy`) y tiene su `healthcheck`. Verificado en este repo, desde cero (`docker compose ps`):
 
 ```
-NAME               SERVICE                  STATUS                 PORTS
-api-gateway        api-gateway              Up (healthy)           0.0.0.0:8080->8080/tcp
-db-departamentos   database-departamentos   Up (healthy)           (sin publicar)
-db-empleados       database-empleados       Up (healthy)           (sin publicar)
-ms-departamentos   departamentos-service    Up (healthy)           (sin publicar)
-ms-empleados       empleados-service        Up (healthy)           (sin publicar)
+SERVICE                   STATUS                    PORTS
+api-gateway               Up (healthy)              0.0.0.0:8080->8080/tcp
+database-departamentos    Up (healthy)              3306/tcp, 33060/tcp
+database-empleados        Up (healthy)              5432/tcp
+database-notificaciones   Up (healthy)              5432/tcp
+database-perfiles         Up (healthy)              5432/tcp
+database-vacaciones       Up (healthy)              5432/tcp
+message-broker            Up (healthy)              0.0.0.0:15672->15672/tcp (+ puertos internos)
+departamentos-service     Up (healthy)              8082/tcp
+empleados-service         Up (healthy)              8081/tcp
+notificaciones-service    Up (healthy)              8084/tcp
+perfiles-service          Up (healthy)              8083/tcp
+vacaciones-service        Up (healthy)              8085/tcp
 ```
+
+Solo dos mapeos al host (`0.0.0.0:…`): el Gateway y la UI del broker. El resto son puertos internos. `broker-init` no aparece porque terminó (`Exited (0)`) tras importar la topología.
 
 ## Persistencia de datos — evidencia
 
@@ -179,6 +201,124 @@ Ningún servicio publica puerto al host, así que cada uno sirve su Swagger **ba
 | vacaciones-service | `http://localhost:8080/vacaciones/docs` | `/vacaciones/openapi.json` |
 
 Hasta el Reto 3 la documentación vivía en `/docs` (fuera del prefijo) y no era alcanzable desde fuera; se movió en el Reto 4 porque la rúbrica evalúa el funcionamiento de Swagger UI. Consecuencia aceptada: `docs` y `openapi.json` no pueden usarse como id de un recurso (p. ej. `GET /empleados/docs` es la documentación, no el empleado "docs").
+
+## Comunicación asincrónica (Reto 4)
+
+> Manual paso a paso, estados y pruebas: [`docs/reto-04/README.md`](docs/reto-04/README.md). Evidencia: [`docs/reto-04/pruebas.md`](docs/reto-04/pruebas.md). Decisiones y aprendizajes por fase: [`docs/reto-04/PLAN.md`](docs/reto-04/PLAN.md).
+
+### Message broker: por qué RabbitMQ
+
+Se evaluaron las cuatro opciones del reto frente a lo que este sistema necesita:
+
+| Criterio (lo que exige el reto) | **RabbitMQ** ✅ | Apache Kafka | Redis Streams | NATS |
+|---|---|---|---|---|
+| Fan-out: un evento, varios consumidores independientes | Exchange *topic* + una cola por servicio: nativo | Grupos de consumidores por *topic*: nativo | Grupos de consumidores: sí | Sujetos + JetStream: sí |
+| **Publicar un mensaje a mano desde la UI** (prueba de deduplicación exigida) | **Sí**: botón *Publish message* en la UI incluida | No en la UI estándar (herramientas externas) | No tiene UI de administración propia | No tiene UI de administración propia |
+| UI de administración (el reto pide configurarla) | Incluida (`rabbitmq:3-management`) | Externa (Kafka UI, AKHQ…) | Externa (RedisInsight) | Externa |
+| Operación en un `docker-compose` de desarrollo | 1 contenedor liviano | Broker + KRaft/ZooKeeper, más memoria | 1 contenedor | 1 contenedor |
+| Confirmaciones al publicar y *ack* manual al consumir | Sí (*publisher confirms*, `ack`/`nack` por mensaje) | Sí (acks + commit de offsets) | Sí (`XACK`) | Sí (JetStream) |
+| Cuándo brilla | Mensajería entre servicios, enrutamiento flexible | Streaming de alto volumen, retención y *replay* | Si ya se usa Redis | Latencia mínima, cloud-native |
+
+**Decisión:** RabbitMQ. Resuelve el fan-out de forma nativa (un exchange *topic* enruta cada evento a la cola de cada servicio suscrito), su UI trae la publicación manual que el reto exige para demostrar la deduplicación, y es un solo contenedor. Kafka queda sobredimensionado: su fortaleza (streaming masivo con retención y *replay*) no es un requisito aquí, y exige operar más infraestructura. Redis Streams y NATS carecen de una UI de administración integrada. Además, agregar un consumidor nuevo (el `auth-service` del Reto 5) es solo crear su cola y sus *bindings*: el productor no cambia.
+
+### Topología
+
+| Elemento | Valor |
+|---|---|
+| Exchange | `talentflow.eventos`, tipo **topic**, durable. **Routing key = `type` del evento** |
+| Cola `notificaciones.eventos` | `empleado.creado`, `empleado.retirado`, `vacaciones.programadas` |
+| Cola `perfiles.eventos` | `empleado.creado`, `empleado.actualizado`, `empleado.retirado` |
+| Cola `vacaciones.eventos` | `empleado.creado`, `empleado.actualizado`, `empleado.retirado` (réplica local) |
+
+Colas durables y mensajes persistentes: sobreviven a reinicios del broker. La topología es código versionado ([`infra/rabbitmq/definitions.json`](infra/rabbitmq/definitions.json)) y la importa el contenedor de un solo uso **`broker-init`** por la API de administración, antes de que arranque cualquier productor o consumidor (`depends_on: condition: service_completed_successfully`). No se usa `load_definitions` al arrancar el broker porque, en ese modo, RabbitMQ **no crea el usuario por defecto** y habría que versionar credenciales dentro del JSON.
+
+#### Puertos del broker: la única excepción al Gateway
+
+El puerto AMQP (`5672`) es **interno** (`expose`): solo lo usan los servicios, dentro de la red de Docker. Se publica únicamente la **UI de administración** (`15672`), porque el reto exige usarla (verificar que el broker está activo y publicar mensajes a mano para la prueba de deduplicación). Credenciales por variables de entorno (`RABBITMQ_USER` / `RABBITMQ_PASS`, ver `.env.example`).
+
+### Eventos implementados (Catálogo de Eventos)
+
+Nombres, envelope y cargas útiles **idénticos** al Catálogo de Eventos (no se inventó ni renombró ningún campo; hay pruebas que lo verifican campo por campo). Detalle en [`docs/eventos.md`](docs/eventos.md).
+
+```json
+{ "id": "3f9b2c10-…", "type": "empleado.creado", "version": 1,
+  "occurredAt": "2026-03-01T14:32:05Z", "producer": "empleados-service", "data": { … } }
+```
+
+| Evento (Catálogo) | Productor | Cuándo | Consumidores y reacción |
+|---|---|---|---|
+| `empleado.creado` (3.1) | empleados-service | `POST /empleados` exitoso | perfiles: crea el perfil por defecto · notificaciones: BIENVENIDA · vacaciones: registra al empleado en su réplica |
+| `empleado.actualizado` (3.2) | empleados-service | `PUT /empleados/{id}` exitoso | perfiles: sincroniza nombre y email · vacaciones: actualiza el email de la réplica |
+| `empleado.retirado` (3.3) | empleados-service | `DELETE /empleados/{id}` (baja lógica) | perfiles: archiva el perfil · notificaciones: DESVINCULACION · vacaciones: marca al empleado como retirado |
+| `vacaciones.programadas` (3.8) | vacaciones-service | `POST /vacaciones` exitoso | notificaciones: VACACIONES (confirmación del período) |
+
+**Publicación.** El evento se publica **después** de que la operación en la base de datos fue exitosa, con **confirmación del broker** (*publisher confirms*: "publicado" significa que RabbitMQ lo aceptó) y un tiempo máximo de espera. Si la publicación falla, se **registra el error y la operación no se revierte**, como exige el reto: la petición responde igual con éxito.
+
+**Bienvenida y despedida.** El Catálogo de Eventos (y el Reto 5) disparan el correo de bienvenida con `usuario.creado` y el de despedida con `cuenta.desactivada`, porque son los que traen el token de activación o el motivo. Esos eventos los produce el `auth-service` del Reto 5, que todavía no existe; por eso aquí se aplica lo que pide el Reto 4: BIENVENIDA con `empleado.creado` y DESVINCULACION con `empleado.retirado`. En `notificaciones-service` es un mapa evento → notificación: cambiarlo en el Reto 5 no toca el resto del servicio.
+
+### Deduplicación (obligatoria)
+
+Cada consumidor tiene su tabla `eventos_procesados(id, procesado_en)` y aplica esta regla:
+
+1. Registra el `id` del mensaje **y** aplica el efecto **en una sola transacción** de base de datos: o quedan ambos, o ninguno. (Si fueran pasos separados, una caída entre ellos dejaría un evento "procesado" sin efecto, o un efecto que se repetiría.)
+2. Si el `id` ya existía, el mensaje es un **duplicado**: no se repite el efecto y se confirma igual.
+3. El mensaje se confirma al broker (`ack`) **solo después del commit**. Si el servicio muere antes, RabbitMQ lo reentrega y el paso 2 evita el doble efecto.
+
+Además, cada consumidor distingue **qué hacer con un fallo** (para no caer en el antipatrón del reintento infinito): un mensaje corrupto, de un tipo que no consume o con datos que la base rechaza **nunca** podrá procesarse → se descarta y queda en el log (la cola de mensajes muertos, DLQ, llega en el Reto 29); un fallo **transitorio** (su base de datos caída) → el mensaje vuelve a la cola tras una espera y se procesa cuando la base regresa, sin perderse.
+
+**Evidencia** ([`docs/reto-04/pruebas.md`](docs/reto-04/pruebas.md), paso 9): el mismo `empleado.creado` publicado **dos veces** con el mismo `id` produce **una sola notificación y un solo perfil**, y los tres consumidores registran "evento duplicado descartado". Cómo repetirlo desde la UI: [manual, §5](docs/reto-04/README.md#5-deduplicación-desde-la-ui-de-rabbitmq).
+
+### Servicios nuevos
+
+| Servicio | Endpoints | Qué hace |
+|---|---|---|
+| **perfiles-service** (Python) | `GET /perfiles`, `GET /perfiles/{empleadoId}`, `PUT /perfiles/{empleadoId}` | Crea el perfil por defecto al consumir `empleado.creado` (`nombre` = nombre completo, resto vacío), sincroniza nombre y email con `empleado.actualizado` y lo **archiva** (no lo borra) con `empleado.retirado`. `PUT` es **parcial** (el propio reto envía solo algunos campos) y solo acepta los campos del perfil: `nombre`/`email` los replica empleados → `400`; perfil archivado → `409`; inexistente → `404`. Si llega `empleado.actualizado` de un empleado sin perfil (su `empleado.creado` se perdió), lo crea: el sistema se recupera solo |
+| **notificaciones-service** (Go) | `GET /notificaciones`, `GET /notificaciones/{empleadoId}` | Puramente reactivo: ningún servicio lo llama por REST. Consume `empleado.creado`, `empleado.retirado` y `vacaciones.programadas`, simula el envío con el log `[NOTIFICACIÓN] Tipo: … \| Para: … \| Mensaje: "…"` y guarda el historial `{id, tipo, destinatario, mensaje, fechaEnvio, empleadoId}` |
+| **vacaciones-service** (Java) | `POST /vacaciones`, `GET /vacaciones`, `GET /vacaciones?empleadoId=`, `GET /vacaciones/{id}`, `DELETE /vacaciones/{id}` | Programa períodos (`V-2026-0042`, estado `PROGRAMADA`) y publica `vacaciones.programadas`. `DELETE` **cancela** (estado `CANCELADA`, no borra) solo si aún no ha iniciado; si ya inició o no está programado → `409` |
+
+**Validaciones de vacaciones** (todas `400` con mensaje descriptivo):
+
+1. **Fechas incoherentes**: `fechaFin` debe ser **posterior** a `fechaInicio` (el mismo día no lo es).
+2. **Fechas en el pasado**: `fechaInicio` anterior a **hoy** en `America/Bogota` (hoy es válido).
+3. **Solapamiento** con otro período `PROGRAMADA` o `EN_CURSO` del empleado: la respuesta incluye `periodoEnConflicto`. Garantizado también ante solicitudes **simultáneas**: bloqueo de la fila del empleado (`SELECT … FOR UPDATE`) + restricción `EXCLUDE USING gist` en PostgreSQL (la misma "doble garantía" que la unicidad del email en el Reto 2). Verificado: 10 solicitudes simultáneas → 1 creada, 9 rechazadas.
+4. **Empleado inexistente** (o retirado).
+
+`diasHabiles` (campo de `vacaciones.programadas`): lunes a viernes, ambos extremos incluidos, sin festivos. (El ejemplo del catálogo — 12 días del 15 al 30 de marzo de 2026 — no coincide con ninguna regla estándar: de lunes a viernes son 11.)
+
+### Validación del empleado en vacaciones: réplica local por eventos (opción b)
+
+El reto plantea dos opciones y pide justificar la elegida:
+
+| | (a) Consulta REST a empleados-service | **(b) Réplica local por eventos** ✅ |
+|---|---|---|
+| Cómo | `GET /empleados/{id}` en cada solicitud, como el Reto 2 con departamentos | vacaciones-service consume `empleado.creado`/`actualizado`/`retirado` y mantiene su tabla `empleados_replica` |
+| Si empleados-service está caído | **No se pueden programar vacaciones** (acoplamiento temporal) | **Sigue funcionando** |
+| Consistencia | Inmediata | **Eventual**: un empleado recién creado tarda milisegundos en aparecer en la réplica |
+| Complejidad | Baja | Mayor: un consumidor más, con deduplicación |
+
+**Elegimos (b): disponibilidad sobre consistencia inmediata.** Es la misma decisión de negocio que el fallback `PENDIENTE` del Reto 3: RR. HH. no debe quedar bloqueado por la caída de otro servicio. Dos razones más la inclinan: el evento `vacaciones.programadas` exige el **email** del empleado (con la opción (a) serían dos dependencias síncronas por solicitud; la réplica ya lo tiene), y la réplica también sabe si el empleado fue **retirado**, así que un retirado no puede programar vacaciones. El costo — la ventana de consistencia eventual — se acepta porque la réplica se actualiza en milisegundos y es visible en los logs.
+
+### Baja lógica y auditoría (empleados-service)
+
+- `PUT /empleados/{id}`: modifica **solo** los campos que replica `empleado.actualizado` (`nombre`, `apellido`, `email`, `cargo`, `area`, `departamentoId`); un campo desconocido o de solo lectura modificado → `400` (evita la asignación masiva). Publica `empleado.actualizado`.
+- `DELETE /empleados/{id}`: **no borra**. Cambia `estado` a `RETIRADO` y guarda `fechaRetiro` (instante UTC) y `motivoRetiro` (cuerpo opcional `{"motivo": …}`: `RENUNCIA` por defecto, `DESPIDO`, `JUBILACION`, `FIN_CONTRATO` u `OTRO`; el catálogo exige un `motivo` en `empleado.retirado`). Publica `empleado.retirado`. Es atómico: dos `DELETE` simultáneos → uno gana, el otro recibe `409`, y se publica **un** evento. Una restricción en la base de datos garantiza que `RETIRADO` ⇔ tiene fecha y motivo.
+- Auditoría: `GET /empleados?estado=RETIRADO` y `GET /empleados?estado=RETIRADO&desde=2026-01-01&hasta=2026-06-30` (rango inclusivo sobre el **día** del retiro en `America/Bogota`: un retiro a las 21:00 en Bogotá es el día siguiente en UTC).
+
+### Limitaciones conocidas
+
+- **Evento perdido si el broker está caído al publicar.** La operación se guarda y el evento se descarta con un error en el log (lo que pide el reto: no revertir). La solución formal es el patrón **Outbox** (guardar el evento en la misma transacción y publicarlo después), fuera del alcance de este reto. perfiles-service mitiga el caso más visible: un `empleado.actualizado` posterior recrea el perfil faltante.
+- **Vacaciones futuras de un empleado retirado** siguen `PROGRAMADA`: el reto no pide cancelarlas y el catálogo no define un evento de cancelación. El caso "retiro durante vacaciones" lo retoma el Reto 5.
+- **Un empleado que la reconciliación del Reto 3 marca `RECHAZADO`** no genera evento: el catálogo no define uno.
+
+### Cómo probar el flujo asincrónico
+
+```bash
+docker compose down -v && docker compose up --build -d   # volúmenes limpios
+bash docs/reto-04/demo.sh                                 # los 11 pasos de la sección 6 del reto
+cd docs/reto-04/bruno && npx @usebruno/cli run --env Local  # colección: 21 peticiones con tests
+```
+
+Paso a paso manual, dónde ver el estado de cada componente y problemas comunes: [`docs/reto-04/README.md`](docs/reto-04/README.md).
 
 ## Circuit Breaker (Reto 3) — `empleados-service → departamentos-service`
 
@@ -341,8 +481,9 @@ Tras la clase "Introducción a APIs RESTful" se auditó el proyecto contra sus d
 | 1 | gestion-empleados | ✅ Completado | POST/GET, modelo canónico, validaciones, Docker, 19 pruebas | `npm run dev:empleados` |
 | 2 | gestion-empleados + gestion-departamentos | ✅ Completado | Persistencia en Postgres/MySQL, segundo servicio en PHP, comunicación HTTP con timeout/reintentos, healthchecks, OpenAPI | `docker compose up --build` |
 | 3 | api-gateway + gestion-empleados + gestion-departamentos | ✅ Completado | API Gateway como único punto de entrada (`:8080`), microservicios y bases de datos sin puertos al host, Circuit Breaker (`opossum`) en `empleados → departamentos` con fallback de registro `PENDIENTE` + reconciliación automática al recuperarse | `docker compose up --build` (base: `http://localhost:8080`) |
+| 4 | + message-broker + gestion-perfiles + notificaciones + gestion-vacaciones | ✅ Completado | RabbitMQ (fan-out por exchange topic), empleados publica `empleado.creado/actualizado/retirado` (+ `PUT`, baja lógica `DELETE` y auditoría), perfiles (Python), notificaciones (Go) y vacaciones (Java, publica `vacaciones.programadas`), deduplicación por id de mensaje en todos los consumidores, 5 lenguajes, Swagger de todos los servicios por el Gateway | `docker compose up --build` + `bash docs/reto-04/demo.sh` |
 
-Cada microservicio tiene su propio README con sus endpoints y configuración: [`gestion-empleados`](microservicios/gestion-empleados/README.md), [`gestion-departamentos`](microservicios/gestion-departamentos/README.md).
+Cada microservicio tiene su propio README con sus endpoints y configuración: [`gestion-empleados`](microservicios/gestion-empleados/README.md), [`gestion-departamentos`](microservicios/gestion-departamentos/README.md), [`gestion-perfiles`](microservicios/gestion-perfiles/README.md), [`notificaciones`](microservicios/notificaciones/README.md), [`gestion-vacaciones`](microservicios/gestion-vacaciones/README.md).
 
 ## Comandos comunes
 
@@ -352,10 +493,14 @@ Instalar dependencias (una sola vez, desde la raíz):
 npm install
 ```
 
-Ejecutar las pruebas de todos los servicios:
+Ejecutar las pruebas automatizadas (160 en total, sin necesidad de Docker):
 
 ```bash
-npm test
+npm test                                                   # empleados (80) + api-gateway (6) — Node.js
+(cd microservicios/notificaciones && go test ./...)       # notificaciones (17) — Go
+(cd microservicios/gestion-perfiles && python -m venv .venv && . .venv/bin/activate \
+  && pip install -r requirements-dev.txt && pytest)       # perfiles (28) — Python
+(cd microservicios/gestion-vacaciones && mvn test)         # vacaciones (29) — Java
 ```
 
 Correr todos los servicios (Docker):
@@ -366,8 +511,12 @@ docker compose up --build
 
 ## Stack del semestre
 
-- **Node.js + Express** - servicios de negocio core (empleados, departamentos evolucionará en retos futuros)
-- **PHP** - segundo servicio de negocio (departamentos), diversidad tecnológica exigida desde el Reto 2
-- **Python + FastAPI** - servicios de datos y cálculos de negocio
-- **Go** - infraestructura (gateway/eventos)
-- **TypeScript + React** - frontend del proyecto final
+Implementado hasta el Reto 4 (5 lenguajes; el proyecto final exige al menos 4):
+
+- **Node.js + Express** — `empleados-service` y `api-gateway`
+- **PHP** — `departamentos-service` (diversidad tecnológica desde el Reto 2)
+- **Python + FastAPI** — `perfiles-service`
+- **Go** — `notificaciones-service`
+- **Java + Spring Boot** — `vacaciones-service`
+- **RabbitMQ** (mensajería), **PostgreSQL** y **MySQL** (bases de datos por servicio)
+- Previsto: **TypeScript + React** para el frontend del proyecto final
