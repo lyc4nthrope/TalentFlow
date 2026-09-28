@@ -1,0 +1,30 @@
+meta {
+  name: 01 Gateway - health
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/health
+  body: none
+  auth: none
+}
+
+tests {
+  test("200 con el health propio del Gateway", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().service).to.equal("api-gateway");
+    expect(res.getBody().status).to.equal("UP");
+  });
+  test("reporta el estado de cada servicio y del Circuit Breaker", function () {
+    const servicios = res.getBody().servicios;
+    expect(["OK", "DEGRADADO"]).to.include(res.getBody().sistema);
+    expect(servicios["empleados-service"]).to.have.property("status");
+    expect(servicios["departamentos-service"]).to.have.property("status");
+  });
+  test("con el sistema sano: todo UP y circuito CLOSED", function () {
+    const servicios = res.getBody().servicios;
+    expect(res.getBody().sistema).to.equal("OK");
+    expect(servicios["empleados-service"].circuitoDepartamentos).to.equal("CLOSED");
+  });
+}

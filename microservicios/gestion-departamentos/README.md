@@ -44,6 +44,17 @@ GET /departamentos/{id}
 - **200 OK**: información del departamento.
 - **404 Not Found**: `El departamento con id {id} no existe`.
 
+### Health check (interno)
+
+```
+GET /health
+```
+
+- **200 OK**: `{ "status": "UP", "components": { "app": "UP", "db": "UP" } }`.
+- **503 Service Unavailable**: la base de datos no responde (`"db": "DOWN"`).
+
+Lo usa el `healthcheck` de `docker-compose.yml` (del que depende `empleados-service` con `condition: service_healthy`). No es alcanzable desde fuera: el Gateway solo enruta `/departamentos/*`.
+
 ### Rutas no soportadas
 
 Cualquier otra ruta o método responde **404** con `Recurso no encontrado`.
@@ -64,7 +75,7 @@ Sin Composer ni autoload: el servicio no tiene dependencias externas, así que s
 
 | Variable | Descripción |
 |---|---|
-| `PORT` | Puerto donde escucha el servicio (8081 en Docker) |
+| `PORT` | Puerto donde escucha el servicio (8082 en Docker, no publicado al host desde el Reto 3 — ver README raíz) |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS` | Conexión a MySQL |
 
 ## Base de datos
@@ -81,9 +92,20 @@ docker compose up --build
 
 ## Documentación OpenAPI
 
-Swagger UI disponible en `http://localhost:8081/docs` (especificación en `/openapi.json`).
+Desde el Reto 3 este servicio ya no publica puerto al host (`expose`, no `ports`), así que su Swagger UI (`/docs`, `/openapi.json`) no es alcanzable desde fuera de la red de Docker. El Gateway solo enruta `/departamentos/*`, no `/docs` (ver README raíz).
+
+## Pruebas
+
+Pruebas de integración de caja negra (vía HTTP, sin dependencias externas), en `test/test_departamentos.php`. Requieren el sistema levantado (`docker compose up --build`) y PHP en el host; por defecto apuntan al Gateway:
+
+```bash
+php microservicios/gestion-departamentos/test/test_departamentos.php
+# o contra otra URL base:
+TEST_BASE_URL=http://localhost:8080 php microservicios/gestion-departamentos/test/test_departamentos.php
+```
+
+No forman parte de `npm test` (que solo corre las pruebas unitarias de Node y no necesita el sistema levantado).
 
 ## Pendientes conocidos
 
-- No tiene tests automatizados todavía (a diferencia de `gestion-empleados`).
 - No tiene ejecución local documentada sin Docker (requiere PHP 8.2+ y una instancia de MySQL accesible).

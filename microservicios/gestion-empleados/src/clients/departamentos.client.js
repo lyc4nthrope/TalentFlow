@@ -1,25 +1,18 @@
-const { AppError } = require("../errores");
+const CircuitBreaker = require("opossum");
 
 function esperar(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Cliente HTTP hacia el servicio de departamentos.
- *
- * Decisión (Reto 2, punto 6): si el servicio de departamentos no responde tras agotar
- * los reintentos, el registro del empleado se RECHAZA (no se acepta "pendiente de
- * validación"). Razón: el modelo canónico no tiene un estado que represente "validación
- * pendiente" sin inventar uno fuera de alcance de este reto, y aceptar un empleado con un
- * departamentoId sin verificar podría dejar datos inconsistentes que luego nadie revisa.
- * Se responde 503 (no 400): no es un error del cliente, es una dependencia caída.
- */
 function crearClienteDepartamentos({
   baseUrl,
-  timeoutMs = 2000,
+  timeoutMs = 5000,
+  errorThresholdPercentage = 50,
+  resetTimeout = 30000,
   maxReintentos = 3,
   fetchImpl = fetch
 } = {}) {
+
   async function intentarUnaVez(departamentoId) {
     const controlador = new AbortController();
     const timer = setTimeout(() => controlador.abort(), timeoutMs);
@@ -27,11 +20,12 @@ function crearClienteDepartamentos({
       const respuesta = await fetchImpl(`${baseUrl}/departamentos/${departamentoId}`, {
         signal: controlador.signal
       });
+
       if (respuesta.status === 404) {
         return false;
       }
       if (!respuesta.ok) {
-        throw new Error(`Respuesta inesperada del servicio de departamentos: ${respuesta.status}`);
+        throw new Error(`Respuesta inesperada del servicio departamentos`);
       }
       return true;
     } finally {
@@ -39,7 +33,7 @@ function crearClienteDepartamentos({
     }
   }
 
-  async function existe(departamentoId) {
+  async function realizarPeticionConReintentos(departamentoId) {
     let ultimoError;
     for (let intento = 0; intento <= maxReintentos; intento += 1) {
       try {
@@ -47,19 +41,67 @@ function crearClienteDepartamentos({
       } catch (error) {
         ultimoError = error;
         if (intento < maxReintentos) {
-          const esperaMs = 2 ** intento * 1000; // 1s, 2s, 4s, ...
-          await esperar(esperaMs);
+          await esperar(200);
         }
       }
     }
-    throw new AppError(
-      `No fue posible verificar el departamento ${departamentoId}: el servicio de departamentos no respondió`,
-      503
-    );
-    // (ultimoError queda disponible para logging si se desea en el futuro)
+    throw ultimoError;
   }
 
-  return { existe };
+  const breakerOptions = {
+    timeout: (timeoutMs * (maxReintentos + 1)) + 5000,
+    errorThresholdPercentage,
+    resetTimeout,
+    volumeThreshold: 4,
+    capacity: 10,
+    // La ventana por defecto de opossum es de 10s (rollingCountTimeout). Cuando
+    // departamentos-service está totalmente caído, cada llamada completa (timeout de
+    // conexión + reintentos) puede tardar ~10s según el entorno de Docker: las
+    // estadísticas de una llamada caducan antes de que termine la siguiente y el
+    // circuito nunca junta el volumeThreshold dentro de la misma ventana (se queda
+    // CLOSED para siempre). Se amplía a 60s (10 cubos de 6s).
+    rollingCountTimeout: 60000,
+    rollingCountBuckets: 10
+  };
+
+  const breaker = new CircuitBreaker(realizarPeticionConReintentos, breakerOptions);
+
+  // Marcador interno: distingue "no se pudo verificar" (dependencia caída) de
+  // "se verificó y no existe" (respuesta real del servicio). El fallback ya NO
+  // lanza: lanzar aquí forzaba a rechazar el registro (503) cuando departamentos
+  // está caído. Por decisión del profesor, ese caso debe quedar PENDIENTE, no
+  // rechazado — ver reconciliarPendientes() en empleados.service.js.
+  const DEPENDENCIA_NO_DISPONIBLE = Symbol("dependencia-no-disponible");
+  breaker.fallback(() => DEPENDENCIA_NO_DISPONIBLE);
+
+  breaker.on("open", () => console.warn("⚠️ Circuit Breaker ABIERTO para Departamentos"));
+  breaker.on("halfOpen", () => console.info("🔄 Circuit Breaker HALF-OPEN para Departamentos"));
+  breaker.on("close", () => console.info("✅ Circuit Breaker CERRADO para Departamentos"));
+
+  // Contrato: resuelve siempre a uno de tres valores, nunca lanza por sí mismo.
+  //   'EXISTE'     -> se consultó de verdad y el departamento existe
+  //   'NO_EXISTE'  -> se consultó de verdad y el departamento NO existe (404 real)
+  //   'PENDIENTE'  -> no se pudo consultar (circuito abierto o dependencia caída)
+  async function existe(departamentoId) {
+    const resultado = await breaker.fire(departamentoId);
+    if (resultado === DEPENDENCIA_NO_DISPONIBLE) return "PENDIENTE";
+    return resultado ? "EXISTE" : "NO_EXISTE";
+  }
+
+  // Estado observable del circuito, para el endpoint de diagnóstico.
+  function estadoActual() {
+    if (breaker.opened) return "OPEN";
+    if (breaker.halfOpen) return "HALF_OPEN";
+    return "CLOSED";
+  }
+
+  // Se dispara cuando el circuito vuelve a CERRAR tras haber estado abierto:
+  // es la señal de "el servicio se restableció" que dispara la reconciliación.
+  function onRecuperado(callback) {
+    breaker.on("close", callback);
+  }
+
+  return { existe, estadoActual, onRecuperado };
 }
 
 module.exports = { crearClienteDepartamentos };

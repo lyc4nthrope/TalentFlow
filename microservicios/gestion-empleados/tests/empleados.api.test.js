@@ -18,7 +18,7 @@ const EMPLEADO_VALIDO = {
 };
 
 // Doble de prueba: simula el servicio de departamentos sin necesitar uno real corriendo.
-const clienteDepartamentosFalso = { existe: async () => true };
+const clienteDepartamentosFalso = { existe: async () => "EXISTE" };
 
 describe("API de empleados", () => {
   let servidor;
@@ -109,7 +109,7 @@ describe("API de empleados", () => {
 
     it("responde 400 cuando el departamento no existe (Reto 2)", async () => {
       const repositorio = crearRepositorioEmpleadosEnMemoria();
-      const servicioSinDepto = crearServicioEmpleados(repositorio, { existe: async () => false });
+      const servicioSinDepto = crearServicioEmpleados(repositorio, { existe: async () => "NO_EXISTE" });
       const appSinDepto = crearApp(servicioSinDepto);
       const server = await new Promise((resolve) => {
         const s = appSinDepto.listen(0, () => resolve(s));
@@ -128,6 +128,114 @@ describe("API de empleados", () => {
       assert.equal(cuerpo.errors[0].field, "departamentoId");
 
       server.close();
+    });
+
+    it("responde 201 con validacionDepartamento PENDIENTE cuando departamentos no responde (Reto 3)", async () => {
+      const repositorio = crearRepositorioEmpleadosEnMemoria();
+      const servicioConDeptoCaido = crearServicioEmpleados(repositorio, {
+        existe: async () => "PENDIENTE"
+      });
+      const appConDeptoCaido = crearApp(servicioConDeptoCaido);
+      const server = await new Promise((resolve) => {
+        const s = appConDeptoCaido.listen(0, () => resolve(s));
+      });
+      const { port } = server.address();
+
+      const respuesta = await fetch(`http://127.0.0.1:${port}/empleados`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...EMPLEADO_VALIDO,
+          id: "E-PENDIENTE",
+          email: "pendiente@empresa.com",
+          numeroEmpleado: "EMP-PENDIENTE"
+        })
+      });
+
+      assert.equal(respuesta.status, 201);
+      const cuerpo = await respuesta.json();
+      assert.equal(cuerpo.validacionDepartamento, "PENDIENTE");
+
+      server.close();
+    });
+  });
+
+  describe("GET /empleados/circuito-departamentos", () => {
+    it("expone el estado actual del circuito hacia departamentos-service", async () => {
+      const repositorio = crearRepositorioEmpleadosEnMemoria();
+      const servicio = crearServicioEmpleados(repositorio, { existe: async () => "EXISTE" });
+      const clienteConEstado = { estadoActual: () => "OPEN" };
+      const appConEstado = crearApp(servicio, clienteConEstado);
+      const server = await new Promise((resolve) => {
+        const s = appConEstado.listen(0, () => resolve(s));
+      });
+      const { port } = server.address();
+
+      const respuesta = await fetch(`http://127.0.0.1:${port}/empleados/circuito-departamentos`);
+
+      assert.equal(respuesta.status, 200);
+      const cuerpo = await respuesta.json();
+      assert.equal(cuerpo.dependencia, "departamentos-service");
+      assert.equal(cuerpo.estado, "OPEN");
+
+      server.close();
+    });
+  });
+
+  describe("GET /health", () => {
+    async function consultarHealth({ estadoCircuito = "CLOSED", verificarBaseDeDatos }) {
+      const servicio = crearServicioEmpleados(crearRepositorioEmpleadosEnMemoria(), clienteDepartamentosFalso);
+      const app = crearApp(servicio, { estadoActual: () => estadoCircuito }, { verificarBaseDeDatos });
+      const server = await new Promise((resolve) => {
+        const s = app.listen(0, () => resolve(s));
+      });
+      try {
+        const respuesta = await fetch(`http://127.0.0.1:${server.address().port}/health`);
+        return { status: respuesta.status, cuerpo: await respuesta.json() };
+      } finally {
+        server.close();
+      }
+    }
+
+    it("responde 200 UP con la BD y el estado del circuito", async () => {
+      const { status, cuerpo } = await consultarHealth({ verificarBaseDeDatos: async () => {} });
+
+      assert.equal(status, 200);
+      assert.equal(cuerpo.status, "UP");
+      assert.equal(cuerpo.service, "empleados-service");
+      assert.deepEqual(cuerpo.components, { app: "UP", db: "UP", circuitoDepartamentos: "CLOSED" });
+    });
+
+    it("responde 503 DOWN cuando la base de datos falla", async () => {
+      const { status, cuerpo } = await consultarHealth({
+        verificarBaseDeDatos: async () => {
+          throw new Error("connection refused");
+        }
+      });
+
+      assert.equal(status, 503);
+      assert.equal(cuerpo.status, "DOWN");
+      assert.equal(cuerpo.components.db, "DOWN");
+    });
+
+    it("responde 503 DOWN cuando la base de datos no contesta dentro del plazo", async () => {
+      const { status, cuerpo } = await consultarHealth({
+        verificarBaseDeDatos: () => new Promise(() => {})
+      });
+
+      assert.equal(status, 503);
+      assert.equal(cuerpo.components.db, "DOWN");
+    });
+
+    it("sigue UP con el circuito OPEN: degradado, no caído", async () => {
+      const { status, cuerpo } = await consultarHealth({
+        estadoCircuito: "OPEN",
+        verificarBaseDeDatos: async () => {}
+      });
+
+      assert.equal(status, 200);
+      assert.equal(cuerpo.status, "UP");
+      assert.equal(cuerpo.components.circuitoDepartamentos, "OPEN");
     });
   });
 

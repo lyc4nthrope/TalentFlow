@@ -17,8 +17,8 @@ const EMPLEADO_VALIDO = {
   fechaIngreso: "2026-02-10"
 };
 
-function clienteDepartamentosFalso({ existe = true } = {}) {
-  return { existe: async () => existe };
+function clienteDepartamentosFalso({ resultado = "EXISTE" } = {}) {
+  return { existe: async () => resultado };
 }
 
 describe("Servicio de empleados", () => {
@@ -120,7 +120,7 @@ describe("Servicio de empleados", () => {
     it("rechaza un departamento inexistente con 400 (Reto 2)", async () => {
       const servicioSinDepto = crearServicioEmpleados(
         crearRepositorioEmpleadosEnMemoria(),
-        clienteDepartamentosFalso({ existe: false })
+        clienteDepartamentosFalso({ resultado: "NO_EXISTE" })
       );
 
       await assert.rejects(
@@ -134,25 +134,64 @@ describe("Servicio de empleados", () => {
       );
     });
 
-    it("propaga el error 503 cuando el servicio de departamentos no responde", async () => {
-      const clienteQueFalla = {
-        existe: async () => {
-          throw new AppError("No fue posible verificar el departamento IT", 503);
-        }
-      };
-      const servicioConFallo = crearServicioEmpleados(
-        crearRepositorioEmpleadosEnMemoria(),
-        clienteQueFalla
+    it("registra como PENDIENTE (no rechaza) cuando departamentos no responde (Reto 3)", async () => {
+      const repositorio = crearRepositorioEmpleadosEnMemoria();
+      const servicioConDeptoCaido = crearServicioEmpleados(
+        repositorio,
+        clienteDepartamentosFalso({ resultado: "PENDIENTE" })
       );
 
-      await assert.rejects(
-        () => servicioConFallo.registrar(EMPLEADO_VALIDO),
-        (error) => {
-          assert.ok(error instanceof AppError);
-          assert.equal(error.codigoEstado, 503);
-          return true;
-        }
+      const registrado = await servicioConDeptoCaido.registrar(EMPLEADO_VALIDO);
+
+      assert.equal(registrado.id, "E001");
+      assert.equal(registrado.validacionDepartamento, "PENDIENTE");
+    });
+  });
+
+  describe("reconciliarPendientes", () => {
+    it("acepta un pendiente cuyo departamento sí existe al reconciliar", async () => {
+      let existeRespuesta = "PENDIENTE";
+      const clienteMutable = { existe: async () => existeRespuesta };
+      const repositorio = crearRepositorioEmpleadosEnMemoria();
+      const servicioMutable = crearServicioEmpleados(repositorio, clienteMutable);
+
+      await servicioMutable.registrar(EMPLEADO_VALIDO);
+      let pendiente = await servicioMutable.consultarPorId("E001");
+      assert.equal(pendiente.validacionDepartamento, "PENDIENTE");
+
+      existeRespuesta = "EXISTE"; // el servicio de departamentos se restableció
+      const resultados = await servicioMutable.reconciliarPendientes();
+
+      assert.deepEqual(resultados, [{ id: "E001", validacionDepartamento: "ACEPTADO" }]);
+      const reconciliado = await servicioMutable.consultarPorId("E001");
+      assert.equal(reconciliado.validacionDepartamento, "ACEPTADO");
+    });
+
+    it("rechaza un pendiente cuyo departamento no existe al reconciliar", async () => {
+      let existeRespuesta = "PENDIENTE";
+      const clienteMutable = { existe: async () => existeRespuesta };
+      const repositorio = crearRepositorioEmpleadosEnMemoria();
+      const servicioMutable = crearServicioEmpleados(repositorio, clienteMutable);
+
+      await servicioMutable.registrar(EMPLEADO_VALIDO);
+
+      existeRespuesta = "NO_EXISTE"; // se restableció, y el departamento no existía
+      const resultados = await servicioMutable.reconciliarPendientes();
+
+      assert.deepEqual(resultados, [{ id: "E001", validacionDepartamento: "RECHAZADO" }]);
+      const reconciliado = await servicioMutable.consultarPorId("E001");
+      assert.equal(reconciliado.validacionDepartamento, "RECHAZADO");
+    });
+
+    it("no toca empleados ya ACEPTADOS y no hace nada si no hay pendientes", async () => {
+      const servicio2 = crearServicioEmpleados(
+        crearRepositorioEmpleadosEnMemoria(),
+        clienteDepartamentosFalso({ resultado: "EXISTE" })
       );
+      await servicio2.registrar(EMPLEADO_VALIDO);
+
+      const resultados = await servicio2.reconciliarPendientes();
+      assert.deepEqual(resultados, []);
     });
   });
 
