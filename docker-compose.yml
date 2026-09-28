@@ -58,9 +58,11 @@ services:
       PORT: 8080
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
+      NOTIFICACIONES_SERVICE_URL: http://notificaciones-service:8084
     depends_on:
       - empleados-service
       - departamentos-service
+      - notificaciones-service
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -138,6 +140,64 @@ services:
     networks:
       - microservices-network
 
+  # Base de Datos Notificaciones (PostgreSQL) — propia del servicio (Reto 4)
+  database-notificaciones:
+    image: postgres:16-alpine
+    container_name: db-notificaciones
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NOTIF_NAME:-db_notificaciones}
+      POSTGRES_USER: ${DB_NOTIF_USER:-user_notificaciones}
+      POSTGRES_PASSWORD: ${DB_NOTIF_PASS:-pass_notificaciones}
+    expose:
+      - "5432"
+    volumes:
+      - vol-notificaciones:/var/lib/postgresql/data
+      - ./microservicios/notificaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_NOTIF_USER:-user_notificaciones} -d ${DB_NOTIF_NAME:-db_notificaciones}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Microservicio Notificaciones (Go) — puramente reactivo: consume eventos (Reto 4)
+  notificaciones-service:
+    build:
+      context: ./microservicios/notificaciones
+      dockerfile: Dockerfile
+      target: runner
+    container_name: ms-notificaciones
+    restart: on-failure
+    expose:
+      - "8084"
+    environment:
+      PORT: 8084
+      DB_HOST: database-notificaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_NOTIF_NAME:-db_notificaciones}
+      DB_USER: ${DB_NOTIF_USER:-user_notificaciones}
+      DB_PASS: ${DB_NOTIF_PASS:-pass_notificaciones}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+      RABBITMQ_COLA: notificaciones.eventos
+    depends_on:
+      database-notificaciones:
+        condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/notificaciones", "-healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - microservices-network
+
   # Message Broker (RabbitMQ) — comunicación asincrónica por eventos (Reto 4)
   message-broker:
     image: rabbitmq:3.13-management-alpine
@@ -193,3 +253,4 @@ volumes:
   vol-empleados:
   vol-departamentos:
   vol-rabbitmq:
+  vol-notificaciones:

@@ -1,0 +1,59 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "TalentFlow - Servicio de Notificaciones",
+    "version": "1.0.0",
+    "description": "Servicio puramente reactivo: consume empleado.creado, empleado.retirado y vacaciones.programadas desde RabbitMQ, simula el envío de la notificación (log [NOTIFICACIÓN]) y guarda el historial. Descarta eventos duplicados por el id del mensaje. Ningún servicio lo invoca por REST: estos endpoints solo consultan el historial."
+  },
+  "servers": [{ "url": "/" }],
+  "paths": {
+    "/notificaciones": {
+      "get": {
+        "summary": "Lista todas las notificaciones registradas",
+        "responses": {
+          "200": {
+            "description": "Historial completo, en orden de envío",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Notificacion" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notificaciones/{empleadoId}": {
+      "get": {
+        "summary": "Lista las notificaciones de un empleado",
+        "parameters": [
+          { "name": "empleadoId", "in": "path", "required": true, "schema": { "type": "string" }, "example": "E001" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notificaciones del empleado (lista vacía si no tiene)",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Notificacion" } }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Notificacion": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "tipo": { "type": "string", "enum": ["BIENVENIDA", "DESVINCULACION", "VACACIONES"] },
+          "destinatario": { "type": "string", "format": "email", "example": "juan.perez@empresa.com" },
+          "mensaje": { "type": "string", "example": "Bienvenido Juan Pérez a la empresa. Tu registro como empleado quedó completo." },
+          "fechaEnvio": { "type": "string", "format": "date-time" },
+          "empleadoId": { "type": "string", "example": "E001" }
+        }
+      }
+    }
+  }
+}

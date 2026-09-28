@@ -27,10 +27,10 @@ Cada fase termina **verificada** (pruebas + comprobación real en Docker) y con 
 |---|---|---|---|
 | **F1** Broker | RabbitMQ en compose, exchange y colas declarados, healthcheck, UI | UI accesible; exchange y colas visibles | ✅ |
 | **F2** Empleados | `PUT`, `DELETE` (baja lógica + `fechaRetiro` + `motivo`), `GET ?estado&desde&hasta`, publicador AMQP con envelope | Pruebas unitarias; los 3 eventos llegan a las colas con el formato exacto | ✅ |
-| **F3** Notificaciones (Go) | Consumidor (3 eventos), log `[NOTIFICACIÓN]`, historial en BD, deduplicación, `GET /notificaciones[/{empleadoId}]`, OpenAPI, Dockerfile | Pruebas; evento duplicado → 1 notificación | ⏳ |
+| **F3** Notificaciones (Go) | Consumidor (3 eventos), log `[NOTIFICACIÓN]`, historial en BD, deduplicación, `GET /notificaciones[/{empleadoId}]`, OpenAPI, Dockerfile | Pruebas; evento duplicado → 1 notificación | ✅ |
 | **F4** Perfiles (Python) | Consumidor (3 eventos): crear, sincronizar, archivar; REST `GET`/`PUT`; deduplicación; OpenAPI; Dockerfile | Pruebas; perfil creado por evento, editado y archivado | ⏳ |
 | **F5** Vacaciones (Java) | Réplica de empleados, CRUD, 4 validaciones, publica `vacaciones.programadas`, deduplicación, OpenAPI, Dockerfile | Pruebas; las 4 validaciones → 400; evento publicado | ⏳ |
-| **F6** Gateway | Rutas `/perfiles`, `/notificaciones`, `/vacaciones`; `/health` con los servicios nuevos y el broker | Todo alcanzable solo por `:8080` | ⏳ |
+| **F6** Gateway | `/health` agregado con los servicios nuevos y el broker; Swagger de todos los servicios (las rutas de cada servicio nuevo se agregan en su propia fase, para probarlo de punta a punta) | Todo alcanzable solo por `:8080` | ⏳ |
 | **F7** Pruebas E2E | Flujo completo de la sección 6 del PDF, deduplicación desde la UI, persistencia tras reinicio, colección Bruno | Desde cero, todos los pasos del PDF | ⏳ |
 | **F8** Documentación | README (broker, lenguajes, despliegue, eventos, D7, evidencia de deduplicación, pruebas), `docs/eventos.md`, manual `docs/reto-04/` | Cada entregable del PDF presente | ⏳ |
 
@@ -39,6 +39,8 @@ Cada fase termina **verificada** (pruebas + comprobación real en Docker) y con 
 - **F1**: si RabbitMQ carga `definitions.json` al arrancar (`load_definitions`), **no crea el usuario por defecto** (log: *"Will not seed default virtual host and user: have definitions to load"*). Se descartó versionar el usuario en el JSON (sería un secreto en el repo). Solución: contenedor `broker-init` de un solo uso que importa la topología por la API de administración cuando el broker ya está sano; los servicios dependerán de él con `condition: service_completed_successfully`. Verificado: login, exchange, 9 bindings, enrutamiento por tipo (un tipo desconocido no se enruta), persistencia tras reinicio e idempotencia del import.
 
 - **F2**: `POST /empleados` aceptaba `estado: RETIRADO`, que habría violado la restricción de coherencia del retiro (500); ahora es 400. `npm audit` detectó `qs` vulnerable (parsea los query params que usa la auditoría): corregido. El publicador usa *publisher confirms*, timeout de 3 s y reconexión perezosa; con el broker caído el registro responde 201 y el evento se pierde (limitación aceptada por el reto → Outbox en retos posteriores). Verificado en Docker: los 3 eventos llegan solo a sus colas, con envelope y `data` idénticos al catálogo, persistentes y con `message_id` = `id`.
+
+- **F3**: consumidor Go con `ack` solo tras el commit. Clasificación de fallos: mensaje corrupto, tipo no soportado o dato rechazado por la BD (SQLSTATE 22/23) → se descarta (reintentarlo nunca funcionaría: mensaje envenenado); fallo transitorio (BD caída) → `nack` con reencolado tras 5 s. Se limitó el `id` a 100 caracteres (columna) por la misma razón. La notificación se modela como puerto `Canal` (consola hoy, SMTP/Mailhog mañana) y se envía solo después de registrarla. Verificado en Docker: bienvenida, desvinculación, **mismo mensaje publicado 2 veces → 1 notificación**, mensajes envenenados descartados, BD caída → el mensaje espera en la cola y se procesa al volver, reconexión al broker con backoff 1-2-4 s, persistencia tras reinicio. Imagen distroless de 13.5 MB, usuario sin privilegios.
 
 ## Trampas del PDF ya identificadas
 
