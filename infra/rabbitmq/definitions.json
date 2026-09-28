@@ -1,0 +1,32 @@
+{
+  "vhosts": [{ "name": "/" }],
+  "exchanges": [
+    {
+      "name": "talentflow.eventos",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    { "name": "notificaciones.eventos", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "perfiles.eventos", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "vacaciones.eventos", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} }
+  ],
+  "bindings": [
+    { "source": "talentflow.eventos", "vhost": "/", "destination": "notificaciones.eventos", "destination_type": "queue", "routing_key": "empleado.creado", "arguments": {} },
+    { "source": "talentflow.eventos", "vhost": "/", "destination": "notificaciones.eventos", "destination_type": "queue", "routing_key": "empleado.retirado", "arguments": {} },
+    { "source": "talentflow.eventos", "vhost": "/", "destination": "notificaciones.eventos", "destination_type": "queue", "routing_key": "vacaciones.programadas", "arguments": {} },
+
+    { "source": "talentflow.eventos", "vhost": "/", "destination": "perfiles.eventos", "destination_type": "queue", "routing_key": "empleado.creado", "arguments": {} },
+    { "source": "talentflow.eventos", "vhost": "/", "destination": "perfiles.eventos", "destination_type": "queue", "routing_key": "empleado.actualizado", "arguments": {} },
+    { "source": "talentflow.eventos", "vhost": "/", "destination": "perfiles.eventos", "destination_type": "queue", "routing_key": "empleado.retirado", "arguments": {} },
+
+    { "source": "talentflow.eventos", "vhost": "/", "destination": "vacaciones.eventos", "destination_type": "queue", "routing_key": "empleado.creado", "arguments": {} },
+    { "source": "talentflow.eventos", "vhost": "/", "destination": "vacaciones.eventos", "destination_type": "queue", "routing_key": "empleado.actualizado", "arguments": {} },
+    { "source": "talentflow.eventos", "vhost": "/", "destination": "vacaciones.eventos", "destination_type": "queue", "routing_key": "empleado.retirado", "arguments": {} }
+  ]
+}

@@ -131,6 +131,53 @@ services:
     networks:
       - microservices-network
 
+  # Message Broker (RabbitMQ) — comunicación asincrónica por eventos (Reto 4)
+  message-broker:
+    image: rabbitmq:3.13-management-alpine
+    container_name: message-broker
+    # Nombre de nodo estable: RabbitMQ guarda sus datos por nombre de nodo
+    # (rabbit@<hostname>). Sin hostname fijo, recrear el contenedor cambiaría el
+    # nombre y los mensajes persistidos en el volumen quedarían huérfanos.
+    hostname: message-broker
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-admin}
+    expose:
+      - "5672"              # AMQP: solo dentro de la red de Docker
+    ports:
+      - "15672:15672"       # UI de administración (única excepción al Gateway, ver README)
+    volumes:
+      - vol-rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  # Paso de inicialización (se ejecuta y termina): importa la topología de eventos
+  # (infra/rabbitmq/definitions.json). Productores y consumidores esperan a que
+  # termine con éxito, así el exchange y las colas existen antes del primer evento.
+  broker-init:
+    image: rabbitmq:3.13-management-alpine
+    container_name: broker-init
+    entrypoint: ["sh", "/importar-definiciones.sh"]
+    restart: "no"
+    environment:
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+    volumes:
+      - ./infra/rabbitmq/importar-definiciones.sh:/importar-definiciones.sh:ro
+      - ./infra/rabbitmq/definitions.json:/definitions.json:ro
+    depends_on:
+      message-broker:
+        condition: service_healthy
+    networks:
+      - microservices-network
+
 networks:
   microservices-network:
     driver: bridge
@@ -138,3 +185,4 @@ networks:
 volumes:
   vol-empleados:
   vol-departamentos:
+  vol-rabbitmq:
