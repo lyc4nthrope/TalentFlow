@@ -61,7 +61,7 @@ Enrutamiento **exactamente** el exigido por el Reto 3 — ninguna ruta adicional
 | `GET /health` | (el propio Gateway) | Health check propio del Gateway (no hace proxy) + estado de cada servicio, su base de datos y el Circuit Breaker — ver [manual del Reto 3](docs/reto-03/README.md#3-dónde-veo-el-estado-de-cada-cosa) |
 | `/empleados/*` | `http://empleados-service:8081` | Cuerpo, cabeceras y código de estado se reenvían sin alterar |
 | `/departamentos/*` | `http://departamentos-service:8082` | Ídem |
-| cualquier otra ruta | — | `404` (no enrutada) |
+| cualquier otra ruta | — | `404` en JSON (`{"error", "message", "path"}`) del propio Gateway, no la página por defecto de Express |
 
 **URL base del sistema (desde el Reto 3 en adelante): `http://localhost:8080`**
 

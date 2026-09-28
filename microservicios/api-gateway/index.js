@@ -79,6 +79,16 @@ app.use(
     })
 );
 
+// Cualquier ruta fuera de /health, /empleados/* y /departamentos/*: 404 en JSON con el
+// mismo formato que el 503, en vez de la página HTML por defecto de Express.
+app.use((req, res) => {
+    res.status(404).json({
+        error: 'Not Found',
+        message: 'Ruta no enrutada por el API Gateway',
+        path: req.originalUrl
+    });
+});
+
 app.listen(PORT, () => {
     console.log(`API Gateway ejecutandose en el puerto ${PORT}`);
 });
