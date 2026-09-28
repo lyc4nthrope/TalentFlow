@@ -54,9 +54,9 @@ Detalle de rutas, parámetros del Circuit Breaker y justificación de decisiones
 | Componente | Estado |
 |---|---|
 | `microservicios/gestion-empleados` (Node + Express + Postgres) | ✅ Implementado: POST/GET, modelo canónico, validaciones, Circuit Breaker hacia departamentos |
-| `microservicios/gestion-departamentos` (PHP + MySQL) | ✅ Implementado: POST/GET, persistencia, healthcheck |
+| `microservicios/gestion-departamentos` (PHP + MySQL) | ✅ Implementado: POST/GET, persistencia, `/health` con verificación de BD, pruebas de integración PHP |
 | `microservicios/api-gateway` (Node + Express) | ✅ Implementado: único punto de entrada, enrutamiento `/empleados/*` y `/departamentos/*`, `503` JSON ante fallo, `/health` propio |
-| Circuit Breaker (`empleados → departamentos`) | ✅ Implementado con `opossum`, fallback de rechazo `503`, recuperación automática verificada |
+| Circuit Breaker (`empleados → departamentos`) | ✅ Implementado con `opossum`, fallback de registro `PENDIENTE` (no rechazo) con reconciliación automática a `ACEPTADO`/`RECHAZADO` al cerrar el circuito |
 | Auth / Perfiles / Vacaciones / Notificaciones | ⏳ Retos futuros |
 | Message broker, observabilidad, CI/CD | ⏳ Retos futuros (asíncrono: Reto 4; observabilidad: Reto 8) |
 
@@ -77,4 +77,7 @@ Detalle de rutas, parámetros del Circuit Breaker y justificación de decisiones
   futuros (5, 10) exigen que el Gateway valide JWT/JWKS y propague identidad, lo cual requiere
   lógica propia, no solo enrutamiento por labels.
 - Circuit Breaker con la librería del ecosistema (`opossum`), no implementado a mano, para
-  poder usar sus métricas de estado en el Reto 11 (Grafana).
+  poder usar sus métricas de estado en el Reto 11 (Grafana). Fallback de negocio:
+  **disponibilidad sobre consistencia inmediata** — el empleado se registra con
+  `validacionDepartamento: "PENDIENTE"` en vez de rechazarse con `503`, y se reconcilia
+  automáticamente (sin job periódico ni webhook) cuando el circuito vuelve a `CLOSED`.

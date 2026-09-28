@@ -1,8 +1,8 @@
-> **Borrador** — actualizado para reflejar el estado real del código en el Reto 2. Pendiente de confirmación por el resto del equipo antes de darlo por definitivo.
+> **Borrador** — actualizado para reflejar el estado real del código en el Reto 3. Pendiente de confirmación por el resto del equipo antes de darlo por definitivo.
 
 # Microservicio de Gestión de Empleados
 
-Servicio web para la gestión de empleados. Evolucionó del Reto 1 (almacenamiento en memoria) al Reto 2: persistencia en PostgreSQL y validación cruzada del departamento contra `departamentos-service`.
+Servicio web para la gestión de empleados. Evolucionó del Reto 1 (almacenamiento en memoria) al Reto 2 (persistencia en PostgreSQL y validación cruzada del departamento contra `departamentos-service`) y al Reto 3 (Circuit Breaker en esa comunicación, detrás de un API Gateway).
 
 ## Endpoints
 
@@ -32,8 +32,10 @@ Validaciones, en este orden:
 
 1. Unicidad de `email` — si ya existe, `400 Bad Request`.
 2. Unicidad de `numeroEmpleado` — si ya existe, `400 Bad Request`.
-3. Existencia del `departamentoId` — se consulta a `departamentos-service` por HTTP; si no existe, `400 Bad Request`. Si el servicio de departamentos no responde tras reintentos, `503 Service Unavailable`.
-4. Si todo pasa: `201 Created` con el empleado registrado (`estado: "ACTIVO"` por defecto) y header `Location: /empleados/{id}`.
+3. Existencia del `departamentoId` — se consulta a `departamentos-service` por HTTP, a través de un Circuit Breaker (ver sección siguiente):
+   - Si el departamento **no existe** (404 real de `departamentos-service`), `400 Bad Request`.
+   - Si **no se pudo verificar** (Circuit Breaker abierto o reintentos agotados), el registro **no se rechaza**: se acepta con `validacionDepartamento: "PENDIENTE"`.
+4. Si todo pasa: `201 Created` con el empleado registrado (`estado: "ACTIVO"` por defecto, `validacionDepartamento: "ACEPTADO"` o `"PENDIENTE"`) y header `Location: /empleados/{id}`.
 
 Las respuestas de error siguen el formato `{ status, error, message, timestamp, path, errors? }` (alineado con la clase de API RESTful).
 
@@ -54,34 +56,45 @@ GET /empleados/{id}
 - **200 OK**: información del empleado.
 - **404 Not Found**: `El empleado con id {id} no existe`.
 
+### Estado del Circuit Breaker (diagnóstico)
+
+```
+GET /empleados/circuito-departamentos
+```
+
+- **200 OK**: `{ "dependencia": "departamentos-service", "estado": "CLOSED" | "OPEN" | "HALF_OPEN" }`.
+
 ### Rutas no soportadas
 
 Cualquier otra ruta o método responde **404** con `Recurso no encontrado`.
 
-## Comunicación con departamentos-service
+## Comunicación con departamentos-service (Reto 3: Circuit Breaker)
 
-`empleados-service` valida `departamentoId` llamando a `GET {DEPARTAMENTOS_SERVICE_URL}/departamentos/{id}` con:
+`empleados-service` valida `departamentoId` llamando a `GET {DEPARTAMENTOS_SERVICE_URL}/departamentos/{id}`, envuelto en un Circuit Breaker (`opossum`):
 
-- **Timeout** de 2 segundos por intento.
-- **Hasta 3 reintentos** con espera creciente: 1s → 2s → 4s.
-- Si se agotan los reintentos sin respuesta, el registro se **rechaza** con `503` (no se acepta como "pendiente de validación" — ver el comentario en `src/clients/departamentos.client.js` para la justificación completa).
+- **Timeout** de 5 segundos por intento, con **hasta 3 reintentos** (espera fija de 200ms) antes de que el circuito cuente el fallo.
+- **Apertura**: 50 % de fallos con un mínimo de 4 llamadas (`volumeThreshold`) dentro de una ventana de 60s.
+- **`OPEN`**: las llamadas no tocan la red; se ejecuta el fallback de inmediato.
+- **`HALF_OPEN`**: tras 30s (`resetTimeout`), la siguiente petición real se deja pasar como prueba.
+
+**Fallback**: el empleado se registra con `validacionDepartamento: "PENDIENTE"` (campo independiente del `estado` laboral). Cuando el circuito vuelve a `CLOSED`, `reconciliarPendientes()` revisa automáticamente cada pendiente: `ACEPTADO` si el departamento existe, `RECHAZADO` si no. Justificación completa y prueba reproducible en el [README raíz](../../README.md).
 
 ## Estructura del código
 
 ```
 src/
-├── clients/departamentos.client.js          # Cliente HTTP hacia departamentos-service (timeout + reintentos)
+├── clients/departamentos.client.js          # Cliente HTTP + Circuit Breaker (opossum) hacia departamentos-service
 ├── db/pool.js                               # Pool de conexión a PostgreSQL
 ├── dominio/empleado.js                      # Modelo canónico + validaciones (propio de este servicio)
 ├── repository/
 │   ├── empleados.repository.postgres.js     # Persistencia real (usada en Docker/producción)
 │   └── empleados.repository.memoria.js      # Implementación en memoria (usada en tests unitarios)
 ├── routes/empleados.routes.js               # Definición de rutas Express
-├── services/empleados.service.js            # Lógica de negocio y validaciones
+├── services/empleados.service.js            # Lógica de negocio, validaciones y reconciliarPendientes()
 ├── openapi.js                               # Especificación OpenAPI + Swagger UI (/docs)
 ├── errores.js                               # Clase AppError
 ├── app.js                                   # Capa HTTP (Express) + manejo de errores
-└── server.js                                # Punto de entrada
+└── server.js                                # Punto de entrada; conecta el cierre del circuito con la reconciliación
 ```
 
 Todo el código de este servicio vive dentro de esta carpeta: no depende de ningún paquete compartido con otros microservicios (antes existía `@talentflow/shared`; se eliminó en el Reto 2 porque ese patrón es de monolito, no de microservicios — ver nota en el README raíz).
@@ -98,7 +111,7 @@ Todo el código de este servicio vive dentro de esta carpeta: no depende de ning
 
 ## Base de datos
 
-PostgreSQL. El esquema se crea automáticamente desde `init.sql` (montado en `/docker-entrypoint-initdb.d/`) la primera vez que el volumen `vol-empleados` está vacío.
+PostgreSQL. El esquema se crea automáticamente desde `init.sql` (montado en `/docker-entrypoint-initdb.d/`) la primera vez que el volumen `vol-empleados` está vacío. Desde el Reto 3 la tabla incluye la columna `validacion_departamento` (`PENDIENTE` / `ACEPTADO` / `RECHAZADO`); si tu volumen es anterior, hay que recrearlo con `docker compose down -v`.
 
 ## Construcción y ejecución (Docker)
 

@@ -44,6 +44,17 @@ GET /departamentos/{id}
 - **200 OK**: información del departamento.
 - **404 Not Found**: `El departamento con id {id} no existe`.
 
+### Health check (interno)
+
+```
+GET /health
+```
+
+- **200 OK**: `{ "status": "UP", "components": { "app": "UP", "db": "UP" } }`.
+- **503 Service Unavailable**: la base de datos no responde (`"db": "DOWN"`).
+
+Lo usa el `healthcheck` de `docker-compose.yml` (del que depende `empleados-service` con `condition: service_healthy`). No es alcanzable desde fuera: el Gateway solo enruta `/departamentos/*`.
+
 ### Rutas no soportadas
 
 Cualquier otra ruta o método responde **404** con `Recurso no encontrado`.
@@ -83,7 +94,18 @@ docker compose up --build
 
 Desde el Reto 3 este servicio ya no publica puerto al host (`expose`, no `ports`), así que su Swagger UI (`/docs`, `/openapi.json`) no es alcanzable desde fuera de la red de Docker. El Gateway solo enruta `/departamentos/*`, no `/docs` (ver README raíz).
 
+## Pruebas
+
+Pruebas de integración de caja negra (vía HTTP, sin dependencias externas), en `test/test_departamentos.php`. Requieren el sistema levantado (`docker compose up --build`) y PHP en el host; por defecto apuntan al Gateway:
+
+```bash
+php microservicios/gestion-departamentos/test/test_departamentos.php
+# o contra otra URL base:
+TEST_BASE_URL=http://localhost:8080 php microservicios/gestion-departamentos/test/test_departamentos.php
+```
+
+No forman parte de `npm test` (que solo corre las pruebas unitarias de Node y no necesita el sistema levantado).
+
 ## Pendientes conocidos
 
-- No tiene tests automatizados todavía (a diferencia de `gestion-empleados`).
 - No tiene ejecución local documentada sin Docker (requiere PHP 8.2+ y una instancia de MySQL accesible).
