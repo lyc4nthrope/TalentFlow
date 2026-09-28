@@ -295,6 +295,7 @@ También se abre desde la app de Bruno: *Open Collection* → `docs/reto-03/brun
 
 | Síntoma | Causa y solución |
 |---|---|
+| En §4.4 el circuito abre tras **3** peticiones lentas (o menos), no 4 | El umbral es "50 % de fallos con un mínimo de 4 llamadas **en los últimos 60 s**": si justo antes hubo registros exitosos (otra prueba, Bruno…), cuentan dentro de la ventana y el mínimo se alcanza antes. Es el comportamiento correcto; para la demostración, esperar **60 s sin tráfico** antes del paso 3 (o `docker compose restart empleados-service`) y el salto vuelve a ser exactamente 4 lentas → 5ª instantánea |
 | `column "validacion_departamento" does not exist` en los logs de empleados | Volumen de una versión anterior: `docker compose down -v` y volver a levantar |
 | `Bind for 0.0.0.0:8080 failed: port is already allocated` | Otro proceso usa el 8080: detenerlo |
 | Todas las peticiones de §4.4 responden `400` al instante | Se envió el cuerpo reducido del PDF: usar el modelo completo |

@@ -41,6 +41,8 @@ docker compose start departamentos-service
 
 ## Evidencia 2 — Salto en el tiempo de respuesta (≈60 s)
 
+> Antes de este paso, **60 s sin hacer peticiones** (o `docker compose restart empleados-service`): el Circuit Breaker cuenta las llamadas de los últimos 60 s, y los registros exitosos recientes harían que abra antes de la 4ª petición.
+
 ```bash
 curl -X POST http://localhost:8080/departamentos -H "Content-Type: application/json" \
   -d '{"id": "IT", "nombre": "Tecnología"}'
