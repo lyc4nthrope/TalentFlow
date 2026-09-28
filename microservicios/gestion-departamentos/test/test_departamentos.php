@@ -4,7 +4,7 @@
  * Pruebas de integración (black-box, vía HTTP) para el microservicio de departamentos.
  * Sin dependencias externas: solo usa file_get_contents/stream_context_create.
  *
- * Cubre exactamente lo exigido en el documento del Reto 2:
+ * Cubre exactamente lo exigido en el documento del Reto 2 (ejecutado a través del Gateway del Reto 3):
  *   - POST /departamentos -> 201 Created con el departamento creado
  *   - GET  /departamentos/{id} -> 200 OK con la info del departamento
  *   - GET  /departamentos/{id} inexistente -> 404 Not Found con mensaje descriptivo
