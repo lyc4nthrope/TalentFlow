@@ -102,7 +102,7 @@ src/
 │   └── empleados.repository.memoria.js      # Implementación en memoria (usada en tests unitarios)
 ├── routes/empleados.routes.js               # Definición de rutas Express
 ├── services/empleados.service.js            # Lógica de negocio, validaciones y reconciliarPendientes()
-├── openapi.js                               # Especificación OpenAPI + Swagger UI (/docs)
+├── openapi.js                               # Especificación OpenAPI + Swagger UI (/empleados/docs)
 ├── errores.js                               # Clase AppError
 ├── app.js                                   # Capa HTTP (Express) + manejo de errores
 └── server.js                                # Punto de entrada; conecta el cierre del circuito con la reconciliación
@@ -153,7 +153,7 @@ Los tests unitarios usan el repositorio en memoria (`empleados.repository.memori
 
 ## Documentación OpenAPI
 
-Desde el Reto 3 este servicio ya no publica puerto al host (`expose`, no `ports` — ver README raíz), así que su Swagger UI (`/docs`, `/openapi.json`) no es alcanzable desde fuera de la red de Docker. Para verla: `docker compose exec empleados-service` no sirve para HTTP; hay que exponer el puerto temporalmente o usar `docker compose port empleados-service 8081` + un túnel puntual. El Gateway (Reto 3) solo enruta `/empleados/*`, no `/docs`, a propósito: la tabla de rutas del reto exige exactamente esas dos rutas y nada más.
+Swagger UI en `http://localhost:8080/empleados/docs` y la especificación en `/empleados/openapi.json`, a través del Gateway. Viven bajo el prefijo `/empleados` porque el servicio no publica puerto al host y el Gateway solo enruta ese prefijo (hasta el Reto 3 estaban en `/docs` y no eran alcanzables).
 
 ## Evidencia
 

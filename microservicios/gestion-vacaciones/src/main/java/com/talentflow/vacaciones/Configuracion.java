@@ -10,6 +10,8 @@ import com.talentflow.vacaciones.infraestructura.persistencia.JdbcDeduplicador;
 import com.talentflow.vacaciones.infraestructura.persistencia.JdbcRepositorioEmpleados;
 import com.talentflow.vacaciones.infraestructura.persistencia.JdbcRepositorioVacaciones;
 import com.talentflow.vacaciones.infraestructura.persistencia.TransaccionesSpring;
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.info.Info;
 import java.time.Clock;
 import java.time.ZoneId;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -26,6 +28,17 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Configuration
 public class Configuracion {
+
+    /** Metadatos de la especificación (sin esto springdoc usa "OpenAPI definition"). */
+    @Bean
+    OpenAPI especificacion() {
+        return new OpenAPI().info(new Info()
+                .title("TalentFlow - Servicio de Gestión de Vacaciones")
+                .version("1.0.0")
+                .description("REST para RR. HH.: programa, consulta y cancela períodos de vacaciones con las "
+                        + "cuatro validaciones del reto. Mantiene una réplica local de empleados consumiendo "
+                        + "empleado.creado/actualizado/retirado y publica vacaciones.programadas (Catálogo de Eventos)."));
+    }
 
     @Bean
     ZoneId zonaHoraria(@Value("${vacaciones.zona-horaria}") String zona) {

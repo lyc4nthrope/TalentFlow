@@ -23,7 +23,9 @@ class Consumidor:
         self._conexion: AbstractRobustConnection | None = None
 
     def estado(self) -> str:
-        conectado = self._conexion is not None and not self._conexion.is_closed
+        # connected (y no is_closed): una conexión robusta que perdió el broker NO queda
+        # "cerrada" mientras reintenta, pero sí limpia este evento hasta reconectar.
+        conectado = self._conexion is not None and self._conexion.connected.is_set()
         return "UP" if conectado else "DOWN"
 
     async def ejecutar(self) -> None:

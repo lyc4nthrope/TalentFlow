@@ -57,5 +57,5 @@ publicador.iniciar();
 
 app.listen(PUERTO, () => {
   console.log(`Servicio de empleados escuchando en http://localhost:${PUERTO}`);
-  console.log(`Documentación Swagger en http://localhost:${PUERTO}/docs`);
+  console.log(`Documentación Swagger en http://localhost:8080/empleados/docs (a través del Gateway)`);
 });

@@ -24,8 +24,10 @@ function crearApp(
 
   app.use(express.json());
 
-  app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
-  app.get("/openapi.json", (req, res) => res.json(openapiSpec));
+  // Documentación bajo el prefijo del servicio: el Gateway solo enruta /empleados/*.
+  // Van ANTES del router: si no, GET /empleados/:id tomaría "docs" como un id.
+  app.use("/empleados/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
+  app.get("/empleados/openapi.json", (req, res) => res.json(openapiSpec));
 
   // Salud interna del servicio (la usa el healthcheck de docker-compose y el /health
   // agregado del Gateway; no se enruta hacia fuera). El servicio está DOWN solo si su

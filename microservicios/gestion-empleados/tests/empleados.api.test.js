@@ -402,3 +402,29 @@ describe("API de empleados — Reto 4", () => {
     assert.equal(respuesta.status, 400);
   });
 });
+
+describe("Documentación OpenAPI bajo el prefijo /empleados (alcanzable por el Gateway)", () => {
+  let servidor;
+  let baseUrl;
+
+  before(async () => {
+    const servicio = crearServicioEmpleados(crearRepositorioEmpleadosEnMemoria(), clienteDepartamentosFalso);
+    servidor = await new Promise((resolve) => {
+      const s = crearApp(servicio).listen(0, () => resolve(s));
+    });
+    baseUrl = `http://127.0.0.1:${servidor.address().port}`;
+  });
+
+  after(() => servidor.close());
+
+  it("sirve Swagger UI en /empleados/docs", async () => {
+    const respuesta = await fetch(`${baseUrl}/empleados/docs/`);
+    assert.equal(respuesta.status, 200);
+    assert.match(await respuesta.text(), /swagger-ui/i);
+  });
+
+  it("sirve la especificación en /empleados/openapi.json con los endpoints del Reto 4", async () => {
+    const especificacion = await (await fetch(`${baseUrl}/empleados/openapi.json`)).json();
+    assert.deepEqual(Object.keys(especificacion.paths["/empleados/{id}"]).sort(), ["delete", "get", "put"]);
+  });
+});

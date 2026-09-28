@@ -132,7 +132,7 @@ function obtenerHtmlSwagger(): string
   <script>
     window.onload = () => {
       window.ui = SwaggerUIBundle({
-        url: '/openapi.json',
+        url: '/departamentos/openapi.json',
         dom_id: '#swagger-ui'
       });
     };

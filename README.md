@@ -54,7 +54,7 @@ Ninguna de las tres es natural en un enrutador declarativo. Traefik aparecerá r
 
 ### Tabla de rutas del Gateway
 
-Enrutamiento **exactamente** el exigido por el Reto 3 — ninguna ruta adicional (ni `/docs`, ni `/openapi.json`: la documentación Swagger de cada servicio dejó de ser alcanzable desde fuera; ver los README de cada microservicio):
+Enrutamiento por prefijo, sin rutas adicionales en el Gateway. La documentación Swagger de cada servicio vive **dentro de su propio prefijo** (`/empleados/docs`, `/departamentos/docs`…), así que es alcanzable a través del Gateway sin agregarle rutas nuevas (ver [Documentación OpenAPI](#documentación-openapi-swagger)):
 
 | Ruta externa | Servicio interno | Notas |
 |---|---|---|
@@ -168,7 +168,17 @@ Ambos casos se probaron manualmente sobre esta rama y se comportan como arriba.
 
 ## Documentación OpenAPI (Swagger)
 
-Desde el Reto 3, ninguno de los dos servicios publica puerto al host y el Gateway no enruta `/docs` ni `/openapi.json` (la tabla de rutas del reto exige exactamente `/empleados/*` y `/departamentos/*`, nada más). La documentación Swagger sigue existiendo en el código de cada servicio pero no es alcanzable desde fuera de la red de Docker; para verla hay que exponer el puerto del contenedor temporalmente durante desarrollo.
+Ningún servicio publica puerto al host, así que cada uno sirve su Swagger **bajo su propio prefijo**, que es lo único que enruta el Gateway (no se agregan rutas al Gateway):
+
+| Servicio | Swagger UI | Especificación |
+|---|---|---|
+| empleados-service | `http://localhost:8080/empleados/docs` | `/empleados/openapi.json` |
+| departamentos-service | `http://localhost:8080/departamentos/docs` | `/departamentos/openapi.json` |
+| perfiles-service | `http://localhost:8080/perfiles/docs` | `/perfiles/openapi.json` |
+| notificaciones-service | `http://localhost:8080/notificaciones/docs` | `/notificaciones/openapi.json` |
+| vacaciones-service | `http://localhost:8080/vacaciones/docs` | `/vacaciones/openapi.json` |
+
+Hasta el Reto 3 la documentación vivía en `/docs` (fuera del prefijo) y no era alcanzable desde fuera; se movió en el Reto 4 porque la rúbrica evalúa el funcionamiento de Swagger UI. Consecuencia aceptada: `docs` y `openapi.json` no pueden usarse como id de un recurso (p. ej. `GET /empleados/docs` es la documentación, no el empleado "docs").
 
 ## Circuit Breaker (Reto 3) — `empleados-service → departamentos-service`
 

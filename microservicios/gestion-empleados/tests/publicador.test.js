@@ -103,6 +103,37 @@ describe("Publicador de eventos", () => {
     assert.equal(broker.estado.conexiones, 2);
   });
 
+  it("tras perder la conexión reconecta sola, sin esperar a que alguien publique", async () => {
+    const broker = crearBrokerFalso();
+    const publicador = crearPublicador(broker, { esperaReconexionMs: 10 });
+
+    await publicador.iniciar();
+    broker.estado.ultimaConexion.emit("close");
+    assert.equal(publicador.estadoActual(), "DOWN");
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(publicador.estadoActual(), "UP");
+    assert.equal(broker.estado.conexiones, 2);
+  });
+
+  it("si el broker no está al arrancar, reintenta en segundo plano hasta conectar", async () => {
+    let intentos = 0;
+    const brokerSano = crearBrokerFalso();
+    const conectar = async (...args) => {
+      intentos += 1;
+      if (intentos < 3) throw new Error("ECONNREFUSED");
+      return brokerSano.conectar(...args);
+    };
+    const publicador = crearPublicador({ conectar }, { esperaReconexionMs: 5 });
+
+    await publicador.iniciar();
+    assert.equal(publicador.estadoActual(), "DOWN");
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(publicador.estadoActual(), "UP");
+    assert.equal(intentos, 3);
+  });
+
   it("devuelve false si el broker no confirma dentro del plazo", async () => {
     const publicador = crearPublicador(crearBrokerFalso({ confirma: false }), { timeoutMs: 50 });
 

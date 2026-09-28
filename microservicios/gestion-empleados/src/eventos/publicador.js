@@ -17,8 +17,10 @@ function conTimeout(promesa, ms, descripcion) {
 //
 // - Usa un canal con confirmaciones (publisher confirms): "publicado" significa que el
 //   broker lo recibió y lo aceptó, no solo que salió del proceso.
-// - La conexión se crea al primer uso y se recrea sola si se pierde: si RabbitMQ está
-//   caído, empleados-service sigue atendiendo y reintenta en la siguiente publicación.
+// - La conexión se crea al arrancar (o al primer uso) y, si se pierde, se reintenta en
+//   segundo plano con espera exponencial (y también en la siguiente publicación): si
+//   RabbitMQ está caído, empleados-service sigue atendiendo, y /health vuelve a UP en
+//   cuanto el broker regresa, sin esperar a que alguien publique.
 // - Cada publicación tiene un tiempo máximo, para no bloquear la petición HTTP.
 function crearPublicadorEventos({
   url,
@@ -26,14 +28,33 @@ function crearPublicadorEventos({
   producer,
   timeoutMs = 3000,
   conectar = amqp.connect,
-  logger = console
+  logger = console,
+  esperaReconexionMs = 1000,
+  esperaReconexionMaximaMs = 30000
 }) {
   let canalPromesa = null;
   let conectado = false;
+  let reconexionPendiente = null;
+  let espera = esperaReconexionMs;
 
   function reiniciar() {
     canalPromesa = null;
     conectado = false;
+  }
+
+  function programarReconexion() {
+    if (reconexionPendiente) return;
+    reconexionPendiente = setTimeout(async () => {
+      reconexionPendiente = null;
+      try {
+        await conTimeout(obtenerCanal(), timeoutMs, "Reconexión con el broker");
+      } catch {
+        espera = Math.min(espera * 2, esperaReconexionMaximaMs);
+        programarReconexion();
+      }
+    }, espera);
+    // No mantiene vivo el proceso solo por este temporizador.
+    reconexionPendiente.unref?.();
   }
 
   function obtenerCanal() {
@@ -42,8 +63,9 @@ function crearPublicadorEventos({
         const conexion = await conectar(url, { timeout: timeoutMs });
         conexion.on("error", (error) => logger.error(`Conexión con el broker: ${error.message}`));
         conexion.on("close", () => {
-          logger.warn("Conexión con el broker cerrada; se reintentará en la próxima publicación");
+          logger.warn("Conexión con el broker cerrada; se reintentará en segundo plano");
           reiniciar();
+          programarReconexion();
         });
         try {
           const canal = await conexion.createConfirmChannel();
@@ -53,6 +75,7 @@ function crearPublicadorEventos({
           // claro que publicar a un destino inexistente.
           await canal.checkExchange(exchange);
           conectado = true;
+          espera = esperaReconexionMs;
           logger.info(`Conectado al broker (exchange ${exchange})`);
           return canal;
         } catch (error) {
@@ -106,7 +129,8 @@ function crearPublicadorEventos({
     try {
       await conTimeout(obtenerCanal(), timeoutMs, "Conexión con el broker");
     } catch (error) {
-      logger.warn(`Broker no disponible al arrancar (${error.message}); se reintentará al publicar`);
+      logger.warn(`Broker no disponible al arrancar (${error.message}); se reintentará en segundo plano`);
+      programarReconexion();
     }
   }
 
