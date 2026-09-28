@@ -1,0 +1,18 @@
+meta {
+  name: 04 Departamentos - consultar IT
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/departamentos/IT
+  body: none
+  auth: none
+}
+
+tests {
+  test("200 con el departamento IT", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().id).to.equal("IT");
+  });
+}

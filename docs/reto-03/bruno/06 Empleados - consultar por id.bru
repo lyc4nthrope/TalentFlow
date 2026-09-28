@@ -1,0 +1,18 @@
+meta {
+  name: 06 Empleados - consultar por id
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/empleados/{{empleadoId}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("200 con el empleado creado (ruta con parámetro a través del Gateway)", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().id).to.equal(bru.getVar("empleadoId"));
+  });
+}

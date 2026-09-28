@@ -243,7 +243,7 @@ curl -X POST http://localhost:8080/departamentos \
 docker compose stop departamentos-service
 
 # 3. Registrar empleados: YA NO se rechazan, quedan PENDIENTE con 201
-for i in 1 2 3 4 5 6; do
+for i in 1 2 3 4 5 6 7 8; do
   curl -s -X POST http://localhost:8080/empleados -H "Content-Type: application/json" \
     -d "{\"id\":\"E90$i\",\"nombre\":\"Test$i\",\"apellido\":\"A\",\"email\":\"t$i@test.com\",\"numeroEmpleado\":\"90$i\",\"cargo\":\"Dev\",\"area\":\"IT\",\"departamentoId\":\"IT\",\"fechaIngreso\":\"2026-01-01\"}" \
     -w " -> HTTP %{http_code} | %{time_total}s\n"
@@ -251,7 +251,7 @@ done
 curl http://localhost:8080/empleados/circuito-departamentos
 # Observado en este repo: todas responden 201 con "validacionDepartamento":"PENDIENTE".
 # Las primeras ~4 tardan ~0.63s (circuito CLOSED, reintentando de verdad); desde
-# la 5ª, ~0.005s (circuito OPEN). El campo PENDIENTE aparece en las 6, sin importar
+# la 5ª, ~0.008s (circuito OPEN). El campo PENDIENTE aparece en las 8, sin importar
 # si el circuito ya estaba abierto o todavía cerrado cuando se registró cada una.
 
 # 4. Restaurar el servicio y esperar el reseteo del circuito
@@ -270,6 +270,17 @@ curl http://localhost:8080/empleados/E901                     # -> "validacionDe
 # ACEPTADO, el que apuntaba a uno inexistente quedó RECHAZADO — ambos sin
 # reiniciar nada manualmente, solo por la próxima petición real tras el reseteo.
 ```
+
+### Evidencias y colección de pruebas
+
+Todo en [`docs/reto-03/`](docs/reto-03/):
+
+| Entregable | Archivo |
+|---|---|
+| Resultados reales de las pruebas 3.1, 3.2 y 3.3 del reto (acceso directo rechazado, salto de tiempo, recuperación automática, reconciliación) | [`pruebas.md`](docs/reto-03/pruebas.md) |
+| Script que ejecuta esas pruebas de punta a punta: `bash docs/reto-03/demo.sh` | [`demo.sh`](docs/reto-03/demo.sh) |
+| Colección **Bruno** con la URL base del sistema (`http://localhost:8080`) y tests por petición: `cd docs/reto-03/bruno && npx @usebruno/cli run --env Local` | [`bruno/`](docs/reto-03/bruno/) |
+| Guion para grabar las capturas / video | [`guion-video.md`](docs/reto-03/guion-video.md) |
 
 ## Decisiones técnicas (Reto 2)
 

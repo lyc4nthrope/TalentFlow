@@ -1,0 +1,19 @@
+meta {
+  name: 01 Gateway - health
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/health
+  body: none
+  auth: none
+}
+
+tests {
+  test("200 con el health propio del Gateway", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().service).to.equal("api-gateway");
+    expect(res.getBody().status).to.equal("UP");
+  });
+}

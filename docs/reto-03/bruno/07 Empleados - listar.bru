@@ -1,0 +1,18 @@
+meta {
+  name: 07 Empleados - listar
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/empleados
+  body: none
+  auth: none
+}
+
+tests {
+  test("200 con un arreglo", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody()).to.be.an("array");
+  });
+}
