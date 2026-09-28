@@ -1,0 +1,42 @@
+server:
+  port: ${PORT:8085}
+
+spring:
+  main:
+    banner-mode: off
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:db_vacaciones}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASS:}
+    hikari:
+      connection-timeout: 3000  # falla rápido si la BD no responde (no colgar peticiones)
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASS:guest}
+    connection-timeout: 3s
+    publisher-confirm-type: simple  # confirmaciones del broker al publicar
+    listener:
+      simple:
+        prefetch: 10
+        missing-queues-fatal: false  # la cola la crea broker-init; si falta, reintenta
+        default-requeue-rejected: false
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true  # campos fuera del contrato → 400 (asignación masiva)
+    serialization:
+      write-dates-as-timestamps: false  # fechas ISO-8601, no números
+
+springdoc:
+  api-docs:
+    path: /vacaciones/openapi.json
+  paths-to-match: /vacaciones/**
+
+vacaciones:
+  zona-horaria: ${ZONA_HORARIA:America/Bogota}
+  eventos:
+    exchange: ${RABBITMQ_EXCHANGE:talentflow.eventos}
+    cola: ${RABBITMQ_COLA:vacaciones.eventos}
+    timeout-confirmacion-ms: 3000
+    espera-reintento-ms: 5000

@@ -8,6 +8,7 @@ const EMPLEADOS_URL = process.env.EMPLEADOS_SERVICE_URL || 'http://empleados-ser
 const DEPARTAMENTOS_URL = process.env.DEPARTAMENTOS_SERVICE_URL || 'http://departamentos-service:8082';
 const NOTIFICACIONES_URL = process.env.NOTIFICACIONES_SERVICE_URL || 'http://notificaciones-service:8084';
 const PERFILES_URL = process.env.PERFILES_SERVICE_URL || 'http://perfiles-service:8083';
+const VACACIONES_URL = process.env.VACACIONES_SERVICE_URL || 'http://vacaciones-service:8085';
 
 const TIMEOUT_HEALTH_MS = 2000;
 
@@ -96,6 +97,15 @@ app.use(
         target: PERFILES_URL,
         changeOrigin: true,
         pathFilter: ['/perfiles'],
+        on: { error: handleProxyError }
+    })
+);
+
+app.use(
+    createProxyMiddleware({
+        target: VACACIONES_URL,
+        changeOrigin: true,
+        pathFilter: ['/vacaciones'],
         on: { error: handleProxyError }
     })
 );

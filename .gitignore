@@ -17,3 +17,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+
+# Java/Maven (Reto 4: gestion-vacaciones)
+target/

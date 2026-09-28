@@ -60,11 +60,13 @@ services:
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
       NOTIFICACIONES_SERVICE_URL: http://notificaciones-service:8084
       PERFILES_SERVICE_URL: http://perfiles-service:8083
+      VACACIONES_SERVICE_URL: http://vacaciones-service:8085
     depends_on:
       - empleados-service
       - departamentos-service
       - notificaciones-service
       - perfiles-service
+      - vacaciones-service
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -257,6 +259,65 @@ services:
     networks:
       - microservices-network
 
+  # Base de Datos Vacaciones (PostgreSQL) — propia del servicio (Reto 4)
+  database-vacaciones:
+    image: postgres:16-alpine
+    container_name: db-vacaciones
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_VACACIONES_NAME:-db_vacaciones}
+      POSTGRES_USER: ${DB_VACACIONES_USER:-user_vacaciones}
+      POSTGRES_PASSWORD: ${DB_VACACIONES_PASS:-pass_vacaciones}
+    expose:
+      - "5432"
+    volumes:
+      - vol-vacaciones:/var/lib/postgresql/data
+      - ./microservicios/gestion-vacaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_VACACIONES_USER:-user_vacaciones} -d ${DB_VACACIONES_NAME:-db_vacaciones}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Microservicio Vacaciones (Java + Spring Boot) — REST para RR. HH. y productor de eventos (Reto 4)
+  vacaciones-service:
+    build:
+      context: ./microservicios/gestion-vacaciones
+      dockerfile: Dockerfile
+      target: runner
+    container_name: ms-vacaciones
+    restart: on-failure
+    expose:
+      - "8085"
+    environment:
+      PORT: 8085
+      DB_HOST: database-vacaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_VACACIONES_NAME:-db_vacaciones}
+      DB_USER: ${DB_VACACIONES_USER:-user_vacaciones}
+      DB_PASS: ${DB_VACACIONES_PASS:-pass_vacaciones}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+      RABBITMQ_COLA: vacaciones.eventos
+      ZONA_HORARIA: America/Bogota
+    depends_on:
+      database-vacaciones:
+        condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8085/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s  # la JVM tarda más en arrancar que Go o Python
+    networks:
+      - microservices-network
+
   # Message Broker (RabbitMQ) — comunicación asincrónica por eventos (Reto 4)
   message-broker:
     image: rabbitmq:3.13-management-alpine
@@ -314,3 +375,4 @@ volumes:
   vol-rabbitmq:
   vol-notificaciones:
   vol-perfiles:
+  vol-vacaciones:
