@@ -1,0 +1,18 @@
+meta {
+  name: 09 Circuit Breaker - estado
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/empleados/circuito-departamentos
+  body: none
+  auth: none
+}
+
+tests {
+  test("200 con el estado observable del circuito", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(["CLOSED", "OPEN", "HALF_OPEN"]).to.include(res.getBody().estado);
+  });
+}

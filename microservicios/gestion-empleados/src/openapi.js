@@ -127,6 +127,15 @@ const openapiSpec = {
         }
       }
     },
+    "/health": {
+      get: {
+        summary: "Salud interna del servicio (no enrutada por el Gateway)",
+        responses: {
+          200: { description: "Servicio y base de datos UP", content: { "application/json": { schema: { $ref: "#/components/schemas/Health" } } } },
+          503: { description: "La base de datos no responde", content: { "application/json": { schema: { $ref: "#/components/schemas/Health" } } } }
+        }
+      }
+    },
     "/empleados/{id}": {
       get: {
         summary: "Consulta un empleado por id",
@@ -149,7 +158,23 @@ const openapiSpec = {
   components: {
     schemas: {
       Empleado: empleadoSchema,
-      Error: errorSchema
+      Error: errorSchema,
+      Health: {
+        type: "object",
+        properties: {
+          status: { type: "string", enum: ["UP", "DOWN"] },
+          service: { type: "string", example: "empleados-service" },
+          timestamp: { type: "string", format: "date-time" },
+          components: {
+            type: "object",
+            properties: {
+              app: { type: "string", enum: ["UP"] },
+              db: { type: "string", enum: ["UP", "DOWN"] },
+              circuitoDepartamentos: { type: "string", enum: ["CLOSED", "OPEN", "HALF_OPEN"] }
+            }
+          }
+        }
+      }
     }
   }
 };

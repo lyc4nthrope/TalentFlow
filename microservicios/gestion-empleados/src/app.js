@@ -12,13 +12,38 @@ const FRASES_ESTADO = {
   503: "Service Unavailable"
 };
 
-function crearApp(servicioEmpleados, clienteDepartamentos = { estadoActual: () => "DESCONOCIDO" }) {
+const TIMEOUT_HEALTH_DB_MS = 2000;
+
+function crearApp(
+  servicioEmpleados,
+  clienteDepartamentos = { estadoActual: () => "DESCONOCIDO" },
+  { verificarBaseDeDatos = async () => {} } = {}
+) {
   const app = express();
 
   app.use(express.json());
 
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
   app.get("/openapi.json", (req, res) => res.json(openapiSpec));
+
+  // Salud interna del servicio (la usa el healthcheck de docker-compose y el /health
+  // agregado del Gateway; no se enruta hacia fuera). El servicio está DOWN solo si su
+  // propia base de datos no responde: un circuito OPEN hacia departamentos significa
+  // "degradado pero vivo" (sigue registrando con fallback PENDIENTE), no caído.
+  app.get("/health", async (req, res) => {
+    const db = (await responde(verificarBaseDeDatos, TIMEOUT_HEALTH_DB_MS)) ? "UP" : "DOWN";
+    const status = db === "UP" ? "UP" : "DOWN";
+    res.status(status === "UP" ? 200 : 503).json({
+      status,
+      service: "empleados-service",
+      timestamp: new Date().toISOString(),
+      components: {
+        app: "UP",
+        db,
+        circuitoDepartamentos: clienteDepartamentos.estadoActual()
+      }
+    });
+  });
 
   // Bajo /empleados/* a propósito: así queda alcanzable a través del Gateway sin
   // agregar una ruta nueva al enrutamiento del Reto 3 (que enruta exactamente
@@ -42,6 +67,23 @@ function crearApp(servicioEmpleados, clienteDepartamentos = { estadoActual: () =
   });
 
   return app;
+}
+
+// true si la verificación termina sin error dentro del plazo; false si falla o tarda más
+// (un pool de pg con la BD caída puede quedarse esperando la conexión indefinidamente).
+async function responde(verificacion, timeoutMs) {
+  let timer;
+  const plazo = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+  });
+  try {
+    await Promise.race([verificacion(), plazo]);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function construirCuerpoError(status, mensaje, req, errores = []) {

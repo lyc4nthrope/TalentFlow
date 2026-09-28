@@ -1,0 +1,42 @@
+meta {
+  name: 05 Empleados - crear
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/empleados
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "id": "{{empleadoId}}",
+    "nombre": "Ana",
+    "apellido": "Gómez",
+    "email": "{{empleadoId}}@talentflow.test",
+    "numeroEmpleado": "{{empleadoId}}",
+    "cargo": "Desarrolladora",
+    "area": "Tecnología",
+    "departamentoId": "IT",
+    "fechaIngreso": "2026-01-01"
+  }
+}
+
+script:pre-request {
+  // Id único por corrida: email y numeroEmpleado son únicos y los datos persisten.
+  bru.setVar("empleadoId", "B" + Date.now().toString().slice(-9));
+}
+
+tests {
+  test("201 con departamento verificado (ACEPTADO) y Location", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().validacionDepartamento).to.equal("ACEPTADO");
+    expect(res.getHeader("location")).to.equal("/empleados/" + bru.getVar("empleadoId"));
+  });
+}

@@ -58,10 +58,10 @@ Enrutamiento **exactamente** el exigido por el Reto 3 — ninguna ruta adicional
 
 | Ruta externa | Servicio interno | Notas |
 |---|---|---|
-| `GET /health` | (el propio Gateway) | Health check propio del Gateway, no hace proxy |
+| `GET /health` | (el propio Gateway) | Health check propio del Gateway (no hace proxy) + estado de cada servicio, su base de datos y el Circuit Breaker — ver [manual del Reto 3](docs/reto-03/README.md#3-dónde-veo-el-estado-de-cada-cosa) |
 | `/empleados/*` | `http://empleados-service:8081` | Cuerpo, cabeceras y código de estado se reenvían sin alterar |
 | `/departamentos/*` | `http://departamentos-service:8082` | Ídem |
-| cualquier otra ruta | — | `404` (no enrutada) |
+| cualquier otra ruta | — | `404` en JSON (`{"error", "message", "path"}`) del propio Gateway, no la página por defecto de Express |
 
 **URL base del sistema (desde el Reto 3 en adelante): `http://localhost:8080`**
 
@@ -72,7 +72,8 @@ Si el servicio destino no responde (caído, timeout de conexión), el Gateway re
 ```
 TalentFlow/
 ├── microservicios/
-│   ├── gestion-empleados/             # Reto 1 + Reto 2 (Node.js + Postgres) — autónomo
+│   ├── api-gateway/                   # Reto 3 (Node.js + Express) — único punto de entrada
+│   ├── gestion-empleados/             # Reto 1 + 2 + 3 (Node.js + Postgres, Circuit Breaker) — autónomo
 │   └── gestion-departamentos/         # Reto 2 (PHP + MySQL) — autónomo
 ├── docs/                              # Evidencia y decisiones por reto
 ├── docker-compose.yml                 # Orquesta todos los microservicios
@@ -136,15 +137,15 @@ docker compose down -v
 
 ## Arranque ordenado — evidencia
 
-`depends_on` por sí solo solo espera a que el *contenedor* arranque, no a que el servicio esté listo. Por eso cada base de datos tiene un `healthcheck` (`pg_isready` / `mysqladmin ping`), `departamentos-service` tiene el suyo propio (`fsockopen` a su propio puerto), y `empleados-service` usa `depends_on: condition: service_healthy` contra **ambos**: su base de datos y `departamentos-service` — esto se agregó porque el profesor señaló, revisando el Reto 2, que faltaba esa dependencia explícita. El Gateway sigue con `depends_on` simple (sin `condition`) hacia los dos microservicios: si arranca antes de que alguno esté listo, sus peticiones fallan con el `503` descrito arriba hasta que el servicio responde — no se cae, se degrada. Verificado en este repo: al ejecutar `docker compose up --build` desde cero, `departamentos-service` queda `(healthy)` ANTES de que `empleados-service` arranque, y `docker compose ps` muestra:
+`depends_on` por sí solo solo espera a que el *contenedor* arranque, no a que el servicio esté listo. Por eso cada base de datos tiene un `healthcheck` (`pg_isready` / `mysqladmin ping`), `departamentos-service` tiene el suyo propio (consulta su endpoint interno `GET /health`, que también verifica la conexión a MySQL), `empleados-service` también (su `GET /health` interno verifica Postgres) y usa `depends_on: condition: service_healthy` contra **ambos**: su base de datos y `departamentos-service` — esto se agregó porque el profesor señaló, revisando el Reto 2, que faltaba esa dependencia explícita. El Gateway tiene su propio `healthcheck` (su `/health`) y sigue con `depends_on` simple (sin `condition`) hacia los dos microservicios: si arranca antes de que alguno esté listo, sus peticiones fallan con el `503` descrito arriba hasta que el servicio responde — no se cae, se degrada. Verificado en este repo: al ejecutar `docker compose up --build` desde cero, `departamentos-service` queda `(healthy)` ANTES de que `empleados-service` arranque, y `docker compose ps` muestra:
 
 ```
 NAME               SERVICE                  STATUS                 PORTS
-api-gateway        api-gateway              Up                     0.0.0.0:8080->8080/tcp
+api-gateway        api-gateway              Up (healthy)           0.0.0.0:8080->8080/tcp
 db-departamentos   database-departamentos   Up (healthy)           (sin publicar)
 db-empleados       database-empleados       Up (healthy)           (sin publicar)
 ms-departamentos   departamentos-service    Up (healthy)           (sin publicar)
-ms-empleados       empleados-service        Up                     (sin publicar)
+ms-empleados       empleados-service        Up (healthy)           (sin publicar)
 ```
 
 ## Persistencia de datos — evidencia
@@ -187,6 +188,7 @@ Desde el Reto 3, ninguno de los dos servicios publica puerto al host y el Gatewa
 | Reintentos internos (`maxReintentos`) | 3 | Heredado del Reto 2, espera fija de 200ms entre cada uno (no exponencial — ver corrección más abajo). |
 | Umbral de error (`errorThresholdPercentage`) | 50% | Una de las dos alternativas sugeridas por el reto ("3-5 fallos consecutivos o 50% de una ventana de 10"). |
 | Volumen mínimo (`volumeThreshold`) | 4 | **Decisión propia, no viene por defecto en `opossum` (por defecto es 0).** Sin este mínimo, el circuito abre con la primera petición fallida (1 de 1 = 100% ≥ 50%): técnicamente cumple el "50% de una ventana", pero no refleja los "3-5 fallos consecutivos" que también sugiere el reto, y como evidencia visual es mucho menos convincente (un solo salto de 0.6s a 0.005s en vez de varias peticiones lentas seguidas). Verificado en Docker real: con `volumeThreshold: 4`, las primeras 4 peticiones tardan ~0.63s cada una (reintentando de verdad) y desde la 5ª el circuito abre y responde en ~0.005s. |
+| Ventana estadística (`rollingCountTimeout` / `rollingCountBuckets`) | 60000 ms / 10 cubos | **Corrección sobre el valor por defecto de `opossum` (10000 ms).** Según el entorno de Docker, con `departamentos-service` detenido cada llamada completa (timeout de conexión + 3 reintentos) puede tardar ~10s, lo mismo que la ventana por defecto: las estadísticas de una llamada caducaban antes de que terminara la siguiente, el circuito nunca juntaba las 4 llamadas del `volumeThreshold` en la misma ventana y se quedaba `CLOSED` para siempre. Observado por el equipo en Docker Desktop: con la ventana a 60s, las peticiones 1-4 tardan ~10s y desde la 5ª el circuito abre (~35 ms). En entornos donde la conexión falla al instante (~0.63s por petición, ver prueba abajo) el cambio no altera el comportamiento. |
 | Timeout de reseteo (`resetTimeout`) | 30000 ms | Dentro del rango sugerido (30-60s). Coincide con el `sleep 35` que usa el propio guion de pruebas del reto (sección 3.3), confirmando que a los 35s el circuito ya tuvo oportunidad de pasar a `HALF_OPEN` y cerrar solo. |
 | Timeout total de la función (`timeout` interno de opossum) | `(timeoutMs × (maxReintentos+1)) + 5000` = 25000 ms | Margen de seguridad por encima del peor caso real de los reintentos internos (~20.6s), para que el timeout de `opossum` nunca dispare antes que los reintentos terminen por sí solos. |
 
@@ -241,7 +243,7 @@ curl -X POST http://localhost:8080/departamentos \
 docker compose stop departamentos-service
 
 # 3. Registrar empleados: YA NO se rechazan, quedan PENDIENTE con 201
-for i in 1 2 3 4 5 6; do
+for i in 1 2 3 4 5 6 7 8; do
   curl -s -X POST http://localhost:8080/empleados -H "Content-Type: application/json" \
     -d "{\"id\":\"E90$i\",\"nombre\":\"Test$i\",\"apellido\":\"A\",\"email\":\"t$i@test.com\",\"numeroEmpleado\":\"90$i\",\"cargo\":\"Dev\",\"area\":\"IT\",\"departamentoId\":\"IT\",\"fechaIngreso\":\"2026-01-01\"}" \
     -w " -> HTTP %{http_code} | %{time_total}s\n"
@@ -249,7 +251,7 @@ done
 curl http://localhost:8080/empleados/circuito-departamentos
 # Observado en este repo: todas responden 201 con "validacionDepartamento":"PENDIENTE".
 # Las primeras ~4 tardan ~0.63s (circuito CLOSED, reintentando de verdad); desde
-# la 5ª, ~0.005s (circuito OPEN). El campo PENDIENTE aparece en las 6, sin importar
+# la 5ª, ~0.008s (circuito OPEN). El campo PENDIENTE aparece en las 8, sin importar
 # si el circuito ya estaba abierto o todavía cerrado cuando se registró cada una.
 
 # 4. Restaurar el servicio y esperar el reseteo del circuito
@@ -268,6 +270,18 @@ curl http://localhost:8080/empleados/E901                     # -> "validacionDe
 # ACEPTADO, el que apuntaba a uno inexistente quedó RECHAZADO — ambos sin
 # reiniciar nada manualmente, solo por la próxima petición real tras el reseteo.
 ```
+
+### Evidencias y colección de pruebas
+
+Todo en [`docs/reto-03/`](docs/reto-03/):
+
+| Entregable | Archivo |
+|---|---|
+| **Manual paso a paso**: levantar el sistema, ver el estado de cada componente y ejecutar todas las pruebas del reto | [`README.md`](docs/reto-03/README.md) |
+| Resultados reales de las pruebas 3.1, 3.2 y 3.3 del reto (acceso directo rechazado, salto de tiempo, recuperación automática, reconciliación) | [`pruebas.md`](docs/reto-03/pruebas.md) |
+| Script que ejecuta esas pruebas de punta a punta: `bash docs/reto-03/demo.sh` | [`demo.sh`](docs/reto-03/demo.sh) |
+| Colección **Bruno** con la URL base del sistema (`http://localhost:8080`) y tests por petición: `cd docs/reto-03/bruno && npx @usebruno/cli run --env Local` | [`bruno/`](docs/reto-03/bruno/) |
+| Guion para grabar las capturas / video | [`guion-video.md`](docs/reto-03/guion-video.md) |
 
 ## Decisiones técnicas (Reto 2)
 
@@ -295,7 +309,7 @@ Se usan **ambas** estrategias, no solo una: **consulta previa** (para responder 
 
 ### Timeout y reintentos hacia `departamentos-service` (Reto 2, actualizado en el Reto 3)
 
-`empleados-service` llama a `departamentos-service` con `timeout` de 5s por intento y hasta 3 reintentos con espera fija de 200ms entre cada uno (no exponencial). Si se agotan los reintentos, **el registro del empleado se acepta igual, marcado `validacionDepartamento: "PENDIENTE"`** (decisión revisada en el Reto 3 — ver la sección de Circuit Breaker más abajo para la justificación y cómo se reconcilia). Desde el Reto 3 esta llamada además está protegida por un **Circuit Breaker** que deja de intentar contra una dependencia que ya se sabe caída. Ver `microservicios/gestion-empleados/src/clients/departamentos.client.js`.
+`empleados-service` llama a `departamentos-service` con `timeout` de 5s por intento y hasta 3 reintentos con espera fija de 200ms entre cada uno (no exponencial). Si se agotan los reintentos, **el registro del empleado se acepta igual, marcado `validacionDepartamento: "PENDIENTE"`** (decisión revisada en el Reto 3 — ver la sección de Circuit Breaker más arriba para la justificación y cómo se reconcilia). Desde el Reto 3 esta llamada además está protegida por un **Circuit Breaker** que deja de intentar contra una dependencia que ya se sabe caída. Ver `microservicios/gestion-empleados/src/clients/departamentos.client.js`.
 
 ## Alineación con la clase de API RESTful
 
