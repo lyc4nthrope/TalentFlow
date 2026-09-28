@@ -8,6 +8,7 @@ const { openapiSpec } = require("./openapi");
 const FRASES_ESTADO = {
   400: "Bad Request",
   404: "Not Found",
+  409: "Conflict",
   500: "Internal Server Error",
   503: "Service Unavailable"
 };
@@ -17,7 +18,7 @@ const TIMEOUT_HEALTH_DB_MS = 2000;
 function crearApp(
   servicioEmpleados,
   clienteDepartamentos = { estadoActual: () => "DESCONOCIDO" },
-  { verificarBaseDeDatos = async () => {} } = {}
+  { verificarBaseDeDatos = async () => {}, publicador = { estadoActual: () => "DESCONOCIDO" } } = {}
 ) {
   const app = express();
 
@@ -29,7 +30,8 @@ function crearApp(
   // Salud interna del servicio (la usa el healthcheck de docker-compose y el /health
   // agregado del Gateway; no se enruta hacia fuera). El servicio está DOWN solo si su
   // propia base de datos no responde: un circuito OPEN hacia departamentos significa
-  // "degradado pero vivo" (sigue registrando con fallback PENDIENTE), no caído.
+  // "degradado pero vivo" (sigue registrando con fallback PENDIENTE), no caído. Lo
+  // mismo con el broker: sin él se sigue registrando, solo fallan las publicaciones.
   app.get("/health", async (req, res) => {
     const db = (await responde(verificarBaseDeDatos, TIMEOUT_HEALTH_DB_MS)) ? "UP" : "DOWN";
     const status = db === "UP" ? "UP" : "DOWN";
@@ -40,7 +42,8 @@ function crearApp(
       components: {
         app: "UP",
         db,
-        circuitoDepartamentos: clienteDepartamentos.estadoActual()
+        circuitoDepartamentos: clienteDepartamentos.estadoActual(),
+        broker: publicador.estadoActual()
       }
     });
   });

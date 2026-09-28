@@ -2,14 +2,23 @@ const { crearApp } = require("./app");
 const { crearServicioEmpleados } = require("./services/empleados.service");
 const { crearRepositorioEmpleadosPostgres } = require("./repository/empleados.repository.postgres");
 const { crearClienteDepartamentos } = require("./clients/departamentos.client");
+const { crearPublicadorEventos } = require("./eventos/publicador");
 const { crearPool } = require("./db/pool");
 
 const PUERTO = process.env.PORT || 8080;
 const DEPARTAMENTOS_SERVICE_URL =
   process.env.DEPARTAMENTOS_SERVICE_URL || "http://localhost:8081";
+const ZONA_HORARIA = process.env.ZONA_HORARIA || "America/Bogota";
+
+// Credenciales del broker por variables de entorno (nunca en el código). Se codifican
+// para la URL: una contraseña con "@" o ":" rompería una URL armada a mano.
+const RABBITMQ_URL =
+  `amqp://${encodeURIComponent(process.env.RABBITMQ_USER || "guest")}` +
+  `:${encodeURIComponent(process.env.RABBITMQ_PASS || "guest")}` +
+  `@${process.env.RABBITMQ_HOST || "localhost"}:${process.env.RABBITMQ_PORT || 5672}`;
 
 const pool = crearPool();
-const repositorio = crearRepositorioEmpleadosPostgres(pool);
+const repositorio = crearRepositorioEmpleadosPostgres(pool, { zonaHoraria: ZONA_HORARIA });
 const clienteDepartamentos = crearClienteDepartamentos({
   baseUrl: DEPARTAMENTOS_SERVICE_URL,
   timeoutMs: process.env.DEPARTAMENTOS_TIMEOUT_MS
@@ -19,9 +28,15 @@ const clienteDepartamentos = crearClienteDepartamentos({
     ? Number(process.env.DEPARTAMENTOS_MAX_REINTENTOS)
     : 3
 });
-const servicio = crearServicioEmpleados(repositorio, clienteDepartamentos);
+const publicador = crearPublicadorEventos({
+  url: RABBITMQ_URL,
+  exchange: process.env.RABBITMQ_EXCHANGE || "talentflow.eventos",
+  producer: "empleados-service"
+});
+const servicio = crearServicioEmpleados(repositorio, clienteDepartamentos, publicador);
 const app = crearApp(servicio, clienteDepartamentos, {
-  verificarBaseDeDatos: () => pool.query("SELECT 1")
+  verificarBaseDeDatos: () => pool.query("SELECT 1"),
+  publicador
 });
 
 // Cuando el Circuit Breaker vuelve a CERRAR (departamentos-service se restableció),
@@ -37,6 +52,8 @@ clienteDepartamentos.onRecuperado(() => {
     })
     .catch((error) => console.error("Error reconciliando empleados pendientes:", error));
 });
+
+publicador.iniciar();
 
 app.listen(PUERTO, () => {
   console.log(`Servicio de empleados escuchando en http://localhost:${PUERTO}`);

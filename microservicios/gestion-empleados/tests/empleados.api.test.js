@@ -203,7 +203,12 @@ describe("API de empleados", () => {
       assert.equal(status, 200);
       assert.equal(cuerpo.status, "UP");
       assert.equal(cuerpo.service, "empleados-service");
-      assert.deepEqual(cuerpo.components, { app: "UP", db: "UP", circuitoDepartamentos: "CLOSED" });
+      assert.deepEqual(cuerpo.components, {
+        app: "UP",
+        db: "UP",
+        circuitoDepartamentos: "CLOSED",
+        broker: "DESCONOCIDO"
+      });
     });
 
     it("responde 503 DOWN cuando la base de datos falla", async () => {
@@ -282,12 +287,118 @@ describe("API de empleados", () => {
 
     it("responde 404 con 'Recurso no encontrado' para un método no soportado", async () => {
       const respuesta = await fetch(`${baseUrl}/empleados/E001`, {
-        method: "DELETE"
+        method: "PATCH"
       });
 
       assert.equal(respuesta.status, 404);
       const cuerpo = await respuesta.json();
       assert.equal(cuerpo.message, "Recurso no encontrado");
     });
+  });
+});
+describe("API de empleados — Reto 4", () => {
+  let servidor;
+  let baseUrl;
+
+  before(async () => {
+    const repositorio = crearRepositorioEmpleadosEnMemoria();
+    const servicio = crearServicioEmpleados(repositorio, clienteDepartamentosFalso);
+    servidor = await new Promise((resolve) => {
+      const s = crearApp(servicio).listen(0, () => resolve(s));
+    });
+    baseUrl = `http://127.0.0.1:${servidor.address().port}`;
+
+    for (const [id, email, numero] of [
+      ["E001", "juan.perez@empresa.com", "EMP-2026-001"],
+      ["E002", "ana@empresa.com", "EMP-2026-002"]
+    ]) {
+      await fetch(`${baseUrl}/empleados`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...EMPLEADO_VALIDO, id, email, numeroEmpleado: numero })
+      });
+    }
+  });
+
+  after(() => servidor.close());
+
+  const enviar = (metodo, ruta, cuerpo) =>
+    fetch(`${baseUrl}${ruta}`, {
+      method: metodo,
+      headers: { "Content-Type": "application/json" },
+      body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo)
+    });
+
+  it("PUT /empleados/:id responde 200 con el empleado actualizado", async () => {
+    const respuesta = await enviar("PUT", "/empleados/E001", {
+      nombre: "Juan",
+      apellido: "Pérez Gómez",
+      email: "juan.perez@empresa.com",
+      cargo: "Tech Lead",
+      area: "Tecnología",
+      departamentoId: "IT"
+    });
+
+    assert.equal(respuesta.status, 200);
+    const cuerpo = await respuesta.json();
+    assert.equal(cuerpo.cargo, "Tech Lead");
+  });
+
+  it("PUT con un campo desconocido responde 400 con el detalle en errors", async () => {
+    const respuesta = await enviar("PUT", "/empleados/E001", { salario: 1 });
+
+    assert.equal(respuesta.status, 400);
+    const cuerpo = await respuesta.json();
+    assert.ok(cuerpo.errors.some((e) => e.field === "salario"));
+  });
+
+  it("DELETE /empleados/:id con motivo responde 200 con la baja lógica", async () => {
+    const respuesta = await enviar("DELETE", "/empleados/E002", { motivo: "DESPIDO" });
+
+    assert.equal(respuesta.status, 200);
+    const cuerpo = await respuesta.json();
+    assert.equal(cuerpo.estado, "RETIRADO");
+    assert.equal(cuerpo.motivoRetiro, "DESPIDO");
+    assert.match(cuerpo.fechaRetiro, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+  });
+
+  it("el empleado retirado sigue consultable (no se borró)", async () => {
+    const respuesta = await fetch(`${baseUrl}/empleados/E002`);
+    assert.equal(respuesta.status, 200);
+    assert.equal((await respuesta.json()).estado, "RETIRADO");
+  });
+
+  it("DELETE sobre un retirado responde 409 Conflict con el formato de error", async () => {
+    const respuesta = await enviar("DELETE", "/empleados/E002");
+
+    assert.equal(respuesta.status, 409);
+    const cuerpo = await respuesta.json();
+    assert.equal(cuerpo.status, 409);
+    assert.equal(cuerpo.error, "Conflict");
+  });
+
+  it("GET /empleados?estado=RETIRADO lista solo los retirados, con fechaRetiro", async () => {
+    const respuesta = await fetch(`${baseUrl}/empleados?estado=RETIRADO`);
+
+    assert.equal(respuesta.status, 200);
+    const cuerpo = await respuesta.json();
+    assert.deepEqual(cuerpo.map((e) => e.id), ["E002"]);
+    assert.ok(cuerpo[0].fechaRetiro);
+  });
+
+  it("GET con rango de fechas incluye al retirado de hoy y excluye otro rango", async () => {
+    const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
+    const conHoy = await (await fetch(`${baseUrl}/empleados?estado=RETIRADO&desde=${hoy}&hasta=${hoy}`)).json();
+    const otroRango = await (
+      await fetch(`${baseUrl}/empleados?estado=RETIRADO&desde=2020-01-01&hasta=2020-12-31`)
+    ).json();
+
+    assert.deepEqual(conHoy.map((e) => e.id), ["E002"]);
+    assert.deepEqual(otroRango, []);
+  });
+
+  it("GET con un filtro inválido responde 400", async () => {
+    const respuesta = await fetch(`${baseUrl}/empleados?estado=RETIRADO&desde=ayer`);
+    assert.equal(respuesta.status, 400);
   });
 });

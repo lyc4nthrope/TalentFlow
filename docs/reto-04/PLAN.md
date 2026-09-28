@@ -26,7 +26,7 @@ Cada fase termina **verificada** (pruebas + comprobación real en Docker) y con 
 | Fase | Contenido | Verificación | Estado |
 |---|---|---|---|
 | **F1** Broker | RabbitMQ en compose, exchange y colas declarados, healthcheck, UI | UI accesible; exchange y colas visibles | ✅ |
-| **F2** Empleados | `PUT`, `DELETE` (baja lógica + `fechaRetiro` + `motivo`), `GET ?estado&desde&hasta`, publicador AMQP con envelope | Pruebas unitarias; los 3 eventos llegan a las colas con el formato exacto | ⏳ |
+| **F2** Empleados | `PUT`, `DELETE` (baja lógica + `fechaRetiro` + `motivo`), `GET ?estado&desde&hasta`, publicador AMQP con envelope | Pruebas unitarias; los 3 eventos llegan a las colas con el formato exacto | ✅ |
 | **F3** Notificaciones (Go) | Consumidor (3 eventos), log `[NOTIFICACIÓN]`, historial en BD, deduplicación, `GET /notificaciones[/{empleadoId}]`, OpenAPI, Dockerfile | Pruebas; evento duplicado → 1 notificación | ⏳ |
 | **F4** Perfiles (Python) | Consumidor (3 eventos): crear, sincronizar, archivar; REST `GET`/`PUT`; deduplicación; OpenAPI; Dockerfile | Pruebas; perfil creado por evento, editado y archivado | ⏳ |
 | **F5** Vacaciones (Java) | Réplica de empleados, CRUD, 4 validaciones, publica `vacaciones.programadas`, deduplicación, OpenAPI, Dockerfile | Pruebas; las 4 validaciones → 400; evento publicado | ⏳ |
@@ -37,6 +37,8 @@ Cada fase termina **verificada** (pruebas + comprobación real en Docker) y con 
 ## Aprendizajes por fase
 
 - **F1**: si RabbitMQ carga `definitions.json` al arrancar (`load_definitions`), **no crea el usuario por defecto** (log: *"Will not seed default virtual host and user: have definitions to load"*). Se descartó versionar el usuario en el JSON (sería un secreto en el repo). Solución: contenedor `broker-init` de un solo uso que importa la topología por la API de administración cuando el broker ya está sano; los servicios dependerán de él con `condition: service_completed_successfully`. Verificado: login, exchange, 9 bindings, enrutamiento por tipo (un tipo desconocido no se enruta), persistencia tras reinicio e idempotencia del import.
+
+- **F2**: `POST /empleados` aceptaba `estado: RETIRADO`, que habría violado la restricción de coherencia del retiro (500); ahora es 400. `npm audit` detectó `qs` vulnerable (parsea los query params que usa la auditoría): corregido. El publicador usa *publisher confirms*, timeout de 3 s y reconexión perezosa; con el broker caído el registro responde 201 y el evento se pierde (limitación aceptada por el reto → Outbox en retos posteriores). Verificado en Docker: los 3 eventos llegan solo a sus colas, con envelope y `data` idénticos al catálogo, persistentes y con `message_id` = `id`.
 
 ## Trampas del PDF ya identificadas
 

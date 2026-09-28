@@ -88,11 +88,18 @@ services:
       DB_USER: ${DB_EMPLEADOS_USER:-user_empleados}
       DB_PASS: ${DB_EMPLEADOS_PASS:-pass_empleados}
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+      ZONA_HORARIA: America/Bogota
     depends_on:
       database-empleados:
         condition: service_healthy
       departamentos-service:
         condition: service_healthy
+      # La topología de eventos debe existir antes de publicar el primer evento.
+      broker-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 5s
