@@ -1,5 +1,4 @@
 const CircuitBreaker = require("opossum");
-const { AppError } = require("../errores");
 
 function esperar(ms){
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -49,33 +48,67 @@ function crearClienteDepartamentos({
     throw ultimoError;
   }
 
+
+
+    //  breakerOptions||
+    //  La ventana por defecto de opossum es de 10s (rollingCountTimeout), pero cada
+    // llamada completa (timeout de conexión + reintentos) tarda ~9.8s cuando
+    // departamentos está totalmente caído (contenedor detenido, no solo el proceso:
+    // no hay ECONNREFUSED inmediato, hay que esperar el timeout de conexión TCP en
+    // cada intento). Con la ventana por defecto, las estadísticas de una llamada
+    // caducan antes de que la siguiente termine, y el circuito nunca junta el
+    // volumeThreshold necesario para abrir. Se amplía a 60s (10 cubos de 6s) para
+    // que varias llamadas lentas sí caigan dentro de la misma ventana estadística.
+
+  
   const breakerOptions = {
-    timeout: (timeoutMs * (maxReintentos + 1)) + 5000,
+       timeout: (timeoutMs * (maxReintentos + 1)) + 5000,
     errorThresholdPercentage,
     resetTimeout,
     volumeThreshold: 4,
-    capacity: 10
+    capacity: 10,
+    rollingCountTimeout: 60000,
+    rollingCountBuckets: 10
   };
 
   const breaker = new CircuitBreaker(realizarPeticionConReintentos, breakerOptions);
 
-  breaker.fallback((departamentoId, err) => {
-    throw new AppError(
-      `No fue posible verificar el departamento, el servicio no resolvió`,
-      503
-    );
-  });
+  // Marcador interno: distingue "no se pudo verificar" (dependencia caída) de
+  // "se verificó y no existe" (respuesta real del servicio). El fallback ya NO
+  // lanza: lanzar aquí forzaba a rechazar el registro (503) cuando departamentos
+  // está caído. Por decisión del profesor, ese caso debe quedar PENDIENTE, no
+  // rechazado — ver reconciliarPendientes() en empleados.service.js.
+  const DEPENDENCIA_NO_DISPONIBLE = Symbol("dependencia-no-disponible");
+  breaker.fallback(() => DEPENDENCIA_NO_DISPONIBLE);
 
   breaker.on("open", () => console.warn("⚠️ Circuit Breaker ABIERTO para Departamentos"));
   breaker.on("halfOpen", () => console.info("🔄 Circuit Breaker HALF-OPEN para Departamentos"));
   breaker.on("close", () => console.info("✅ Circuit Breaker CERRADO para Departamentos"));
 
-  // 4. Exponer el método 'existe' envolviéndolo en el circuito
+  // Contrato: resuelve siempre a uno de tres valores, nunca lanza por sí mismo.
+  //   'EXISTE'     -> se consultó de verdad y el departamento existe
+  //   'NO_EXISTE'  -> se consultó de verdad y el departamento NO existe (404 real)
+  //   'PENDIENTE'  -> no se pudo consultar (circuito abierto o dependencia caída)
   async function existe(departamentoId) {
-    return await breaker.fire(departamentoId);
+    const resultado = await breaker.fire(departamentoId);
+    if (resultado === DEPENDENCIA_NO_DISPONIBLE) return "PENDIENTE";
+    return resultado ? "EXISTE" : "NO_EXISTE";
   }
 
-  return { existe };
+  // Estado observable del circuito, para el endpoint de diagnóstico.
+  function estadoActual() {
+    if (breaker.opened) return "OPEN";
+    if (breaker.halfOpen) return "HALF_OPEN";
+    return "CLOSED";
+  }
+
+  // Se dispara cuando el circuito vuelve a CERRAR tras haber estado abierto:
+  // es la señal de "el servicio se restableció" que dispara la reconciliación.
+  function onRecuperado(callback) {
+    breaker.on("close", callback);
+  }
+
+  return { existe, estadoActual, onRecuperado };
 }
 
 module.exports = { crearClienteDepartamentos };

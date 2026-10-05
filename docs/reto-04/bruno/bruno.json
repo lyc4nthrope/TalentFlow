@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "TalentFlow - Reto 4",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

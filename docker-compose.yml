@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Base de Datos Empleados (PostgreSQL)
   database-empleados:
@@ -60,9 +58,21 @@ services:
       PORT: 8080
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
+      NOTIFICACIONES_SERVICE_URL: http://notificaciones-service:8084
+      PERFILES_SERVICE_URL: http://perfiles-service:8083
+      VACACIONES_SERVICE_URL: http://vacaciones-service:8085
     depends_on:
       - empleados-service
       - departamentos-service
+      - notificaciones-service
+      - perfiles-service
+      - vacaciones-service
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - microservices-network
 
@@ -84,11 +94,27 @@ services:
       DB_USER: ${DB_EMPLEADOS_USER:-user_empleados}
       DB_PASS: ${DB_EMPLEADOS_PASS:-pass_empleados}
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+      ZONA_HORARIA: America/Bogota
     depends_on:
       database-empleados:
         condition: service_healthy
       departamentos-service:
         condition: service_healthy
+<<<<<<< HEAD
+=======
+      # La topología de eventos debe existir antes de publicar el primer evento.
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+>>>>>>> lyc4nthrope
     networks:
       - microservices-network
 
@@ -114,11 +140,259 @@ services:
       database-departamentos:
         condition: service_healthy
     healthcheck:
+<<<<<<< HEAD
       test: ["CMD-SHELL", "php -r 'exit(@fsockopen(\"127.0.0.1\", 8082) ? 0 : 1);'"]
+=======
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1:8082/health\") === false ? 1 : 0);'"]
+>>>>>>> lyc4nthrope
       interval: 5s
       timeout: 3s
       retries: 5
       start_period: 10s
+<<<<<<< HEAD
+=======
+    networks:
+      - microservices-network
+
+  # Base de Datos Notificaciones (PostgreSQL) — propia del servicio (Reto 4)
+  database-notificaciones:
+    image: postgres:16-alpine
+    container_name: db-notificaciones
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NOTIF_NAME:-db_notificaciones}
+      POSTGRES_USER: ${DB_NOTIF_USER:-user_notificaciones}
+      POSTGRES_PASSWORD: ${DB_NOTIF_PASS:-pass_notificaciones}
+    expose:
+      - "5432"
+    volumes:
+      - vol-notificaciones:/var/lib/postgresql/data
+      - ./microservicios/notificaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_NOTIF_USER:-user_notificaciones} -d ${DB_NOTIF_NAME:-db_notificaciones}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Microservicio Notificaciones (Go) — puramente reactivo: consume eventos (Reto 4)
+  notificaciones-service:
+    build:
+      context: ./microservicios/notificaciones
+      dockerfile: Dockerfile
+      target: runner
+    container_name: ms-notificaciones
+    restart: on-failure
+    expose:
+      - "8084"
+    environment:
+      PORT: 8084
+      DB_HOST: database-notificaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_NOTIF_NAME:-db_notificaciones}
+      DB_USER: ${DB_NOTIF_USER:-user_notificaciones}
+      DB_PASS: ${DB_NOTIF_PASS:-pass_notificaciones}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+      RABBITMQ_COLA: notificaciones.eventos
+      # Bonus: envío de correo real por SMTP. Sin SMTP_HOST solo queda el log por consola.
+      # Mailhog no está en depends_on a propósito: si no está disponible, el servicio
+      # arranca igual y cada envío fallido queda en el log (la notificación se guarda).
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_FROM: notificaciones@talentflow.local
+    depends_on:
+      database-notificaciones:
+        condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/notificaciones", "-healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - microservices-network
+
+  # Servidor de correo de pruebas (Mailhog) — bonus del Reto 4: recibe los correos de
+  # notificaciones-service y los muestra en su UI; no los entrega a ningún buzón real.
+  # Los guarda en memoria: se pierden al recrear el contenedor.
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: mailhog
+    restart: unless-stopped
+    expose:
+      - "1025"              # SMTP: solo dentro de la red de Docker
+    ports:
+      - "8025:8025"         # UI web para ver los correos (herramienta de pruebas, ver README)
+    networks:
+      - microservices-network
+
+  # Base de Datos Perfiles (PostgreSQL) — propia del servicio (Reto 4)
+  database-perfiles:
+    image: postgres:16-alpine
+    container_name: db-perfiles
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_PERFILES_NAME:-db_perfiles}
+      POSTGRES_USER: ${DB_PERFILES_USER:-user_perfiles}
+      POSTGRES_PASSWORD: ${DB_PERFILES_PASS:-pass_perfiles}
+    expose:
+      - "5432"
+    volumes:
+      - vol-perfiles:/var/lib/postgresql/data
+      - ./microservicios/gestion-perfiles/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_PERFILES_USER:-user_perfiles} -d ${DB_PERFILES_NAME:-db_perfiles}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Microservicio Perfiles (Python + FastAPI) — consume eventos y expone REST (Reto 4)
+  perfiles-service:
+    build:
+      context: ./microservicios/gestion-perfiles
+      dockerfile: Dockerfile
+      target: runner
+    container_name: ms-perfiles
+    restart: on-failure
+    expose:
+      - "8083"
+    environment:
+      DB_HOST: database-perfiles
+      DB_PORT: 5432
+      DB_NAME: ${DB_PERFILES_NAME:-db_perfiles}
+      DB_USER: ${DB_PERFILES_USER:-user_perfiles}
+      DB_PASS: ${DB_PERFILES_PASS:-pass_perfiles}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+      RABBITMQ_COLA: perfiles.eventos
+    depends_on:
+      database-perfiles:
+        condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8083/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  # Base de Datos Vacaciones (PostgreSQL) — propia del servicio (Reto 4)
+  database-vacaciones:
+    image: postgres:16-alpine
+    container_name: db-vacaciones
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_VACACIONES_NAME:-db_vacaciones}
+      POSTGRES_USER: ${DB_VACACIONES_USER:-user_vacaciones}
+      POSTGRES_PASSWORD: ${DB_VACACIONES_PASS:-pass_vacaciones}
+    expose:
+      - "5432"
+    volumes:
+      - vol-vacaciones:/var/lib/postgresql/data
+      - ./microservicios/gestion-vacaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_VACACIONES_USER:-user_vacaciones} -d ${DB_VACACIONES_NAME:-db_vacaciones}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Microservicio Vacaciones (Java + Spring Boot) — REST para RR. HH. y productor de eventos (Reto 4)
+  vacaciones-service:
+    build:
+      context: ./microservicios/gestion-vacaciones
+      dockerfile: Dockerfile
+      target: runner
+    container_name: ms-vacaciones
+    restart: on-failure
+    expose:
+      - "8085"
+    environment:
+      PORT: 8085
+      DB_HOST: database-vacaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_VACACIONES_NAME:-db_vacaciones}
+      DB_USER: ${DB_VACACIONES_USER:-user_vacaciones}
+      DB_PASS: ${DB_VACACIONES_PASS:-pass_vacaciones}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+      RABBITMQ_COLA: vacaciones.eventos
+      ZONA_HORARIA: America/Bogota
+    depends_on:
+      database-vacaciones:
+        condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8085/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s  # la JVM tarda más en arrancar que Go o Python
+    networks:
+      - microservices-network
+
+  # Message Broker (RabbitMQ) — comunicación asincrónica por eventos (Reto 4)
+  message-broker:
+    image: rabbitmq:3.13-management-alpine
+    container_name: message-broker
+    # Nombre de nodo estable: RabbitMQ guarda sus datos por nombre de nodo
+    # (rabbit@<hostname>). Sin hostname fijo, recrear el contenedor cambiaría el
+    # nombre y los mensajes persistidos en el volumen quedarían huérfanos.
+    hostname: message-broker
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-admin}
+    expose:
+      - "5672"              # AMQP: solo dentro de la red de Docker
+    ports:
+      - "15672:15672"       # UI de administración (excepción al Gateway, ver README)
+    volumes:
+      - vol-rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  # Paso de inicialización (se ejecuta y termina): importa la topología de eventos
+  # (infra/rabbitmq/definitions.json). Productores y consumidores esperan a que
+  # termine con éxito, así el exchange y las colas existen antes del primer evento.
+  broker-init:
+    image: rabbitmq:3.13-management-alpine
+    container_name: broker-init
+    entrypoint: ["sh", "/importar-definiciones.sh"]
+    restart: "no"
+    environment:
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+    volumes:
+      - ./infra/rabbitmq/importar-definiciones.sh:/importar-definiciones.sh:ro
+      - ./infra/rabbitmq/definitions.json:/definitions.json:ro
+    depends_on:
+      message-broker:
+        condition: service_healthy
+>>>>>>> lyc4nthrope
     networks:
       - microservices-network
 
@@ -129,3 +403,7 @@ networks:
 volumes:
   vol-empleados:
   vol-departamentos:
+  vol-rabbitmq:
+  vol-notificaciones:
+  vol-perfiles:
+  vol-vacaciones:

@@ -1,0 +1,29 @@
+meta {
+  name: Departamentos - crear IT
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/departamentos
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "id": "IT",
+    "nombre": "Tecnología",
+    "descripcion": "Departamento de TI"
+  }
+}
+
+tests {
+  test("201 creado o 400 porque ya existía", function () {
+    expect([201, 400]).to.include(res.getStatus());
+  });
+}

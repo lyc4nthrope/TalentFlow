@@ -33,19 +33,44 @@ $metodo = $_SERVER['REQUEST_METHOD'];
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
 // --- Documentación (no requieren base de datos) ---
-if ($metodo === 'GET' && $uri === '/docs') {
+// Bajo el prefijo del servicio: el Gateway solo enruta /departamentos/*. Van antes de
+// GET /departamentos/{id}, que si no tomaría "docs" como un id.
+if ($metodo === 'GET' && $uri === '/departamentos/docs') {
     header('Content-Type: text/html; charset=utf-8');
     echo obtenerHtmlSwagger();
     exit;
 }
 
-if ($metodo === 'GET' && $uri === '/openapi.json') {
+if ($metodo === 'GET' && $uri === '/departamentos/openapi.json') {
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(obtenerEspecificacionOpenApi());
     exit;
 }
 
 header('Content-Type: application/json; charset=utf-8');
+
+// --- Health check (antes de instanciar el repositorio: debe responder aunque la BD falle) ---
+if ($metodo === 'GET' && $uri === '/health') {
+    $dbStatus = 'UP';
+    try {
+        Database::obtenerConexion()->query('SELECT 1');
+    } catch (PDOException $e) {
+        $dbStatus = 'DOWN';
+    }
+
+    $statusGeneral = $dbStatus === 'UP' ? 'UP' : 'DOWN';
+
+    http_response_code($statusGeneral === 'UP' ? 200 : 503);
+    echo json_encode([
+        'status' => $statusGeneral,
+        'timestamp' => gmdate('Y-m-d\TH:i:s\Z'),
+        'components' => [
+            'app' => 'UP',
+            'db' => $dbStatus,
+        ],
+    ]);
+    exit;
+}
 
 try {
     $repositorio = new DepartamentoRepository(Database::obtenerConexion());

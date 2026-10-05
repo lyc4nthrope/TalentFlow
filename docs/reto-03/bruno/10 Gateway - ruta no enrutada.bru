@@ -1,0 +1,19 @@
+meta {
+  name: 10 Gateway - ruta no enrutada
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/ruta-inexistente
+  body: none
+  auth: none
+}
+
+tests {
+  test("404: el Gateway solo enruta /empleados/* y /departamentos/*", function () {
+    expect(res.getStatus()).to.equal(404);
+    expect(res.getBody().error).to.equal("Not Found");
+    expect(res.getBody().path).to.equal("/ruta-inexistente");
+  });
+}

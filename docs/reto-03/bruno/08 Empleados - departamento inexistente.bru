@@ -1,0 +1,38 @@
+meta {
+  name: 08 Empleados - departamento inexistente
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/empleados
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "id": "{{empleadoId}}X",
+    "nombre": "Recuperado",
+    "apellido": "Prueba",
+    "email": "{{empleadoId}}x@talentflow.test",
+    "numeroEmpleado": "{{empleadoId}}X",
+    "cargo": "Dev",
+    "area": "IT",
+    "departamentoId": "NO-EXISTE",
+    "fechaIngreso": "2026-01-01"
+  }
+}
+
+tests {
+  // Con departamentos-service sano, un 400 solo puede venir de una consulta real
+  // (es el paso 5 de la sección 3.3 del reto).
+  test("400 porque el departamento no existe", function () {
+    expect(res.getStatus()).to.equal(400);
+    expect(res.getBody().errors[0].field).to.equal("departamentoId");
+  });
+}

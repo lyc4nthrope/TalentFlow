@@ -44,6 +44,17 @@ GET /departamentos/{id}
 - **200 OK**: información del departamento.
 - **404 Not Found**: `El departamento con id {id} no existe`.
 
+### Health check (interno)
+
+```
+GET /health
+```
+
+- **200 OK**: `{ "status": "UP", "components": { "app": "UP", "db": "UP" } }`.
+- **503 Service Unavailable**: la base de datos no responde (`"db": "DOWN"`).
+
+Lo usa el `healthcheck` de `docker-compose.yml` (del que depende `empleados-service` con `condition: service_healthy`). No es alcanzable desde fuera: el Gateway solo enruta `/departamentos/*`.
+
 ### Rutas no soportadas
 
 Cualquier otra ruta o método responde **404** con `Recurso no encontrado`.
@@ -55,7 +66,7 @@ public/index.php                    # Punto de entrada HTTP: enrutamiento y mane
 src/
 ├── Database.php                    # Conexión PDO a MySQL (lee configuración de variables de entorno)
 ├── DepartamentoRepository.php      # Acceso a datos (buscarPorId, guardar, listar)
-└── OpenApi.php                     # Especificación OpenAPI + HTML de Swagger UI (/docs)
+└── OpenApi.php                     # Especificación OpenAPI + HTML de Swagger UI (/departamentos/docs)
 ```
 
 Sin Composer ni autoload: el servicio no tiene dependencias externas, así que se mantuvo deliberadamente simple.
@@ -81,9 +92,20 @@ docker compose up --build
 
 ## Documentación OpenAPI
 
-Desde el Reto 3 este servicio ya no publica puerto al host (`expose`, no `ports`), así que su Swagger UI (`/docs`, `/openapi.json`) no es alcanzable desde fuera de la red de Docker. El Gateway solo enruta `/departamentos/*`, no `/docs` (ver README raíz).
+Swagger UI en `http://localhost:8080/departamentos/docs` y la especificación en `/departamentos/openapi.json`, a través del Gateway. Viven bajo el prefijo `/departamentos` porque el servicio no publica puerto al host y el Gateway solo enruta ese prefijo (hasta el Reto 3 estaban en `/docs` y no eran alcanzables).
+
+## Pruebas
+
+Pruebas de integración de caja negra (vía HTTP, sin dependencias externas), en `test/test_departamentos.php`. Requieren el sistema levantado (`docker compose up --build`) y PHP en el host; por defecto apuntan al Gateway:
+
+```bash
+php microservicios/gestion-departamentos/test/test_departamentos.php
+# o contra otra URL base:
+TEST_BASE_URL=http://localhost:8080 php microservicios/gestion-departamentos/test/test_departamentos.php
+```
+
+No forman parte de `npm test` (que solo corre las pruebas unitarias de Node y no necesita el sistema levantado).
 
 ## Pendientes conocidos
 
-- No tiene tests automatizados todavía (a diferencia de `gestion-empleados`).
 - No tiene ejecución local documentada sin Docker (requiere PHP 8.2+ y una instancia de MySQL accesible).

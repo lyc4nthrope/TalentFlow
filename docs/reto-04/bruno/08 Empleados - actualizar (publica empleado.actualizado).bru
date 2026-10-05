@@ -1,0 +1,32 @@
+meta {
+  name: Empleados - actualizar (publica empleado.actualizado)
+  type: http
+  seq: 8
+}
+
+put {
+  url: {{baseUrl}}/empleados/{{empleadoId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "nombre": "Juan",
+    "apellido": "Pérez Gómez",
+    "email": "{{empleadoId}}@talentflow.test",
+    "cargo": "Tech Lead",
+    "area": "Tecnología",
+    "departamentoId": "IT"
+  }
+}
+
+tests {
+  test("200", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

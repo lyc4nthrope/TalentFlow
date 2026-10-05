@@ -1,0 +1,35 @@
+meta {
+  name: 02 Departamentos - crear IT
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/departamentos
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "id": "IT",
+    "nombre": "Tecnología",
+    "descripcion": "Departamento de TI"
+  }
+}
+
+tests {
+  // 201 la primera vez; 400 si ya existía (los datos persisten en el volumen).
+  test("201 creado o 400 porque ya existe", function () {
+    expect([201, 400]).to.include(res.getStatus());
+  });
+  test("si se creó, propaga el header Location del servicio", function () {
+    if (res.getStatus() === 201) {
+      expect(res.getHeader("location")).to.equal("/departamentos/IT");
+    }
+  });
+}
