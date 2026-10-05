@@ -7,7 +7,7 @@ import com.talentflow.vacaciones.dominio.Vacaciones;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -31,8 +31,10 @@ public class JdbcRepositorioVacaciones implements RepositorioVacaciones {
     }
 
     @Override
-    public Vacaciones crear(String empleadoId, LocalDate fechaInicio, LocalDate fechaFin, Instant fechaCreacion) {
-        // Formato del reto: V-2026-0042 (año de creación + secuencia de la BD, única y sin carreras).
+    public Vacaciones crear(String empleadoId, LocalDateTime fechaInicio, LocalDateTime fechaFin,
+            Instant fechaCreacion) {
+        // Formato del reto: V-2026-0042 (año de creación + secuencia de la BD, única y
+        // sin carreras).
         long secuencia = jdbc.sql("SELECT nextval('vacaciones_seq')").query(Long.class).single();
         String id = "V-%d-%04d".formatted(fechaCreacion.atZone(zonaHoraria).getYear(), secuencia);
         try {
@@ -47,7 +49,8 @@ public class JdbcRepositorioVacaciones implements RepositorioVacaciones {
                     .param("creacion", fechaCreacion.atOffset(ZoneOffset.UTC))
                     .update();
         } catch (DataIntegrityViolationException e) {
-            // Red de seguridad: la restricción EXCLUDE de la BD impide el solapamiento aun si
+            // Red de seguridad: la restricción EXCLUDE de la BD impide el solapamiento aun
+            // si
             // dos solicitudes simultáneas pasaran la validación previa.
             if (e.getMostSpecificCause() instanceof SQLException sql && VIOLACION_EXCLUSION.equals(sql.getSQLState())) {
                 throw new SolicitudInvalidaException("fechaInicio",
@@ -82,17 +85,19 @@ public class JdbcRepositorioVacaciones implements RepositorioVacaciones {
     }
 
     @Override
-    public Optional<Vacaciones> buscarVigenteSolapado(String empleadoId, LocalDate fechaInicio, LocalDate fechaFin) {
-        // Rangos cerrados [inicio, fin]: se cruzan si inicioA <= finB y inicioB <= finA.
+    public Optional<Vacaciones> buscarVigenteSolapado(String empleadoId, LocalDateTime fechaInicio,
+            LocalDateTime fechaFin) {
+        // Rangos cerrados [inicio, fin]: se cruzan si inicioA <= finB y inicioB <=
+        // finA.
         return jdbc.sql("SELECT " + COLUMNAS + """
-                         FROM vacaciones
-                        WHERE empleado_id = :empleadoId
-                          AND estado IN ('PROGRAMADA', 'EN_CURSO')
-                          AND fecha_inicio <= :fin
-                          AND fecha_fin >= :inicio
-                        ORDER BY fecha_inicio
-                        LIMIT 1
-                        """)
+                 FROM vacaciones
+                WHERE empleado_id = :empleadoId
+                  AND estado IN ('PROGRAMADA', 'EN_CURSO')
+                  AND fecha_inicio <= :fin
+                  AND fecha_fin >= :inicio
+                ORDER BY fecha_inicio
+                LIMIT 1
+                """)
                 .param("empleadoId", empleadoId)
                 .param("inicio", fechaInicio)
                 .param("fin", fechaFin)
@@ -111,9 +116,57 @@ public class JdbcRepositorioVacaciones implements RepositorioVacaciones {
         return new Vacaciones(
                 fila.getString("id"),
                 fila.getString("empleado_id"),
-                fila.getObject("fecha_inicio", LocalDate.class),
-                fila.getObject("fecha_fin", LocalDate.class),
+                fila.getObject("fecha_inicio", LocalDateTime.class),
+                fila.getObject("fecha_fin", LocalDateTime.class),
                 EstadoVacaciones.valueOf(fila.getString("estado")),
                 fila.getObject("fecha_creacion", OffsetDateTime.class).toInstant());
+    }
+
+    @Override
+    public List<Vacaciones> findByEstadoAndFechaInicioLessThanEqual(EstadoVacaciones estado, LocalDateTime fecha) {
+        return jdbc.sql("SELECT " + COLUMNAS + """
+                 FROM vacaciones
+                WHERE estado = :estado
+                  AND fecha_inicio <= :fecha
+                ORDER BY fecha_inicio
+                """)
+                .param("estado", estado.name())
+                .param("fecha", fecha)
+                .query(JdbcRepositorioVacaciones::aVacaciones)
+                .list();
+    }
+
+    @Override
+    public List<Vacaciones> findByEstadoAndFechaFinLessThanEqual(EstadoVacaciones estado, LocalDateTime fecha) {
+        return jdbc.sql("SELECT " + COLUMNAS + """
+                 FROM vacaciones
+                WHERE estado = :estado
+                  AND fecha_fin <= :fecha
+                ORDER BY fecha_fin
+                """)
+                .param("estado", estado.name())
+                .param("fecha", fecha)
+                .query(JdbcRepositorioVacaciones::aVacaciones)
+                .list();
+    }
+
+    @Override
+    public boolean actualizarEstado(String id, EstadoVacaciones nuevoEstado) {
+        return jdbc.sql("UPDATE vacaciones SET estado = :nuevoEstado WHERE id = :id")
+                .param("nuevoEstado", nuevoEstado.name())
+                .param("id", id)
+                .update() == 1;
+    }
+
+    @Override
+    public boolean actualizar(Vacaciones vacaciones) {
+        return jdbc.sql("""
+                UPDATE vacaciones
+                   SET estado = :estado
+                 WHERE id = :id
+                """)
+                .param("estado", vacaciones.estado().name())
+                .param("id", vacaciones.id())
+                .update() == 1;
     }
 }

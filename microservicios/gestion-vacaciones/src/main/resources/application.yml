@@ -34,6 +34,7 @@ springdoc:
   paths-to-match: /vacaciones/**
 
 vacaciones:
+  cron: ${VACACIONES_CRON:0 * * * * *}  # cada min
   zona-horaria: ${ZONA_HORARIA:America/Bogota}
   eventos:
     exchange: ${RABBITMQ_EXCHANGE:talentflow.eventos}

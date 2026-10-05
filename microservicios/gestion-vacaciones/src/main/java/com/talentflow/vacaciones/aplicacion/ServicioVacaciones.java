@@ -8,7 +8,7 @@ import com.talentflow.vacaciones.dominio.Vacaciones;
 import com.talentflow.vacaciones.dominio.VacacionesNoEncontradasException;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -35,7 +35,7 @@ public class ServicioVacaciones {
 
     public Vacaciones programar(SolicitudVacaciones solicitud) {
         // Validaciones 1 y 2 (no requieren BD).
-        ReglasVacaciones.validarFechas(solicitud.fechaInicio(), solicitud.fechaFin(), LocalDate.now(reloj));
+        ReglasVacaciones.validarFechas(solicitud.fechaInicio().atStartOfDay(), solicitud.fechaFin().atStartOfDay(), LocalDateTime.now(reloj));
 
         Programacion programacion = transacciones.ejecutar(() -> {
             // Validación 4: el empleado debe existir en la réplica (y no estar retirado).
@@ -48,7 +48,7 @@ public class ServicioVacaciones {
             }
 
             // Validación 3: sin solapamiento con un período PROGRAMADA o EN_CURSO.
-            vacaciones.buscarVigenteSolapado(solicitud.empleadoId(), solicitud.fechaInicio(), solicitud.fechaFin())
+            vacaciones.buscarVigenteSolapado(solicitud.empleadoId(), solicitud.fechaInicio().atStartOfDay(), solicitud.fechaFin().atStartOfDay())
                     .ifPresent(conflicto -> {
                         throw new SolicitudInvalidaException("fechaInicio",
                                 "El período se cruza con otro período " + conflicto.estado() + " del empleado ("
@@ -59,7 +59,7 @@ public class ServicioVacaciones {
 
             Instant ahora = Instant.now(reloj).truncatedTo(ChronoUnit.SECONDS);
             Vacaciones creada = vacaciones.crear(
-                    solicitud.empleadoId(), solicitud.fechaInicio(), solicitud.fechaFin(), ahora);
+                    solicitud.empleadoId(), solicitud.fechaInicio().atStartOfDay(), solicitud.fechaFin().atStartOfDay(), ahora);
             return new Programacion(creada, empleado.email());
         });
 
@@ -88,7 +88,7 @@ public class ServicioVacaciones {
     public Vacaciones cancelar(String id) {
         return transacciones.ejecutar(() -> {
             Vacaciones actual = consultar(id);
-            if (!actual.esCancelable(LocalDate.now(reloj))) {
+            if (!actual.esCancelable(LocalDateTime.now(reloj))) {
                 throw new ConflictoDeEstadoException("El período " + id + " no se puede cancelar: está "
                         + actual.estado() + (actual.estaVigente() ? " y ya inició" : ""));
             }

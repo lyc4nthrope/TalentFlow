@@ -1,7 +1,7 @@
 package com.talentflow.vacaciones.dominio;
 
 import java.time.DayOfWeek;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /** Reglas de negocio de los períodos de vacaciones (sin dependencias de infraestructura). */
 public final class ReglasVacaciones {
@@ -14,7 +14,7 @@ public final class ReglasVacaciones {
      * 1. fechaFin debe ser POSTERIOR a fechaInicio (texto literal del reto: el mismo día no lo es).
      * 2. fechaInicio no puede estar en el pasado; hoy sí es válido.
      */
-    public static void validarFechas(LocalDate fechaInicio, LocalDate fechaFin, LocalDate hoy) {
+    public static void validarFechas(LocalDateTime fechaInicio, LocalDateTime fechaFin, LocalDateTime hoy) {
         if (!fechaFin.isAfter(fechaInicio)) {
             throw new SolicitudInvalidaException("fechaFin",
                     "La fechaFin (" + fechaFin + ") debe ser posterior a la fechaInicio (" + fechaInicio + ")");
@@ -30,14 +30,15 @@ public final class ReglasVacaciones {
      * (El ejemplo del Catálogo de Eventos, 12 días del 15 al 30 de marzo de 2026, no cuadra
      * con ninguna regla estándar: de lunes a viernes son 11. Se documenta la regla elegida.)
      */
-    public static int diasHabiles(LocalDate fechaInicio, LocalDate fechaFin) {
-        return (int) fechaInicio.datesUntil(fechaFin.plusDays(1))
+    public static int diasHabiles(LocalDateTime fechaInicio, LocalDateTime fechaFin) {
+        return (int) fechaInicio.toLocalDate()
+        .datesUntil(fechaFin.toLocalDate().plusDays(1))
                 .filter(dia -> dia.getDayOfWeek() != DayOfWeek.SATURDAY && dia.getDayOfWeek() != DayOfWeek.SUNDAY)
                 .count();
     }
 
     /** Dos rangos cerrados [inicio, fin] se solapan si comparten al menos un día. */
-    public static boolean seSolapan(LocalDate inicioA, LocalDate finA, LocalDate inicioB, LocalDate finB) {
+    public static boolean seSolapan(LocalDateTime inicioA, LocalDateTime finA, LocalDateTime inicioB, LocalDateTime finB) {
         return !inicioA.isAfter(finB) && !inicioB.isAfter(finA);
     }
 }
