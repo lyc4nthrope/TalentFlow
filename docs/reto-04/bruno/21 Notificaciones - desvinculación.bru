@@ -1,0 +1,17 @@
+meta {
+  name: Notificaciones - desvinculación
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{baseUrl}}/notificaciones/{{empleadoId}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("se registró la notificación DESVINCULACION", function () {
+    expect(res.getBody().map((n) => n.tipo)).to.include("DESVINCULACION");
+  });
+}

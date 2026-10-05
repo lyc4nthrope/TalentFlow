@@ -1,0 +1,27 @@
+meta {
+  name: Vacaciones - empleado inexistente
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseUrl}}/vacaciones
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "empleadoId": "NO-EXISTE",
+    "fechaInicio": "{{vacInicio}}",
+    "fechaFin": "{{vacFin}}"
+  }
+}
+
+tests {
+  test("400", function () { expect(res.getStatus()).to.equal(400); });
+}

@@ -21,51 +21,44 @@ Cliente ──REST──▶ API Gateway ──REST──▶ Microservicios ─�
 - **Síncrono (REST)**: solo Cliente ↔ API Gateway ↔ Microservicios
 - **Asíncrono (eventos)**: entre microservicios vía message broker (RabbitMQ/Kafka/Redis)
 
-## Arquitectura actual (Reto 3)
+## Arquitectura actual (Reto 4)
 
 ```
-                         Cliente HTTP (curl, Postman, Bruno)
-                                       │
-                                única URL base
-                                       ▼
-                         ┌─────────────────────────┐
-                         │   api-gateway  :8080     │  ← único puerto publicado al host
-                         │  (Node.js + Express +    │
-                         │   http-proxy-middleware) │
-                         └────────────┬─────────────┘
-                       /empleados/*   │   /departamentos/*
-                    ┌──────────────────┴──────────────────┐
-                    ▼                                     ▼
-         empleados-service :8081                departamentos-service :8082
-         (Node.js + Express)                     (PHP nativo)
-                    │   HTTP REST + Circuit Breaker (opossum)
-                    └────────────────────────────────────► departamentos-service
-                    │                                     │
-                    ▼                                     ▼
-         database-empleados                       database-departamentos
-         (PostgreSQL, expose interno)             (MySQL, expose interno)
+Cliente ──REST──▶ api-gateway :8080 ──REST──▶ empleados · departamentos · perfiles · notificaciones · vacaciones
+                                                    │  (Circuit Breaker empleados → departamentos)
+                   empleados ──publica──┐           │
+                   vacaciones ─publica──┤           ▼
+                                        ▼      cada uno con su propia BD
+                              RabbitMQ (exchange topic "talentflow.eventos")
+                                        │ fan-out
+                        ┌───────────────┼───────────────┐
+                        ▼               ▼               ▼
+                    perfiles     notificaciones     vacaciones (réplica de empleados)
 ```
 
-Detalle de rutas, parámetros del Circuit Breaker y justificación de decisiones: ver el
+Diagrama detallado, servicios ↔ lenguajes, eventos y justificación de decisiones: ver el
 [README raíz](../README.md).
 
-## Estado actual (Reto 3)
+## Estado actual (Reto 4)
 
 | Componente | Estado |
 |---|---|
-| `microservicios/gestion-empleados` (Node + Express + Postgres) | ✅ Implementado: POST/GET, modelo canónico, validaciones, Circuit Breaker hacia departamentos |
-| `microservicios/gestion-departamentos` (PHP + MySQL) | ✅ Implementado: POST/GET, persistencia, `/health` con verificación de BD, pruebas de integración PHP |
-| `microservicios/api-gateway` (Node + Express) | ✅ Implementado: único punto de entrada, enrutamiento `/empleados/*` y `/departamentos/*`, `503` JSON ante fallo, `/health` propio |
-| Circuit Breaker (`empleados → departamentos`) | ✅ Implementado con `opossum`, fallback de registro `PENDIENTE` (no rechazo) con reconciliación automática a `ACEPTADO`/`RECHAZADO` al cerrar el circuito |
-| Auth / Perfiles / Vacaciones / Notificaciones | ⏳ Retos futuros |
-| Message broker, observabilidad, CI/CD | ⏳ Retos futuros (asíncrono: Reto 4; observabilidad: Reto 8) |
+| `microservicios/api-gateway` (Node + Express) | ✅ Único punto de entrada para los 5 servicios, `503`/`404` JSON, `/health` agregado con `problemas` |
+| `microservicios/gestion-empleados` (Node + Express + Postgres) | ✅ POST/GET/PUT, baja lógica (`DELETE` → RETIRADO), auditoría por fechas, Circuit Breaker hacia departamentos, publica `empleado.creado/actualizado/retirado` |
+| `microservicios/gestion-departamentos` (PHP + MySQL) | ✅ POST/GET, persistencia, `/health` con verificación de BD, pruebas de integración PHP |
+| `microservicios/gestion-perfiles` (Python + FastAPI + Postgres) | ✅ Consume eventos de empleado (crea, sincroniza, archiva perfiles) + REST |
+| `microservicios/notificaciones` (Go + Postgres) | ✅ Solo consume eventos; simula el envío (log) y guarda el historial |
+| `microservicios/gestion-vacaciones` (Java + Spring Boot + Postgres) | ✅ REST con 4 validaciones, réplica de empleados por eventos, publica `vacaciones.programadas` |
+| Message broker (RabbitMQ) | ✅ Exchange topic, una cola por consumidor, deduplicación por id de mensaje en todos los consumidores |
+| Auth (JWT) y scheduler de vacaciones | ⏳ Reto 5 |
+| Observabilidad, CI/CD | ⏳ Retos futuros (observabilidad: Reto 8) |
 
 ## Decisiones de arquitectura
 
 - Monorepo con npm workspaces (`microservicios/*`); **no existe código compartido entre
   microservicios** desde el Reto 2 — el paquete `shared/` del Reto 1 se eliminó por ser un
   patrón de monolito. Cada servicio implementa su propia validación; la única comunicación
-  entre ellos es HTTP.
+  entre ellos es HTTP o eventos.
 - Capas por microservicio: HTTP (app.js) → lógica de negocio (service) → almacenamiento (repository).
 - Persistencia poliglota desde el Reto 2: PostgreSQL para `empleados-service`, MySQL para
   `departamentos-service` — motor distinto a propósito, para forzar comunicación real por HTTP
@@ -81,3 +74,9 @@ Detalle de rutas, parámetros del Circuit Breaker y justificación de decisiones
   **disponibilidad sobre consistencia inmediata** — el empleado se registra con
   `validacionDepartamento: "PENDIENTE"` en vez de rechazarse con `503`, y se reconcilia
   automáticamente (sin job periódico ni webhook) cuando el circuito vuelve a `CLOSED`.
+- Comunicación asincrónica (Reto 4) con **RabbitMQ**: exchange *topic* `talentflow.eventos` con
+  routing key = tipo de evento y una cola por consumidor (fan-out); agregar un consumidor no toca
+  al productor. Eventos con el envelope del Catálogo; los consumidores deduplican por `id`.
+- Validación del empleado en vacaciones por **réplica local alimentada por eventos**
+  (disponibilidad sobre consistencia inmediata).
+- Diversidad tecnológica: 5 lenguajes (Node.js, PHP, Python, Go, Java), cada servicio con su BD.

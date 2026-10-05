@@ -1,0 +1,27 @@
+meta {
+  name: Vacaciones - fechas en el pasado
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{baseUrl}}/vacaciones
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "empleadoId": "{{empleadoId}}",
+    "fechaInicio": "2026-06-15",
+    "fechaFin": "2026-06-30"
+  }
+}
+
+tests {
+  test("400", function () { expect(res.getStatus()).to.equal(400); });
+}
