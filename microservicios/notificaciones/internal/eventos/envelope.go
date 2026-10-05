@@ -20,6 +20,19 @@ type Envelope struct {
 	Data       json.RawMessage `json:"data"`
 }
 
+// DataPasswordResetRequested representa el payload (Data) cuando se solicita recuperar contraseña
+type DataPasswordResetRequested struct {
+	UsuarioID string `json:"usuarioId"`
+	Email     string `json:"email"`
+	Token     string `json:"token"`
+}
+
+// DataPasswordChanged representa el payload (Data) cuando la contraseña cambia con éxito
+type DataPasswordChanged struct {
+	UsuarioID string `json:"usuarioId"`
+	Email     string `json:"email"`
+}
+
 // ErrMensajeInvalido marca un mensaje que nunca podrá procesarse (JSON corrupto o
 // envelope incompleto). Reintentarlo sería inútil: se descarta.
 var ErrMensajeInvalido = errors.New("mensaje inválido")

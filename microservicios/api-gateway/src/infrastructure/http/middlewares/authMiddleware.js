@@ -1,6 +1,6 @@
 const AuthenticateRequestUseCase = require('../../application/usecases/AuthenticateRequestUseCase');
-const JwtTokenVerifierAdapter = require('../../domain/ports/TokenVerifierPort');
-const UnauthorizedError = require('../../domain/exceptions/UnauthorizedError');
+const JwtTokenVerifierAdapter = require('../../../domain/ports/TokenVerifierPort');
+const UnauthorizedError = require('../../../domain/exceptions/UnauthorizedError');
 
 const tokenVerifier = new JwtTokenVerifierAdapter(process.env.JWT_SECRET);
 const authenticateRequestUseCase = new AuthenticateRequestUseCase(tokenVerifier);

@@ -1,4 +1,62 @@
 services:
+
+  # Base de Datos Autenticación (PostgreSQL) — Reto 5
+  database-auth:
+    image: postgres:16-alpine
+    container_name: db-auth
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_AUTH_NAME:-db_auth}
+      POSTGRES_USER: ${DB_AUTH_USER:-user_auth}
+      POSTGRES_PASSWORD: ${DB_AUTH_PASS:-pass_auth}
+    expose:
+      - "5432"
+    volumes:
+      - vol-auth:/var/lib/postgresql/data
+      - ./microservicios/autenticacion/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_AUTH_USER:-user_auth} -d ${DB_AUTH_NAME:-db_auth}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Microservicio Autenticación (Reto 5)
+  auth-service:
+    build:
+      context: ./microservicios/autenticacion
+      dockerfile: Dockerfile
+      target: runner
+    container_name: ms-auth
+    restart: on-failure
+    expose:
+      - "8086"
+    environment:
+      PORT: 8086
+      DB_HOST: database-auth
+      DB_PORT: 5432
+      DB_NAME: ${DB_AUTH_NAME:-db_auth}
+      DB_USER: ${DB_AUTH_USER:-user_auth}
+      DB_PASS: ${DB_AUTH_PASS:-pass_auth}
+      JWT_SECRET: ${JWT_SECRET:-tu_clave_secreta_super_segura}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+    depends_on:
+      database-auth:
+        condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8086/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - microservices-network
   # Base de Datos Empleados (PostgreSQL)
   database-empleados:
     image: postgres:16-alpine

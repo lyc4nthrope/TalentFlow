@@ -27,6 +27,9 @@
 
     { "source": "talentflow.eventos", "vhost": "/", "destination": "vacaciones.eventos", "destination_type": "queue", "routing_key": "empleado.creado", "arguments": {} },
     { "source": "talentflow.eventos", "vhost": "/", "destination": "vacaciones.eventos", "destination_type": "queue", "routing_key": "empleado.actualizado", "arguments": {} },
-    { "source": "talentflow.eventos", "vhost": "/", "destination": "vacaciones.eventos", "destination_type": "queue", "routing_key": "empleado.retirado", "arguments": {} }
+    { "source": "talentflow.eventos", "vhost": "/", "destination": "vacaciones.eventos", "destination_type": "queue", "routing_key": "empleado.retirado", "arguments": {} },
+    
+    { "source": "talentflow.eventos", "vhost": "/", "destination": "notificaciones.eventos", "destination_type": "queue", "routing_key": "auth.password_reset_requested", "arguments": {} },
+    { "source": "talentflow.eventos", "vhost": "/", "destination": "notificaciones.eventos", "destination_type": "queue", "routing_key": "auth.password_changed", "arguments": {} }
   ]
 }

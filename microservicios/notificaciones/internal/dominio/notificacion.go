@@ -18,6 +18,10 @@ const (
 	TipoBienvenida     Tipo = "BIENVENIDA"
 	TipoDesvinculacion Tipo = "DESVINCULACION"
 	TipoVacaciones     Tipo = "VACACIONES"
+
+	// Nuevos tipos para Reto 5
+	TipoRecuperacionClave Tipo = "RECUPERACION_CLAVE"
+	TipoClaveCambiada     Tipo = "CLAVE_CAMBIADA"
 )
 
 // Tipos de evento que consume este servicio (Catálogo de Eventos, sección 3).
@@ -25,6 +29,10 @@ const (
 	EventoEmpleadoCreado        = "empleado.creado"
 	EventoEmpleadoRetirado      = "empleado.retirado"
 	EventoVacacionesProgramadas = "vacaciones.programadas"
+
+	// Nuevos eventos del Reto 5 (Auth Service)
+	EventoPasswordResetRequested = "auth.password_reset_requested"
+	EventoPasswordChanged        = "auth.password_changed"
 )
 
 // Notificacion es una notificación registrada (y "enviada" mediante el log).
@@ -76,6 +84,18 @@ type vacacionesProgramadas struct { // 3.8
 // eventos no existen todavía, así que se aplica lo que pide el reto4.pdf: bienvenida con
 // empleado.creado y desvinculación con empleado.retirado. Cambiarlo en el Reto 5 es
 // agregar/quitar casos en este switch.
+
+type passwordResetRequested struct {
+	UsuarioID string `json:"usuarioId"`
+	Email     string `json:"email"`
+	Token     string `json:"token"`
+}
+
+type passwordChanged struct {
+	UsuarioID string `json:"usuarioId"`
+	Email     string `json:"email"`
+}
+
 func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time.Time) (Notificacion, error) {
 	switch tipoEvento {
 	case EventoEmpleadoCreado:
@@ -115,6 +135,30 @@ func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time
 			fmt.Sprintf("Sus vacaciones del %s al %s (%d días hábiles) quedaron programadas.",
 				d.FechaInicio, d.FechaFin, d.DiasHabiles)), nil
 
+
+	// --- CASOS DEL RETO 5 ---
+	case EventoPasswordResetRequested:
+		var d passwordResetRequested
+		if err := decodificar(data, &d); err != nil {
+			return Notificacion{}, err
+		}
+		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email, "token": d.Token}); err != nil {
+			return Notificacion{}, err
+		}
+		return nueva(TipoRecuperacionClave, d.Email, d.UsuarioID, ahora,
+			fmt.Sprintf("Has solicitado restablecer tu contraseña. Utiliza el siguiente token para cambiarla: %s", d.Token)), nil
+
+	case EventoPasswordChanged:
+		var d passwordChanged
+		if err := decodificar(data, &d); err != nil {
+			return Notificacion{}, err
+		}
+		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email}); err != nil {
+			return Notificacion{}, err
+		}
+		return nueva(TipoClaveCambiada, d.Email, d.UsuarioID, ahora,
+			"Tu contraseña ha sido cambiada exitosamente. Si no realizaste esta acción, contacta al administrador."), nil
+			
 	default:
 		return Notificacion{}, fmt.Errorf("%w: %s", ErrTipoNoSoportado, tipoEvento)
 	}
