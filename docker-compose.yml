@@ -188,6 +188,12 @@ services:
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
       RABBITMQ_COLA: notificaciones.eventos
+      # Bonus: envío de correo real por SMTP. Sin SMTP_HOST solo queda el log por consola.
+      # Mailhog no está en depends_on a propósito: si no está disponible, el servicio
+      # arranca igual y cada envío fallido queda en el log (la notificación se guarda).
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_FROM: notificaciones@talentflow.local
     depends_on:
       database-notificaciones:
         condition: service_healthy
@@ -199,6 +205,20 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+    networks:
+      - microservices-network
+
+  # Servidor de correo de pruebas (Mailhog) — bonus del Reto 4: recibe los correos de
+  # notificaciones-service y los muestra en su UI; no los entrega a ningún buzón real.
+  # Los guarda en memoria: se pierden al recrear el contenedor.
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: mailhog
+    restart: unless-stopped
+    expose:
+      - "1025"              # SMTP: solo dentro de la red de Docker
+    ports:
+      - "8025:8025"         # UI web para ver los correos (herramienta de pruebas, ver README)
     networks:
       - microservices-network
 
@@ -333,7 +353,7 @@ services:
     expose:
       - "5672"              # AMQP: solo dentro de la red de Docker
     ports:
-      - "15672:15672"       # UI de administración (única excepción al Gateway, ver README)
+      - "15672:15672"       # UI de administración (excepción al Gateway, ver README)
     volumes:
       - vol-rabbitmq:/var/lib/rabbitmq
     healthcheck:

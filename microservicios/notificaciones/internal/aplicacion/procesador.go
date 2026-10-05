@@ -26,7 +26,8 @@ type Repositorio interface {
 var ErrRechazoPermanente = errors.New("datos rechazados de forma permanente")
 
 // Canal es el puerto de "envío" de la notificación. En el Reto 4 se simula por consola
-// (CanalConsola); un envío real por SMTP (bonus: Mailhog) sería otra implementación.
+// (CanalConsola); el envío real por SMTP (bonus: Mailhog) es otra implementación
+// (internal/smtp) y CanalMultiple permite usar ambas a la vez.
 type Canal interface {
 	Enviar(n dominio.Notificacion)
 }

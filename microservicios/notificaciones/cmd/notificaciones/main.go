@@ -1,5 +1,6 @@
 // Servicio de Notificaciones (Reto 4): consume eventos de RabbitMQ, simula el envío
-// de notificaciones y expone su historial por REST.
+// de notificaciones (y, si hay SMTP configurado, envía el correo) y expone su
+// historial por REST.
 package main
 
 import (
@@ -22,6 +23,7 @@ import (
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/api"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/aplicacion"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/postgres"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/smtp"
 )
 
 func main() {
@@ -53,7 +55,7 @@ func ejecutar(logger *slog.Logger) error {
 	repositorio := postgres.NuevoRepositorio(pool)
 	procesador := aplicacion.NuevoProcesador(
 		repositorio,
-		aplicacion.CanalConsola{Salida: os.Stdout},
+		canalDeEnvio(logger),
 		logger,
 		time.Now,
 	)
@@ -118,6 +120,24 @@ func urlRabbitMQ() string {
 		Path:   "/",
 	}
 	return u.String()
+}
+
+// canalDeEnvio: el log por consola que pide el reto está SIEMPRE activo. Si se define
+// SMTP_HOST, además se envía el correo real (bonus: Mailhog en Docker).
+func canalDeEnvio(logger *slog.Logger) aplicacion.Canal {
+	consola := aplicacion.CanalConsola{Salida: os.Stdout}
+	host := env("SMTP_HOST", "")
+	if host == "" {
+		return consola
+	}
+	cfg := smtp.Config{
+		Host:      host,
+		Puerto:    env("SMTP_PORT", "1025"),
+		Remitente: env("SMTP_FROM", "notificaciones@talentflow.local"),
+		Plazo:     5 * time.Second,
+	}
+	logger.Info("envío de correo por SMTP activado", "servidor", net.JoinHostPort(cfg.Host, cfg.Puerto), "remitente", cfg.Remitente)
+	return aplicacion.CanalMultiple{consola, smtp.NuevoCanal(cfg, logger)}
 }
 
 func verificarSalud(puerto string) int {
