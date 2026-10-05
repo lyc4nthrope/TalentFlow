@@ -12,11 +12,16 @@
 #   - Paso 9: la publicación "desde la UI del broker" se hace con la API de administración
 #     de RabbitMQ (POST /api/exchanges/.../publish), que es exactamente lo que ejecuta el
 #     botón "Publish message" de la UI. La UI queda en http://localhost:15672.
+#
+# Bonus (correo real por SMTP): tras el paso 10 se listan los correos que recibió Mailhog
+# (http://localhost:8025). Va antes del paso 11 porque Mailhog los guarda en memoria y
+# el reinicio de ese paso los borra. Si Mailhog no responde, la demo continúa.
 set -u
 
 G="${BASE_URL:-http://localhost:8080}"
 UI="${RABBITMQ_UI:-http://localhost:15672}"
 MQ_AUTH="${RABBITMQ_USER:-admin}:${RABBITMQ_PASS:-admin}"
+MAIL="${MAILHOG_UI:-http://localhost:8025}"
 H='Content-Type: application/json'
 
 titulo() { printf '\n=== %s ===\n' "$1"; }
@@ -123,6 +128,23 @@ echo "Notificación de desvinculación:"
 curl -s "$G/notificaciones/E001" | python3 -c "import json,sys;[print('  ',n['tipo']) for n in json.load(sys.stdin)]"
 echo "Perfil archivado:"
 curl -s "$G/perfiles/E001" | campos empleadoId archivado fechaArchivado
+
+titulo "Bonus — Correos reales recibidos por Mailhog (SMTP)"
+if CORREOS=$(curl -sf "$MAIL/api/v2/messages"); then
+  printf '%s' "$CORREOS" | python3 -c '
+import json,sys,quopri
+from email.header import decode_header, make_header
+correos=json.load(sys.stdin)["items"][::-1]  # la API los devuelve del más reciente al más antiguo
+print("   correos recibidos:", len(correos))
+for c in correos:
+    h=c["Content"]["Headers"]
+    cuerpo=quopri.decodestring(c["Content"]["Body"]).decode("utf-8").strip()
+    print("  ", h["To"][0], "|", make_header(decode_header(h["Subject"][0])), "|", cuerpo)
+print("   correos para laura.gil@empresa.com (su evento se publicó 2 veces):",
+      sum(c["Content"]["Headers"]["To"][0]=="laura.gil@empresa.com" for c in correos))'
+else
+  echo "   Mailhog no responde en $MAIL: se omite (las notificaciones quedan registradas y en el log)."
+fi
 
 titulo "Paso 11 — Reiniciar los contenedores y verificar que los datos persisten"
 resumen() {

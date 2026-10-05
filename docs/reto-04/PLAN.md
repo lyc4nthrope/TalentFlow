@@ -20,6 +20,7 @@ Cada fase termina **verificada** (pruebas + comprobación real en Docker) y con 
 | D11 | Puertos | Servicios nuevos con `expose:` (8083 perfiles, 8084 notificaciones, 8085 vacaciones). RabbitMQ: **solo** la UI `15672` publicada; AMQP `5672` interno | Regla del Reto 3 (solo el Gateway) + excepción mínima justificada: la UI es herramienta de administración exigida por el reto |
 | D12 | Swagger | Cada servicio sirve su doc dentro de su prefijo (`/perfiles/docs`, …) | La rúbrica evalúa Swagger UI; así es alcanzable por el Gateway sin rutas nuevas |
 | D13 | BD de los servicios nuevos | PostgreSQL, **una instancia por servicio** | Base de datos por servicio (requisito). Postgres ya es conocido por el equipo |
+| D14 | Bonus: correo real | Segundo `Canal` por SMTP (`net/smtp`, sin dependencias) hacia **Mailhog**; el log por consola sigue siempre activo. Se activa con `SMTP_HOST`. Si el correo falla: log del error, sin reintento ni `nack`. UI de Mailhog `8025` publicada; SMTP `1025` interno | El log es lo que exige el reto; el correo es un añadido que no puede romperlo. Reencolar por un fallo de SMTP duplicaría correos (la notificación ya está registrada). Plazo de 5 s por envío para no frenar al consumidor. La UI se publica por la misma razón que la del broker (D11): herramienta de pruebas, no servicio de negocio |
 
 ## Fases
 
@@ -33,6 +34,7 @@ Cada fase termina **verificada** (pruebas + comprobación real en Docker) y con 
 | **F6** Gateway | `/health` agregado con los servicios nuevos y el broker; Swagger de todos los servicios (las rutas de cada servicio nuevo se agregan en su propia fase, para probarlo de punta a punta) | Todo alcanzable solo por `:8080` | ✅ |
 | **F7** Pruebas E2E | Flujo completo de la sección 6 del PDF, deduplicación desde la UI, persistencia tras reinicio, colección Bruno | Desde cero, todos los pasos del PDF | ✅ |
 | **F8** Documentación | README (broker, lenguajes, despliegue, eventos, D7, evidencia de deduplicación, pruebas), `docs/eventos.md`, manual `docs/reto-04/` | Cada entregable del PDF presente | ✅ |
+| **F9** Bonus (opcional) | Envío de correo real por SMTP con Mailhog en Docker (D14) | Pruebas con un servidor SMTP en proceso; en Docker: correos en Mailhog, duplicado sin segundo correo, Mailhog caído | ✅ |
 
 ## Aprendizajes por fase
 
@@ -52,11 +54,13 @@ Cada fase termina **verificada** (pruebas + comprobación real en Docker) y con 
 
 - **F8**: README raíz actualizado al Reto 4 (arquitectura, tabla servicio ↔ lenguaje, comparación de brokers, topología, eventos vs. catálogo, deduplicación, servicios nuevos, opción (b), baja lógica, limitaciones, pruebas); manual `docs/reto-04/README.md` (incluye la deduplicación paso a paso desde la UI de RabbitMQ y preguntas probables de la sustentación); evidencia `docs/reto-04/pruebas.md` con la salida real de `demo.sh`; `docs/eventos.md` y `docs/arquitectura.md` al día; README propio de cada servicio nuevo y README de empleados actualizado. Verificado: 61 enlaces internos sin roturas y los 10 entregables del PDF presentes.
 
-**Estado final: Reto 4 completo (F1-F8).** Pendiente del equipo: capturas / video de las evidencias.
+- **F9** (bonus): `smtp.Canal` implementa el puerto `Canal` y `CanalMultiple` lo suma a la consola sin tocar el `Procesador`. `smtp.SendMail` de la biblioteca estándar no tiene timeout: se usa conexión con fecha límite (5 s para todo el envío), probado con un servidor que acepta y no responde. Mailhog no anuncia `8BITMIME`, así que las tildes viajan en 7 bits (asunto como *encoded-word*, cuerpo en *quoted-printable*). Mailhog no va en `depends_on`: el servicio arranca aunque no esté. Verificado en Docker: los 4 correos de `demo.sh` (bienvenida, vacaciones, desvinculación y **uno solo** para el evento publicado 2 veces); con Mailhog detenido la notificación se guarda, el error queda en el log y el consumidor sigue. Mailhog guarda en memoria: la bandeja se vacía al reiniciarlo.
+
+**Estado final: Reto 4 completo (F1-F8) + bonus (F9).** Pendiente del equipo: capturas / video de las evidencias.
 
 ## Trampas del PDF ya identificadas
 
 - El paso 7 del PDF usa `2026-06-15`, que ya pasó → `400` por fecha pasada. Usar fechas futuras en las pruebas.
-- El ejemplo de compose del PDF publica `5672` y `15672`; aquí solo `15672` (D11).
+- El ejemplo de compose del PDF publica `5672` y `15672`; aquí solo `15672` (D11), más `8025` de Mailhog por el bonus (D14).
 - `PUT` y `DELETE /empleados` no existen todavía (F2).
 - Espacio en disco del equipo de desarrollo: ~6 GB libres; vigilar el tamaño de las imágenes.

@@ -47,7 +47,7 @@ Diagrama detallado, servicios ↔ lenguajes, eventos y justificación de decisio
 | `microservicios/gestion-empleados` (Node + Express + Postgres) | ✅ POST/GET/PUT, baja lógica (`DELETE` → RETIRADO), auditoría por fechas, Circuit Breaker hacia departamentos, publica `empleado.creado/actualizado/retirado` |
 | `microservicios/gestion-departamentos` (PHP + MySQL) | ✅ POST/GET, persistencia, `/health` con verificación de BD, pruebas de integración PHP |
 | `microservicios/gestion-perfiles` (Python + FastAPI + Postgres) | ✅ Consume eventos de empleado (crea, sincroniza, archiva perfiles) + REST |
-| `microservicios/notificaciones` (Go + Postgres) | ✅ Solo consume eventos; simula el envío (log) y guarda el historial |
+| `microservicios/notificaciones` (Go + Postgres) | ✅ Solo consume eventos; simula el envío (log), envía el correo real por SMTP a Mailhog (bonus) y guarda el historial |
 | `microservicios/gestion-vacaciones` (Java + Spring Boot + Postgres) | ✅ REST con 4 validaciones, réplica de empleados por eventos, publica `vacaciones.programadas` |
 | Message broker (RabbitMQ) | ✅ Exchange topic, una cola por consumidor, deduplicación por id de mensaje en todos los consumidores |
 | Auth (JWT) y scheduler de vacaciones | ⏳ Reto 5 |
@@ -65,7 +65,8 @@ Diagrama detallado, servicios ↔ lenguajes, eventos y justificación de decisio
   en vez de compartir base de datos entre servicios.
 - Desde el Reto 3, **único punto de entrada**: solo `api-gateway` publica puerto al host
   (`ports:`); todo lo demás (microservicios y bases de datos) usa `expose:` y solo es
-  alcanzable dentro de la red de Docker.
+  alcanzable dentro de la red de Docker. Excepciones (Reto 4): las UIs de dos herramientas,
+  RabbitMQ (`15672`) y Mailhog (`8025`); sus puertos de servicio (AMQP, SMTP) siguen internos.
 - Gateway de aplicación (código, no un enrutador declarativo como Nginx/Traefik): los retos
   futuros (5, 10) exigen que el Gateway valide JWT/JWKS y propague identidad, lo cual requiere
   lógica propia, no solo enrutamiento por labels.

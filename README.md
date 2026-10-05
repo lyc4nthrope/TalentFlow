@@ -4,7 +4,7 @@ Sistema de onboarding y offboarding de empleados basado en una arquitectura orie
 
 ## Arquitectura (Reto 4 — comunicación asincrónica por eventos)
 
-El sistema tiene un **único punto de entrada** (el API Gateway, Reto 3) y, desde el Reto 4, **comunicación asincrónica**: los servicios publican y consumen eventos a través de un **message broker (RabbitMQ)**. Un solo evento — por ejemplo `empleado.creado` — dispara reacciones automáticas e independientes en varios servicios (*fan-out*). Ningún microservicio ni base de datos publica puerto al host: solo el Gateway (`8080`) y la UI de administración del broker (`15672`, ver [por qué](#puertos-del-broker-la-única-excepción-al-gateway)).
+El sistema tiene un **único punto de entrada** (el API Gateway, Reto 3) y, desde el Reto 4, **comunicación asincrónica**: los servicios publican y consumen eventos a través de un **message broker (RabbitMQ)**. Un solo evento — por ejemplo `empleado.creado` — dispara reacciones automáticas e independientes en varios servicios (*fan-out*). Ningún microservicio ni base de datos publica puerto al host: solo el Gateway (`8080`) y dos UIs de herramientas: la de administración del broker (`15672`) y la de Mailhog (`8025`, correos del bonus), ver [por qué](#puertos-publicados-además-del-gateway).
 
 ```
                           Cliente HTTP (curl, Postman, Bruno)
@@ -45,6 +45,7 @@ El proyecto final exige al menos **4 lenguajes distintos**; el ecosistema ya tie
 | notificaciones-service | **Go** 1.25 (`net/http`) | **Solo consume** eventos (puramente reactivo) | 8084 | PostgreSQL 16 |
 | vacaciones-service | **Java** 17 + Spring Boot 3.5 | REST + **productor** de eventos (+ réplica por eventos) | 8085 | PostgreSQL 16 |
 | message-broker | RabbitMQ 3.13 (management) | Mensajería | 5672 interno · UI 15672 (**publicada**) | — |
+| mailhog | Mailhog 1.0.1 | Servidor de correo de pruebas (bonus: correo real por SMTP) | 1025 interno · UI 8025 (**publicada**) | — (en memoria) |
 
 Ningún servicio accede a la base de datos de otro: se comunican solo por **HTTP a través de su nombre en la red de Docker** (nunca `localhost` ni IPs fijas) o por **eventos**.
 
@@ -126,7 +127,7 @@ git merge dev
 
 ## Cómo levantar todo desde cero
 
-Un solo comando, sin pasos manuales: el esquema de cada base de datos se crea desde su `init.sql` la primera vez que el volumen está vacío, y la topología del broker la importa `broker-init`. Levanta 13 contenedores (5 bases de datos, el broker, `broker-init`, que termina tras importar la topología, 5 servicios y el Gateway); tarda ~40 s en quedar todo `healthy` (`docker compose ps`).
+Un solo comando, sin pasos manuales: el esquema de cada base de datos se crea desde su `init.sql` la primera vez que el volumen está vacío, y la topología del broker la importa `broker-init`. Levanta 14 contenedores (5 bases de datos, el broker, `broker-init`, que termina tras importar la topología, Mailhog, 5 servicios y el Gateway); tarda ~40 s en quedar todo `healthy` (`docker compose ps`).
 
 ```bash
 docker compose up --build
@@ -160,6 +161,7 @@ database-empleados        Up (healthy)              5432/tcp
 database-notificaciones   Up (healthy)              5432/tcp
 database-perfiles         Up (healthy)              5432/tcp
 database-vacaciones       Up (healthy)              5432/tcp
+mailhog                   Up                        1025/tcp, 0.0.0.0:8025->8025/tcp
 message-broker            Up (healthy)              0.0.0.0:15672->15672/tcp (+ puertos internos)
 departamentos-service     Up (healthy)              8082/tcp
 empleados-service         Up (healthy)              8081/tcp
@@ -168,7 +170,7 @@ perfiles-service          Up (healthy)              8083/tcp
 vacaciones-service        Up (healthy)              8085/tcp
 ```
 
-Solo dos mapeos al host (`0.0.0.0:…`): el Gateway y la UI del broker. El resto son puertos internos. `broker-init` no aparece porque terminó (`Exited (0)`) tras importar la topología.
+Solo tres mapeos al host (`0.0.0.0:…`): el Gateway, la UI del broker y la UI de Mailhog. El resto son puertos internos. `mailhog` no tiene healthcheck (ningún servicio espera por él). `broker-init` no aparece porque terminó (`Exited (0)`) tras importar la topología.
 
 ## Persistencia de datos — evidencia
 
@@ -232,9 +234,11 @@ Se evaluaron las cuatro opciones del reto frente a lo que este sistema necesita:
 
 Colas durables y mensajes persistentes: sobreviven a reinicios del broker. La topología es código versionado ([`infra/rabbitmq/definitions.json`](infra/rabbitmq/definitions.json)) y la importa el contenedor de un solo uso **`broker-init`** por la API de administración, antes de que arranque cualquier productor o consumidor (`depends_on: condition: service_completed_successfully`). No se usa `load_definitions` al arrancar el broker porque, en ese modo, RabbitMQ **no crea el usuario por defecto** y habría que versionar credenciales dentro del JSON.
 
-#### Puertos del broker: la única excepción al Gateway
+#### Puertos publicados además del Gateway
 
 El puerto AMQP (`5672`) es **interno** (`expose`): solo lo usan los servicios, dentro de la red de Docker. Se publica únicamente la **UI de administración** (`15672`), porque el reto exige usarla (verificar que el broker está activo y publicar mensajes a mano para la prueba de deduplicación). Credenciales por variables de entorno (`RABBITMQ_USER` / `RABBITMQ_PASS`, ver `.env.example`).
+
+La otra excepción es **Mailhog** (bonus del reto: correo real por SMTP), por la misma razón: su UI (`8025`) es una herramienta de pruebas para ver los correos enviados, no un microservicio de negocio ni parte de la API. Su puerto SMTP (`1025`) es **interno**: solo lo usa notificaciones-service dentro de la red de Docker. Los correos no salen a ningún buzón real.
 
 ### Eventos implementados (Catálogo de Eventos)
 
@@ -273,7 +277,7 @@ Además, cada consumidor distingue **qué hacer con un fallo** (para no caer en 
 | Servicio | Endpoints | Qué hace |
 |---|---|---|
 | **perfiles-service** (Python) | `GET /perfiles`, `GET /perfiles/{empleadoId}`, `PUT /perfiles/{empleadoId}` | Crea el perfil por defecto al consumir `empleado.creado` (`nombre` = nombre completo, resto vacío), sincroniza nombre y email con `empleado.actualizado` y lo **archiva** (no lo borra) con `empleado.retirado`. `PUT` es **parcial** (el propio reto envía solo algunos campos) y solo acepta los campos del perfil: `nombre`/`email` los replica empleados → `400`; perfil archivado → `409`; inexistente → `404`. Si llega `empleado.actualizado` de un empleado sin perfil (su `empleado.creado` se perdió), lo crea: el sistema se recupera solo |
-| **notificaciones-service** (Go) | `GET /notificaciones`, `GET /notificaciones/{empleadoId}` | Puramente reactivo: ningún servicio lo llama por REST. Consume `empleado.creado`, `empleado.retirado` y `vacaciones.programadas`, simula el envío con el log `[NOTIFICACIÓN] Tipo: … \| Para: … \| Mensaje: "…"` y guarda el historial `{id, tipo, destinatario, mensaje, fechaEnvio, empleadoId}` |
+| **notificaciones-service** (Go) | `GET /notificaciones`, `GET /notificaciones/{empleadoId}` | Puramente reactivo: ningún servicio lo llama por REST. Consume `empleado.creado`, `empleado.retirado` y `vacaciones.programadas`, simula el envío con el log `[NOTIFICACIÓN] Tipo: … \| Para: … \| Mensaje: "…"` y guarda el historial `{id, tipo, destinatario, mensaje, fechaEnvio, empleadoId}`. **Bonus:** además envía cada notificación como correo real por SMTP a Mailhog (`http://localhost:8025`); si el correo falla, se registra el error y la notificación queda guardada |
 | **vacaciones-service** (Java) | `POST /vacaciones`, `GET /vacaciones`, `GET /vacaciones?empleadoId=`, `GET /vacaciones/{id}`, `DELETE /vacaciones/{id}` | Programa períodos (`V-2026-0042`, estado `PROGRAMADA`) y publica `vacaciones.programadas`. `DELETE` **cancela** (estado `CANCELADA`, no borra) solo si aún no ha iniciado; si ya inició o no está programado → `409` |
 
 **Validaciones de vacaciones** (todas `400` con mensaje descriptivo):
@@ -309,12 +313,13 @@ El reto plantea dos opciones y pide justificar la elegida:
 - **Evento perdido si el broker está caído al publicar.** La operación se guarda y el evento se descarta con un error en el log (lo que pide el reto: no revertir). La solución formal es el patrón **Outbox** (guardar el evento en la misma transacción y publicarlo después), fuera del alcance de este reto. perfiles-service mitiga el caso más visible: un `empleado.actualizado` posterior recrea el perfil faltante.
 - **Vacaciones futuras de un empleado retirado** siguen `PROGRAMADA`: el reto no pide cancelarlas y el catálogo no define un evento de cancelación. El caso "retiro durante vacaciones" lo retoma el Reto 5.
 - **Un empleado que la reconciliación del Reto 3 marca `RECHAZADO`** no genera evento: el catálogo no define uno.
+- **Correo no enviado si el servidor SMTP está caído** (bonus): el error queda en el log y no se reintenta, porque reencolar el mensaje podría duplicar correos. La notificación sí queda en el historial.
 
 ### Cómo probar el flujo asincrónico
 
 ```bash
 docker compose down -v && docker compose up --build -d   # volúmenes limpios
-bash docs/reto-04/demo.sh                                 # los 11 pasos de la sección 6 del reto
+bash docs/reto-04/demo.sh                                 # los 11 pasos de la sección 6 del reto + correos del bonus
 cd docs/reto-04/bruno && npx @usebruno/cli run --env Local  # colección: 21 peticiones con tests
 ```
 
@@ -481,7 +486,7 @@ Tras la clase "Introducción a APIs RESTful" se auditó el proyecto contra sus d
 | 1 | gestion-empleados | ✅ Completado | POST/GET, modelo canónico, validaciones, Docker, 19 pruebas | `npm run dev:empleados` |
 | 2 | gestion-empleados + gestion-departamentos | ✅ Completado | Persistencia en Postgres/MySQL, segundo servicio en PHP, comunicación HTTP con timeout/reintentos, healthchecks, OpenAPI | `docker compose up --build` |
 | 3 | api-gateway + gestion-empleados + gestion-departamentos | ✅ Completado | API Gateway como único punto de entrada (`:8080`), microservicios y bases de datos sin puertos al host, Circuit Breaker (`opossum`) en `empleados → departamentos` con fallback de registro `PENDIENTE` + reconciliación automática al recuperarse | `docker compose up --build` (base: `http://localhost:8080`) |
-| 4 | + message-broker + gestion-perfiles + notificaciones + gestion-vacaciones | ✅ Completado | RabbitMQ (fan-out por exchange topic), empleados publica `empleado.creado/actualizado/retirado` (+ `PUT`, baja lógica `DELETE` y auditoría), perfiles (Python), notificaciones (Go) y vacaciones (Java, publica `vacaciones.programadas`), deduplicación por id de mensaje en todos los consumidores, 5 lenguajes, Swagger de todos los servicios por el Gateway | `docker compose up --build` + `bash docs/reto-04/demo.sh` |
+| 4 | + message-broker + gestion-perfiles + notificaciones + gestion-vacaciones | ✅ Completado | RabbitMQ (fan-out por exchange topic), empleados publica `empleado.creado/actualizado/retirado` (+ `PUT`, baja lógica `DELETE` y auditoría), perfiles (Python), notificaciones (Go) y vacaciones (Java, publica `vacaciones.programadas`), deduplicación por id de mensaje en todos los consumidores, 5 lenguajes, Swagger de todos los servicios por el Gateway. Bonus: correo real por SMTP (Mailhog) | `docker compose up --build` + `bash docs/reto-04/demo.sh` |
 
 Cada microservicio tiene su propio README con sus endpoints y configuración: [`gestion-empleados`](microservicios/gestion-empleados/README.md), [`gestion-departamentos`](microservicios/gestion-departamentos/README.md), [`gestion-perfiles`](microservicios/gestion-perfiles/README.md), [`notificaciones`](microservicios/notificaciones/README.md), [`gestion-vacaciones`](microservicios/gestion-vacaciones/README.md).
 
@@ -493,11 +498,11 @@ Instalar dependencias (una sola vez, desde la raíz):
 npm install
 ```
 
-Ejecutar las pruebas automatizadas (160 en total, sin necesidad de Docker):
+Ejecutar las pruebas automatizadas (165 en total, sin necesidad de Docker):
 
 ```bash
 npm test                                                   # empleados (80) + api-gateway (6) — Node.js
-(cd microservicios/notificaciones && go test ./...)       # notificaciones (17) — Go
+(cd microservicios/notificaciones && go test ./...)       # notificaciones (22) — Go
 (cd microservicios/gestion-perfiles && python -m venv .venv && . .venv/bin/activate \
   && pip install -r requirements-dev.txt && pytest)       # perfiles (28) — Python
 (cd microservicios/gestion-vacaciones && mvn test)         # vacaciones (29) — Java
@@ -518,5 +523,5 @@ Implementado hasta el Reto 4 (5 lenguajes; el proyecto final exige al menos 4):
 - **Python + FastAPI** — `perfiles-service`
 - **Go** — `notificaciones-service`
 - **Java + Spring Boot** — `vacaciones-service`
-- **RabbitMQ** (mensajería), **PostgreSQL** y **MySQL** (bases de datos por servicio)
+- **RabbitMQ** (mensajería), **PostgreSQL** y **MySQL** (bases de datos por servicio), **Mailhog** (servidor SMTP de pruebas)
 - Previsto: **TypeScript + React** para el frontend del proyecto final
