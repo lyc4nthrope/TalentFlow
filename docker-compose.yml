@@ -114,6 +114,7 @@ services:
       - "8080:8080"
     environment:
       PORT: 8080
+      JWT_SECRET: ${JWT_SECRET:-tu_clave_secreta_super_segura_reto5_2026}
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
       NOTIFICACIONES_SERVICE_URL: http://notificaciones-service:8084
