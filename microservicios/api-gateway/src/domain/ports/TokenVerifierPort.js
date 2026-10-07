@@ -34,19 +34,21 @@ class JwtTokenVerifierAdapter extends TokenVerifierPort {
             //Mapeo de la respuesta
             return {
                 userId: decode.sub || decode.id || decode.userId,
-                email:decode.email,
-                roles: decode.roles || []
+                email: decode.email,
+                roles: Array.isArray(decode.roles)
+                    ? decode.roles
+                    : decode.roles ? [decode.roles] : []
             };
         } catch (error) {
             // Manejo de errores específicos de JWT
-            if(error.name === 'TokenExpiredError') {
+            if (error.name === 'TokenExpiredError') {
                 throw new UnauthorizedError('Token expirado');
             }
-            if(error.name === 'JsonWebTokenError') {
+            if (error.name === 'JsonWebTokenError') {
                 throw new UnauthorizedError('Token inválido');
             }
             // Otros errores
-            throw new UnauthorizedError('Error al verificar el token: ' + error.message);   
+            throw new UnauthorizedError('Error al verificar el token: ' + error.message);
         }
     }
 

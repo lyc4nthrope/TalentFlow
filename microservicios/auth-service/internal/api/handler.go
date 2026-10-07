@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/aplicacion"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/dominio"
@@ -49,6 +50,22 @@ func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Reques
 	_, _ = w.Write([]byte(`{"mensaje":"Solicitud de recuperación enviada"}`))
 }
 
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+    var req dominio.ResetPasswordInput
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "solicitud inválida", http.StatusBadRequest)
+        return
+    }
+
+    if err := h.service.ConfirmarCambioClave(r.Context(), req.Token, req.NewPassword); err != nil {
+        http.Error(w, "error al cambiar la contraseña", http.StatusInternalServerError)
+        return
+    }
+
+    w.WriteHeader(http.StatusOK)
+    _, _ = w.Write([]byte(`{"mensaje":"Contraseña restablecida correctamente"}`))
+}
+
 func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	var req dominio.ChangePasswordInput
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -56,8 +73,19 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.ConfirmarCambioClave(r.Context(), req.Token, req.NewPassword); err != nil {
-		http.Error(w, "error al cambiar la contraseña", http.StatusInternalServerError)
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		http.Error(w, "currentPassword y newPassword son obligatorios", http.StatusBadRequest)
+		return
+	}
+
+	authorization := r.Header.Get("Authorization")
+	if authorization == "" || len(authorization) < 7 || !strings.HasPrefix(authorization, "Bearer ") {
+		http.Error(w, "token faltante", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.service.CambiarPasswordAutenticada(r.Context(), strings.TrimSpace(authorization[7:]), req.CurrentPassword, req.NewPassword); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 

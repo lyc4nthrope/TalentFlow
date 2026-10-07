@@ -13,7 +13,7 @@ services:
       - "5432"
     volumes:
       - vol-auth:/var/lib/postgresql/data
-      - ./microservicios/autenticacion/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./microservicios/auth-service/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     networks:
       - microservices-network
     healthcheck:
@@ -26,13 +26,13 @@ services:
   # Microservicio Autenticación (Reto 5)
   auth-service:
     build:
-      context: ./microservicios/autenticacion
+      context: ./microservicios/auth-service
       dockerfile: Dockerfile
       target: runner
     container_name: ms-auth
     restart: on-failure
-    expose:
-      - "8086"
+    ports:
+      - "8086:8086"
     environment:
       PORT: 8086
       DB_HOST: database-auth
@@ -162,8 +162,6 @@ services:
         condition: service_healthy
       departamentos-service:
         condition: service_healthy
-<<<<<<< HEAD
-=======
       # La topología de eventos debe existir antes de publicar el primer evento.
       broker-init:
         condition: service_completed_successfully
@@ -173,7 +171,6 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
->>>>>>> lyc4nthrope
     networks:
       - microservices-network
 
@@ -199,17 +196,11 @@ services:
       database-departamentos:
         condition: service_healthy
     healthcheck:
-<<<<<<< HEAD
-      test: ["CMD-SHELL", "php -r 'exit(@fsockopen(\"127.0.0.1\", 8082) ? 0 : 1);'"]
-=======
       test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1:8082/health\") === false ? 1 : 0);'"]
->>>>>>> lyc4nthrope
       interval: 5s
       timeout: 3s
       retries: 5
       start_period: 10s
-<<<<<<< HEAD
-=======
     networks:
       - microservices-network
 
@@ -451,7 +442,6 @@ services:
     depends_on:
       message-broker:
         condition: service_healthy
->>>>>>> lyc4nthrope
     networks:
       - microservices-network
 
@@ -460,6 +450,7 @@ networks:
     driver: bridge
 
 volumes:
+  vol-auth:
   vol-empleados:
   vol-departamentos:
   vol-rabbitmq:

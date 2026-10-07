@@ -10,7 +10,7 @@ import (
 type TokenClaims struct {
 	UsuarioID string `json:"sub"`
 	Email     string `json:"email"`
-	Rol       string `json:"role"`
+	Roles     []string `json:"roles"`
 	jwt.RegisteredClaims
 }
 
@@ -29,12 +29,12 @@ func NuevoTokenProvider(secretKey string, issuer string, duracionHoras int) *Tok
 }
 
 // GenerarToken crea y firma un nuevo JWT para el usuario
-func (p *TokenProvider) GenerarToken(usuarioID, email, rol string) (string, error) {
+func (p *TokenProvider) GenerarToken(usuarioID, email string, roles []string) (string, error) {
 	ahora := time.Now().UTC()
 	claims := TokenClaims{
 		UsuarioID: usuarioID,
 		Email:     email,
-		Rol:       rol,
+		Roles:     roles,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    p.issuer,
 			Subject:   usuarioID,
