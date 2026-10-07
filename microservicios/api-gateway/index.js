@@ -1,9 +1,11 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const { saludDelSistema } = require('./salud');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
+const JWT_SECRET = process.env.JWT_SECRET || 'talentflow_super_secret_2026';
 
 // Tabla única de servicios detrás del Gateway: de aquí salen tanto las rutas como el
 // /health agregado. Agregar un servicio = agregar una fila. Todos usan expose: en Compose
@@ -17,12 +19,108 @@ const SERVICIOS = [
     { nombre: 'vacaciones-service', prefijo: '/vacaciones', url: process.env.VACACIONES_SERVICE_URL || 'http://vacaciones-service:8085' }
 ];
 
+const PUBLIC_PATHS = [
+    '/health',
+    '/auth/login',
+    '/auth/recover-password',
+    '/auth/reset-password'
+];
+
+const readToken = (headerValue) => {
+    if (!headerValue) {
+        return null;
+    }
+
+    const match = /^Bearer\s+(.+)$/i.exec(headerValue);
+    return match ? match[1] : null;
+};
+
+const getUserFromToken = (token) => {
+    const payload = jwt.verify(token, JWT_SECRET);
+    const roles = Array.isArray(payload.roles)
+        ? payload.roles
+        : payload.roles ? [payload.roles] : [];
+
+    return {
+        ...payload,
+        userId: payload.sub || payload.userId || payload.id,
+        email: payload.email,
+        roles
+    };
+};
+
+const ensureAuthenticated = (req, res, next) => {
+    const path = req.path || req.originalUrl || '/';
+
+    if (PUBLIC_PATHS.includes(path) || PUBLIC_PATHS.some(publicPath => path.startsWith(`${publicPath}/`))) {
+        return next();
+    }
+
+    const token = readToken(req.headers.authorization);
+    if (!token) {
+        return res.status(401).json({
+            error: 'UNAUTHORIZED',
+            message: 'Token requerido para acceder a este recurso.'
+        });
+    }
+
+    try {
+        const user = getUserFromToken(token);
+        req.user = user;
+        req.headers['x-user-id'] = user.userId;
+        req.headers['x-user-email'] = user.email || '';
+        req.headers['x-user-role'] = rolesToHeader(user.roles);
+        next();
+    } catch (error) {
+        return res.status(401).json({
+            error: 'UNAUTHORIZED',
+            message: 'Token inválido o expirado.'
+        });
+    }
+};
+
+const rolesToHeader = (roles = []) => Array.isArray(roles) ? roles.join(',') : String(roles || '');
+
+const checkPermissions = (req, res, next) => {
+    const path = (req.path || req.originalUrl || '/').split('?')[0];
+    const method = (req.method || 'GET').toUpperCase();
+    const user = req.user || {};
+    const roles = Array.isArray(user.roles) ? user.roles : (user.roles ? [user.roles] : []);
+
+    if (roles.includes('ADMIN')) {
+        return next();
+    }
+
+    if (method === 'POST' && path === '/auth/change-password') {
+        return next();
+    }
+
+    if (method === 'GET') {
+        return next();
+    }
+
+    if (method === 'PUT' && path.startsWith('/perfiles/')) {
+        const targetId = path.split('/perfiles/')[1]?.split('/')[0];
+        if (String(user.userId) === String(targetId)) {
+            return next();
+        }
+    }
+
+    return res.status(403).json({
+        error: 'FORBIDDEN',
+        message: 'No tiene permisos para realizar esta acción.'
+    });
+};
+
 // Salud propia del Gateway + estado de cada servicio, su BD, el Circuit Breaker y la
 // conexión de cada uno con el broker; "problemas" explica por qué el sistema está
 // DEGRADADO. Responde 200 mientras el Gateway esté vivo (healthcheck de Docker).
 app.get('/health', async (req, res) => {
     res.status(200).json(await saludDelSistema(SERVICIOS));
 });
+
+app.use(ensureAuthenticated);
+app.use(checkPermissions);
 
 const handleProxyError = (err, req, res) => {
     console.error(`[Gateway Error] ${err.message}`);

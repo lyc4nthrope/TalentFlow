@@ -1,48 +1,41 @@
-const UnauthorizedError = require('../exceptions/UnauthorizedError');
+const UnauthorizedError = require('../domain/exceptions/UnauthorizedError');
 
 class AuthenticateRequestUseCase {
-    /**
-     * @param {object} user
-     * @param {string} method
-     * @param {string} path
-     * @param {object} params
-     */
+    async execute({ user, method, path, params = {} }) {
+        if (!user || !user.roles) {
+            throw new UnauthorizedError('No autorizado. Token inválido o no proporcionado.');
+        }
 
-    async execute({user, method, path, params = {}}) {
-        const roles = user.roles || [];
-        const isMethodGet = method.toUpperCase() === 'GET';
+        const roles = Array.isArray(user.roles) ? user.roles : [user.roles];
+        const upperMethod = (method || 'GET').toUpperCase();
+        const isGet = upperMethod === 'GET';
 
-        // 1. Regla ADMIN
-        if(roles,includes('ADMIN')) {
+        if (roles.includes('ADMIN')) {
             return true;
         }
 
-        // 2. Regla USER
-        if(roles.includes('USER')) {
-            // Excepcion 1: POST /auth/change-password
-            if(method.toUpperCase() === 'POST' && path === '/auth/change-password') {
+        if (roles.includes('USER')) {
+            if (upperMethod === 'POST' && path === '/auth/change-password') {
                 return true;
             }
 
-            // Excepcion 2: PUT /perfiles/{empeladoId}
-            if(method.toUpperCase() === 'PUT' && path.startsWith('/perfiles/')) {
-                const targetEmpeladoId = params.empleadoId;
+            if (upperMethod === 'PUT' && path.startsWith('/perfiles/')) {
+                const targetEmpleadoId = params.empleadoId || path.split('/perfiles/')[1]?.split('/')[0];
 
-                if(user.userId === targetEmpeladoId) {
+                if (String(user.userId) === String(targetEmpleadoId)) {
                     return true;
                 }
+
                 throw new UnauthorizedError('No autorizado. No puede modificar el perfil de otro usuario.');
             }
 
-            // Acceso general
-            if (isMethodGet) {
+            if (isGet) {
                 return true;
             }
 
-            throw new ForbiddenError('No autorizado. No tiene permisos para realizar esta acción.');
+            throw new UnauthorizedError('No autorizado. No tiene permisos para realizar esta acción.');
         }
 
-        // 3. Otros roles
         throw new UnauthorizedError('No autorizado. No tiene permisos para realizar esta acción.');
     }
 }

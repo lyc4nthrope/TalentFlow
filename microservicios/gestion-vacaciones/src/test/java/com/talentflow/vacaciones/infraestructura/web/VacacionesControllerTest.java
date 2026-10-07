@@ -16,7 +16,7 @@ import com.talentflow.vacaciones.dominio.SolicitudInvalidaException;
 import com.talentflow.vacaciones.dominio.Vacaciones;
 import com.talentflow.vacaciones.dominio.VacacionesNoEncontradasException;
 import java.time.Instant;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -27,8 +27,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @WebMvcTest(VacacionesController.class)
 class VacacionesControllerTest {
 
-    private static final Vacaciones PERIODO = new Vacaciones("V-2026-0001", "E001", LocalDate.parse("2026-12-14"),
-            LocalDate.parse("2026-12-20"), EstadoVacaciones.PROGRAMADA, Instant.parse("2026-09-28T15:00:00Z"));
+    private static final Vacaciones PERIODO = new Vacaciones("V-2026-0001", "E001", LocalDateTime.of(2026, 12, 14, 0, 0),
+            LocalDateTime.of(2026, 12, 20, 0, 0), EstadoVacaciones.PROGRAMADA, Instant.parse("2026-09-28T15:00:00Z"));
 
     @Autowired
     private MockMvc mvc;
@@ -48,7 +48,7 @@ class VacacionesControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", "/vacaciones/V-2026-0001"))
                 .andExpect(jsonPath("$.id").value("V-2026-0001"))
-                .andExpect(jsonPath("$.fechaInicio").value("2026-12-14"))
+                .andExpect(jsonPath("$.fechaInicio").value("2026-12-14T00:00:00"))
                 .andExpect(jsonPath("$.estado").value("PROGRAMADA"))
                 .andExpect(jsonPath("$.fechaCreacion").value("2026-09-28T15:00:00Z"));
     }

@@ -5,7 +5,7 @@ import com.talentflow.vacaciones.dominio.EstadoVacaciones;
 import com.talentflow.vacaciones.dominio.ReglasVacaciones;
 import com.talentflow.vacaciones.dominio.Vacaciones;
 import java.time.Instant;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -26,7 +26,7 @@ final class Fakes {
         private int secuencia;
 
         @Override
-        public Vacaciones crear(String empleadoId, LocalDate inicio, LocalDate fin, Instant creacion) {
+        public Vacaciones crear(String empleadoId, LocalDateTime inicio, LocalDateTime fin, Instant creacion) {
             String id = "V-2026-%04d".formatted(++secuencia);
             Vacaciones v = new Vacaciones(id, empleadoId, inicio, fin, EstadoVacaciones.PROGRAMADA, creacion);
             datos.put(id, v);
@@ -49,7 +49,7 @@ final class Fakes {
         }
 
         @Override
-        public Optional<Vacaciones> buscarVigenteSolapado(String empleadoId, LocalDate inicio, LocalDate fin) {
+        public Optional<Vacaciones> buscarVigenteSolapado(String empleadoId, LocalDateTime inicio, LocalDateTime fin) {
             return datos.values().stream()
                     .filter(v -> v.empleadoId().equals(empleadoId) && v.estaVigente())
                     .filter(v -> ReglasVacaciones.seSolapan(v.fechaInicio(), v.fechaFin(), inicio, fin))
@@ -63,6 +63,41 @@ final class Fakes {
                 return false;
             }
             datos.put(id, v.cancelada());
+            return true;
+        }
+
+        @Override
+        public List<Vacaciones> findByEstadoAndFechaInicioLessThanEqual(EstadoVacaciones estado, LocalDateTime fecha) {
+            return datos.values().stream()
+                    .filter(v -> v.estado() == estado)
+                    .filter(v -> !v.fechaInicio().isAfter(fecha))
+                    .toList();
+        }
+
+        @Override
+        public List<Vacaciones> findByEstadoAndFechaFinLessThanEqual(EstadoVacaciones estado, LocalDateTime fecha) {
+            return datos.values().stream()
+                    .filter(v -> v.estado() == estado)
+                    .filter(v -> !v.fechaFin().isAfter(fecha))
+                    .toList();
+        }
+
+        @Override
+        public boolean actualizarEstado(String id, EstadoVacaciones nuevoEstado) {
+            Vacaciones actual = datos.get(id);
+            if (actual == null) {
+                return false;
+            }
+            datos.put(id, actual.conEstado(nuevoEstado));
+            return true;
+        }
+
+        @Override
+        public boolean actualizar(Vacaciones vacaciones) {
+            if (!datos.containsKey(vacaciones.id())) {
+                return false;
+            }
+            datos.put(vacaciones.id(), vacaciones);
             return true;
         }
     }

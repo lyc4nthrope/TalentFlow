@@ -40,7 +40,7 @@ services:
       DB_NAME: ${DB_AUTH_NAME:-db_auth}
       DB_USER: ${DB_AUTH_USER:-user_auth}
       DB_PASS: ${DB_AUTH_PASS:-pass_auth}
-      JWT_SECRET: ${JWT_SECRET:-tu_clave_secreta_super_segura}
+      JWT_SECRET: ${JWT_SECRET:-talentflow_super_secret_2026}
       RABBITMQ_HOST: message-broker
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
@@ -114,7 +114,7 @@ services:
       - "8080:8080"
     environment:
       PORT: 8080
-      JWT_SECRET: ${JWT_SECRET:-tu_clave_secreta_super_segura_reto5_2026}
+      JWT_SECRET: ${JWT_SECRET:-talentflow_super_secret_2026}
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
       NOTIFICACIONES_SERVICE_URL: http://notificaciones-service:8084

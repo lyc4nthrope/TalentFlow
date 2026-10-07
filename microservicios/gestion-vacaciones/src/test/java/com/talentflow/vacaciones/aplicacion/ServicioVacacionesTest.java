@@ -11,14 +11,15 @@ import com.talentflow.vacaciones.dominio.VacacionesNoEncontradasException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class ServicioVacacionesTest {
 
-    // "Hoy" fijo: 28 de septiembre de 2026 en Bogotá.
-    private static final Clock RELOJ = Clock.fixed(Instant.parse("2026-09-28T15:00:00Z"), ZoneId.of("America/Bogota"));
+    // "Hoy" fijo: 28 de septiembre de 2026 en Bogotá a medianoche local.
+    private static final Clock RELOJ = Clock.fixed(Instant.parse("2026-09-28T05:00:00Z"), ZoneId.of("America/Bogota"));
 
     private Fakes.Vacacionesmem vacaciones;
     private Fakes.EmpleadosMem empleados;
@@ -48,7 +49,7 @@ class ServicioVacacionesTest {
         assertThat(publicador.publicados.get(0).tipo()).isEqualTo("vacaciones.programadas");
         assertThat(publicador.publicados.get(0).data()).isEqualTo(new VacacionesProgramadas(
                 creada.id(), "E001", "juan@empresa.com",
-                LocalDate.parse("2026-12-14"), LocalDate.parse("2026-12-20"), 5));
+                LocalDateTime.of(2026, 12, 14, 0, 0), LocalDateTime.of(2026, 12, 20, 0, 0), 5));
     }
 
     @Test
