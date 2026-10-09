@@ -4,8 +4,16 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// Empleados
 const EMPLEADOS_URL = process.env.EMPLEADOS_SERVICE_URL || 'http://empleados-service:8081';
+//Departamentos
 const DEPARTAMENTOS_URL = process.env.DEPARTAMENTOS_SERVICE_URL || 'http://departamentos-service:8082';
+//Perfiles
+const PERFILES_URL = process.env.PERFILES_SERVICE_URL || 'http://perfiles-service:8083';
+//Notificaciones
+const NOTIFICACIONES_URL = process.env.NOTIFICACIONES_SERVICE_URL || 'http://notificaciones-service:8084';
+//vacaciones    
+const VACACIONES_URL = process.env.VACACIONES_SERVICE_URL || 'http://vacaciones-service:8085'
 
 const TIMEOUT_HEALTH_MS = 2000;
 
@@ -57,10 +65,13 @@ const handleProxyError = (err, req, res) => {
     });
 };
 
+
+//        PROXY
 // Nota: se monta en '/' (sin prefijo) y se usa pathFilter en vez de mount-path,
 // porque Express recorta el prefijo del mount antes de invocar el proxy y
 // pathRewrite solo puede reponer un string fijo, rompiendo rutas con parámetros
 // como /empleados/:id (verificado: producía /empleadosE001 en vez de /empleados/E001).
+
 app.use(
     createProxyMiddleware({
         target: EMPLEADOS_URL,
@@ -79,7 +90,35 @@ app.use(
     })
 );
 
-// Cualquier ruta fuera de /health, /empleados/* y /departamentos/*: 404 en JSON con el
+// RETO4
+app.use(
+    createProxyMiddleware({
+        target: PERFILES_URL,
+        changeOrigin: true,
+        pathFilter: ['/perfiles'],
+        on: { error: handleProxyError }
+    })
+);
+
+app.use(
+    createProxyMiddleware({
+        target: NOTIFICACIONES_URL,
+        changeOrigin: true,
+        pathFilter: ['/notificaciones'],
+        on: { error: handleProxyError }
+    })
+);
+
+app.use(
+    createProxyMiddleware({
+        target: VACACIONES_URL,
+        changeOrigin: true,
+        pathFilter: ['/vacaciones'],
+        on: { error: handleProxyError }
+    })
+); 
+
+// Cualquier ruta fuera de /health, /empleados/* y /departamentos/*: 404 en JSON con el + las otras 3 proxys
 // mismo formato que el 503, en vez de la página HTML por defecto de Express.
 app.use((req, res) => {
     res.status(404).json({
@@ -92,3 +131,5 @@ app.use((req, res) => {
 app.listen(PORT, () => {
     console.log(`API Gateway ejecutandose en el puerto ${PORT}`);
 });
+
+

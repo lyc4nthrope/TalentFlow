@@ -58,9 +58,15 @@ services:
       PORT: 8080
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
+      PERFILES_SERVICE_URL: http://perfiles-service:8083
+      NOTIFICACIONES_SERVICE_URL: http://notificaciones-service:8084
+      VACACIONES_SERVICE_URL: http://vacaciones-service:8085
     depends_on:
       - empleados-service
       - departamentos-service
+    # -tarea-   crear perfiles-service, notificaciones-service y vacaciones-service
+    
+    
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
