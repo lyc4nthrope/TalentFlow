@@ -131,6 +131,30 @@ services:
     networks:
       - microservices-network
 
+    # RabbitMQ como broker de mensajería
+  message-broker:
+    image: rabbitmq:4-management
+    container_name: message-broker
+    hostname: message-broker
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-talentflow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-talentflow_dev}
+    ports:
+      - "127.0.0.1:15672:15672"
+    expose:
+      - "5672"
+    volumes:
+      - vol-rabbitmq:/var/lib/rabbitmq
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
 networks:
   microservices-network:
     driver: bridge
@@ -138,3 +162,4 @@ networks:
 volumes:
   vol-empleados:
   vol-departamentos:
+  vol-rabbitmq:
