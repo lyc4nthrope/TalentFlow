@@ -64,9 +64,9 @@ services:
     depends_on:
       - empleados-service
       - departamentos-service
-    # -tarea-   crear perfiles-service, notificaciones-service y vacaciones-service
-    
-    
+      - perfiles-service
+      - notificaciones-service
+      - vacaciones-service
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -161,6 +161,178 @@ services:
       retries: 5
       start_period: 30s
 
+  # ---- Reto 4: servicios orientados a eventos ----
+
+  # Base de Datos Perfiles (PostgreSQL)
+  database-perfiles:
+    image: postgres:16-alpine
+    container_name: db-perfiles
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_PERFILES_NAME:-db_perfiles}
+      POSTGRES_USER: ${DB_PERFILES_USER:-user_perfiles}
+      POSTGRES_PASSWORD: ${DB_PERFILES_PASS:-pass_perfiles}
+    expose:
+      - "5432"
+    volumes:
+      - vol-perfiles:/var/lib/postgresql/data
+      - ./microservicios/perfiles-service/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_PERFILES_USER:-user_perfiles} -d ${DB_PERFILES_NAME:-db_perfiles}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Base de Datos Notificaciones (PostgreSQL)
+  database-notificaciones:
+    image: postgres:16-alpine
+    container_name: db-notificaciones
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NOTIF_NAME:-db_notificaciones}
+      POSTGRES_USER: ${DB_NOTIF_USER:-user_notificaciones}
+      POSTGRES_PASSWORD: ${DB_NOTIF_PASS:-pass_notificaciones}
+    expose:
+      - "5432"
+    volumes:
+      - vol-notificaciones:/var/lib/postgresql/data
+      - ./microservicios/notificaciones-service/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_NOTIF_USER:-user_notificaciones} -d ${DB_NOTIF_NAME:-db_notificaciones}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Base de Datos Vacaciones (PostgreSQL)
+  database-vacaciones:
+    image: postgres:16-alpine
+    container_name: db-vacaciones
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_VACACIONES_NAME:-db_vacaciones}
+      POSTGRES_USER: ${DB_VACACIONES_USER:-user_vacaciones}
+      POSTGRES_PASSWORD: ${DB_VACACIONES_PASS:-pass_vacaciones}
+    expose:
+      - "5432"
+    volumes:
+      - vol-vacaciones:/var/lib/postgresql/data
+      - ./microservicios/vacaciones-service/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_VACACIONES_USER:-user_vacaciones} -d ${DB_VACACIONES_NAME:-db_vacaciones}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Microservicio Perfiles (Go): consume empleado.* + REST
+  perfiles-service:
+    build:
+      context: ./microservicios/perfiles-service
+      dockerfile: Dockerfile
+    container_name: ms-perfiles
+    restart: on-failure
+    expose:
+      - "8083"
+    environment:
+      PORT: 8083
+      DB_HOST: database-perfiles
+      DB_PORT: 5432
+      DB_NAME: ${DB_PERFILES_NAME:-db_perfiles}
+      DB_USER: ${DB_PERFILES_USER:-user_perfiles}
+      DB_PASS: ${DB_PERFILES_PASS:-pass_perfiles}
+      BROKER_URL: amqp://${RABBITMQ_USER:-talentflow}:${RABBITMQ_PASS:-talentflow_dev}@message-broker:5672/
+      BROKER_EXCHANGE: talentflow.events
+      BROKER_QUEUE: perfiles-service.q
+    depends_on:
+      database-perfiles:
+        condition: service_healthy
+      message-broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8083/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  # Microservicio Notificaciones (Java + Spring Boot): solo consume eventos
+  notificaciones-service:
+    build:
+      context: ./microservicios/notificaciones-service
+      dockerfile: Dockerfile
+    container_name: ms-notificaciones
+    restart: on-failure
+    expose:
+      - "8084"
+    environment:
+      PORT: 8084
+      DB_HOST: database-notificaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_NOTIF_NAME:-db_notificaciones}
+      DB_USER: ${DB_NOTIF_USER:-user_notificaciones}
+      DB_PASS: ${DB_NOTIF_PASS:-pass_notificaciones}
+      BROKER_HOST: message-broker
+      BROKER_PORT: 5672
+      BROKER_USER: ${RABBITMQ_USER:-talentflow}
+      BROKER_PASS: ${RABBITMQ_PASS:-talentflow_dev}
+      BROKER_EXCHANGE: talentflow.events
+    depends_on:
+      database-notificaciones:
+        condition: service_healthy
+      message-broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8084/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  # Microservicio Vacaciones (Python + FastAPI): REST + publica vacaciones.programadas
+  vacaciones-service:
+    build:
+      context: ./microservicios/vacaciones-service
+      dockerfile: Dockerfile
+    container_name: ms-vacaciones
+    restart: on-failure
+    expose:
+      - "8085"
+    environment:
+      PORT: 8085
+      DB_HOST: database-vacaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_VACACIONES_NAME:-db_vacaciones}
+      DB_USER: ${DB_VACACIONES_USER:-user_vacaciones}
+      DB_PASS: ${DB_VACACIONES_PASS:-pass_vacaciones}
+      BROKER_URL: amqp://${RABBITMQ_USER:-talentflow}:${RABBITMQ_PASS:-talentflow_dev}@message-broker:5672/
+      BROKER_EXCHANGE: talentflow.events
+      TZ_NEGOCIO: America/Bogota
+    depends_on:
+      database-vacaciones:
+        condition: service_healthy
+      message-broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8085/health', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    networks:
+      - microservices-network
+
 networks:
   microservices-network:
     driver: bridge
@@ -169,3 +341,6 @@ volumes:
   vol-empleados:
   vol-departamentos:
   vol-rabbitmq:
+  vol-perfiles:
+  vol-notificaciones:
+  vol-vacaciones:

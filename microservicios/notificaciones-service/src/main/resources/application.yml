@@ -1,0 +1,43 @@
+server:
+  port: ${PORT:8084}
+
+spring:
+  application:
+    name: notificaciones-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:db_notificaciones}
+    username: ${DB_USER:user_notificaciones}
+    password: ${DB_PASS:pass_notificaciones}
+    hikari:
+      connection-timeout: 3000
+  rabbitmq:
+    host: ${BROKER_HOST:message-broker}
+    port: ${BROKER_PORT:5672}
+    username: ${BROKER_USER:talentflow}
+    password: ${BROKER_PASS:talentflow_dev}
+    connection-timeout: 3000
+    listener:
+      simple:
+        acknowledge-mode: auto
+        prefetch: 10
+        default-requeue-rejected: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+app:
+  broker:
+    exchange: ${BROKER_EXCHANGE:talentflow.events}
+    queue: ${BROKER_QUEUE:notificaciones-service.q}
+
+# Swagger bajo /notificaciones/* para que sea alcanzable por el Gateway sin agregarle rutas
+# (el Gateway solo enruta el prefijo /notificaciones).
+springdoc:
+  api-docs:
+    path: /notificaciones/api-docs
+  swagger-ui:
+    path: /notificaciones/docs
+
+logging:
+  level:
+    root: INFO

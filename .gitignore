@@ -10,3 +10,7 @@ coverage/
 secrets/
 .vscode/
 .atl/
+__pycache__/
+.pytest_cache/
+*.pyc
+target/

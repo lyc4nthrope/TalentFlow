@@ -67,6 +67,97 @@ Enrutamiento **exactamente** el exigido por el Reto 3 — ninguna ruta adicional
 
 Si el servicio destino no responde (caído, timeout de conexión), el Gateway responde `503` con un cuerpo JSON descriptivo (`{"error", "message", "path"}`), nunca la página de error por defecto del framework proxy. Verificado: con `http-proxy-middleware@3`, el hook de error es `on: { error }`, no el `onError` plano de la v2 — con la sintaxis vieja el error nunca se intercepta y el cliente recibe un `504` en texto plano de la librería en vez del `503` JSON exigido.
 
+## Reto 4 — Eventos asincrónicos (perfiles, notificaciones, vacaciones)
+
+```
+ empleados-service ──publica──▶  ┌──────────────────────────────┐
+ (empleado.*)                    │ message-broker (RabbitMQ)    │
+ vacaciones-service ─publica──▶  │ exchange topic talentflow.events │
+ (vacaciones.programadas)        └───┬───────────┬──────────┬───┘
+                      empleado.*     │           │          │ empleado.creado/retirado
+                                     ▼           ▼          ▼ vacaciones.programadas
+                              perfiles-service  notificaciones-service  vacaciones-service
+                              (Go)              (Java + Spring Boot)    (Python + FastAPI)
+                              db-perfiles       db-notificaciones       db-vacaciones
+```
+
+Los tres servicios entran **detrás del Gateway** (`expose`, nunca `ports`): `/perfiles`, `/notificaciones`, `/vacaciones`.
+
+### Servicio ↔ lenguaje
+
+| Servicio | Lenguaje | Puerto | Base de datos | Rol |
+|---|---|---|---|---|
+| api-gateway | Node.js | 8080 | — | entrada única |
+| empleados-service | Node.js | 8081 | PostgreSQL | REST |
+| departamentos-service | PHP | 8082 | MySQL | REST |
+| **perfiles-service** | **Go** | 8083 | PostgreSQL | consume eventos + REST |
+| **notificaciones-service** | **Java (Spring Boot)** | 8084 | PostgreSQL | solo consume eventos |
+| **vacaciones-service** | **Python (FastAPI)** | 8085 | PostgreSQL | REST + produce eventos |
+
+5 lenguajes distintos (el reto pide ≥ 4). Elección: Python para vacaciones (aritmética de fechas, y el scheduler del Reto 5);
+Go para perfiles (servicio ligero de eventos + REST); Java/Spring para notificaciones (`@RabbitListener` y JDBC maduros).
+
+### Broker: por qué RabbitMQ
+
+| | RabbitMQ | Kafka | Redis Streams | NATS |
+|---|---|---|---|---|
+| Modelo | exchanges + colas, routing por tema | log particionado | stream + grupos | subjects (core sin persistencia) |
+| Encaja con el catálogo (`entidad.accion`) | **Sí: routing key = nombre del evento** | hay que mapear a topics | clave de stream | subject |
+| Confirmaciones / reentrega | ack/nack nativos | offsets | ack + reclamar pendientes | solo en JetStream |
+| UI para publicar a mano (prueba de deduplicación) | **Sí (management)** | no incluida | no | no |
+| Costo operativo en Compose | bajo | alto (KRaft, memoria) | bajo | bajo |
+
+Se eligió RabbitMQ porque (1) un exchange `topic` mapea 1:1 el catálogo, (2) la UI de administración permite publicar a mano el mismo
+mensaje dos veces (verificación exigida), (3) el ack/nack y la reentrega son justo lo que exige la deduplicación, y (4) el volumen no justifica Kafka.
+UI: <http://localhost:15672> (solo en loopback; usuario/clave en `.env`, por defecto `talentflow` / `talentflow_dev`). El puerto 5672 no se publica.
+
+### Eventos
+
+Ver [`docs/eventos.md`](docs/eventos.md) (topología, tabla implementada, política de ack, deduplicación) y el Catálogo de Eventos.
+
+| Evento | Productor | Reacción |
+|---|---|---|
+| `empleado.creado` | empleados | perfiles: perfil por defecto · notificaciones: BIENVENIDA · vacaciones: alta en réplica |
+| `empleado.actualizado` | empleados | perfiles: sincroniza campos replicados |
+| `empleado.retirado` | empleados | perfiles: archiva · notificaciones: DESVINCULACION · vacaciones: marca RETIRADO |
+| `vacaciones.programadas` | vacaciones | notificaciones: VACACIONES |
+
+### Vacaciones: cómo se valida que el empleado existe → opción (b), réplica por eventos
+
+`vacaciones-service` consume `empleado.creado` / `empleado.retirado` y mantiene `empleados_replica`. Se prefirió **disponibilidad y autonomía**
+a consistencia inmediata, igual que la decisión del Circuit Breaker del Reto 3: RRHH puede programar vacaciones aunque `empleados-service`
+esté caído, y no hay acoplamiento síncrono. **Costo aceptado:** consistencia eventual (un empleado recién creado puede tardar milisegundos en ser
+válido), y los empleados creados *antes* de levantar este servicio no están en la réplica (habría que re-publicar sus eventos).
+Además la réplica guarda el email de `empleado.creado`: si luego cambia (`empleado.actualizado`), vacaciones no se entera porque el catálogo no lo
+lista como consumidor — ver `docs/eventos.md`.
+
+Reglas: 4 validaciones → `400` (fechas incoherentes, pasadas, solapamiento —incluye `periodoEnConflicto`—, empleado inexistente o RETIRADO).
+`DELETE` cancela (estado `CANCELADA`, no borra) solo períodos PROGRAMADA cuyo inicio no ha llegado; si no, `409`.
+`diasHabiles` = lunes a viernes inclusive, sin festivos. Ojo: el catálogo ejemplifica 12 días para 15–30 mar 2026, que con L–V da 11 (el ejemplo es ilustrativo).
+
+### Swagger UI (a través del Gateway, sin agregar rutas)
+
+- <http://localhost:8080/perfiles/docs> · <http://localhost:8080/notificaciones/docs> · <http://localhost:8080/vacaciones/docs>
+
+### Probar el flujo
+
+```bash
+docker compose up --build -d
+bash docs/reto-04/demo.sh          # ver el encabezado del script
+docker compose logs notificaciones-service | grep NOTIFICACI
+```
+
+Hasta que `empleados-service` publique eventos, el script publica `empleado.*` directo al broker. Para **la prueba de deduplicación a mano**: en la UI de RabbitMQ →
+Exchanges → `talentflow.events` → *Publish message*, routing key `empleado.creado`, propiedad `message_id` y `id` del JSON iguales, publicar **dos veces** y comprobar
+`GET /notificaciones/{empleadoId}` (una) y `GET /perfiles/{empleadoId}`. Pegar aquí la evidencia:
+
+```
+(pendiente: salida real de la prueba)
+```
+
+Pruebas automáticas: `vacaciones-service` (`pip install -r requirements-dev.txt && pytest`, usa PostgreSQL embebido), `perfiles-service`
+(`TEST_DATABASE_URL=... go test -p 1 ./...`, requiere un PostgreSQL), `notificaciones-service` (`mvn test`, pruebas unitarias de parser y mensajes).
+
 ## Estructura
 
 ```
@@ -74,7 +165,10 @@ TalentFlow/
 ├── microservicios/
 │   ├── api-gateway/                   # Reto 3 (Node.js + Express) — único punto de entrada
 │   ├── gestion-empleados/             # Reto 1 + 2 + 3 (Node.js + Postgres, Circuit Breaker) — autónomo
-│   └── gestion-departamentos/         # Reto 2 (PHP + MySQL) — autónomo
+│   ├── gestion-departamentos/         # Reto 2 (PHP + MySQL) — autónomo
+│   ├── perfiles-service/              # Reto 4 (Go + Postgres)
+│   ├── notificaciones-service/        # Reto 4 (Java Spring Boot + Postgres)
+│   └── vacaciones-service/            # Reto 4 (Python FastAPI + Postgres)
 ├── docs/                              # Evidencia y decisiones por reto
 ├── docker-compose.yml                 # Orquesta todos los microservicios
 └── package.json                       # npm workspaces (solo tooling de desarrollo, ver nota abajo)
