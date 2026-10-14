@@ -51,19 +51,19 @@ func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
-    var req dominio.ResetPasswordInput
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        http.Error(w, "solicitud inválida", http.StatusBadRequest)
-        return
-    }
+	var req dominio.ResetPasswordInput
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "solicitud inválida", http.StatusBadRequest)
+		return
+	}
 
-    if err := h.service.ConfirmarCambioClave(r.Context(), req.Token, req.NewPassword); err != nil {
-        http.Error(w, "error al cambiar la contraseña", http.StatusInternalServerError)
-        return
-    }
+	if err := h.service.ConfirmarCambioClave(r.Context(), req.Token, req.NewPassword); err != nil {
+		http.Error(w, "error al cambiar la contraseña", http.StatusInternalServerError)
+		return
+	}
 
-    w.WriteHeader(http.StatusOK)
-    _, _ = w.Write([]byte(`{"mensaje":"Contraseña restablecida correctamente"}`))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"mensaje":"Contraseña restablecida correctamente"}`))
 }
 
 func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {

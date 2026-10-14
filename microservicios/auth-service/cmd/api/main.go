@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -36,7 +37,16 @@ func main() {
 	// 4. Inicializar Servicio de Aplicación (Inyectando el repositorio)
 	authService := aplicacion.NuevoAuthService(productorAMQP, tokenProvider, usuarioRepo)
 
-	// 5. Inicializar Handlers y Rutas
+	// 5. Arrancar consumidor de eventos: empleado.creado -> crea el usuario inactivo y publica usuario.creado
+	consumidor := amqp.NuevoConsumidor(amqp.Config{
+		URL:      cfg.AMQPURL,
+		Cola:     "auth.eventos",
+		Etiqueta: "auth-service",
+		Prefetch: 10,
+	}, authService)
+	go consumidor.Ejecutar(context.Background())
+
+	// 6. Inicializar Handlers y Rutas
 	authHandler := api.NuevoAuthHandler(authService)
 	router := api.ConfigurarRutas(authHandler)
 

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	amqp091 "github.com/rabbitmq/amqp091-go"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/eventos"
+	amqp091 "github.com/rabbitmq/amqp091-go"
 )
 
 type Productor struct {

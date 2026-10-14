@@ -11,6 +11,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'talentflow_super_secret_2026';
 // /health agregado. Agregar un servicio = agregar una fila. Todos usan expose: en Compose
 // (solo son alcanzables a través del Gateway).
 const SERVICIOS = [
+    { nombre: 'auth-service', prefijo: '/auth', url: process.env.AUTH_SERVICE_URL || 'http://auth-service:8086' },
     { nombre: 'empleados-service', prefijo: '/empleados', url: process.env.EMPLEADOS_SERVICE_URL || 'http://empleados-service:8081' },
     { nombre: 'departamentos-service', prefijo: '/departamentos', url: process.env.DEPARTAMENTOS_SERVICE_URL || 'http://departamentos-service:8082' },
     // Reto 4
@@ -43,7 +44,7 @@ const getUserFromToken = (token) => {
 
     return {
         ...payload,
-        userId: payload.sub || payload.userId || payload.id,
+        userId: payload.empleadoId || payload.sub || payload.userId || payload.id,
         email: payload.email,
         roles
     };
@@ -84,6 +85,11 @@ const rolesToHeader = (roles = []) => Array.isArray(roles) ? roles.join(',') : S
 const checkPermissions = (req, res, next) => {
     const path = (req.path || req.originalUrl || '/').split('?')[0];
     const method = (req.method || 'GET').toUpperCase();
+
+    if (PUBLIC_PATHS.includes(path) || PUBLIC_PATHS.some(publicPath => path.startsWith(`${publicPath}/`))) {
+        return next();
+    }
+
     const user = req.user || {};
     const roles = Array.isArray(user.roles) ? user.roles : (user.roles ? [user.roles] : []);
 
@@ -95,15 +101,26 @@ const checkPermissions = (req, res, next) => {
         return next();
     }
 
-    if (method === 'GET') {
-        return next();
+    if (path.startsWith('/empleados')) {
+        return res.status(403).json({
+            error: 'FORBIDDEN',
+            message: 'No tiene permisos para acceder a los datos de empleados.'
+        });
     }
 
-    if (method === 'PUT' && path.startsWith('/perfiles/')) {
+    if (path.startsWith('/perfiles/')) {
         const targetId = path.split('/perfiles/')[1]?.split('/')[0];
         if (String(user.userId) === String(targetId)) {
             return next();
         }
+        return res.status(403).json({
+            error: 'FORBIDDEN',
+            message: 'No tiene permisos para acceder a este perfil.'
+        });
+    }
+
+    if (path.startsWith('/departamentos') && method === 'GET') {
+        return next();
     }
 
     return res.status(403).json({

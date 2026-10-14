@@ -43,6 +43,14 @@ func TestNotificacionDesdeEvento(t *testing.T) {
 			destinatario: "juan.perez@empresa.com",
 			contiene:     "del 2026-12-15 al 2026-12-30 (12 días hábiles)",
 		},
+		{
+			nombre:       "usuario.creado genera BIENVENIDA con el token de activación",
+			tipoEvento:   "usuario.creado",
+			data:         `{"usuarioId":"U-001","empleadoId":"E001","email":"juan.perez@empresa.com","token":"reset_123456789"}`,
+			tipo:         TipoBienvenida,
+			destinatario: "juan.perez@empresa.com",
+			contiene:     "reset_123456789",
+		},
 	}
 
 	for _, c := range casos {

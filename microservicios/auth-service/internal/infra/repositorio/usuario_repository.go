@@ -74,7 +74,7 @@ func (r *UsuarioRepository) ObtenerPorTokenRecuperacion(ctx context.Context, tok
 	return &usuario, nil
 }
 
-// ActualizarPasswordYEstado guarda el hash de la clave, actualiza el estado (ej: "ACTIVA") 
+// ActualizarPasswordYEstado guarda el hash de la clave, actualiza el estado (ej: "ACTIVA")
 // y limpia el token de recuperación consumido.
 func (r *UsuarioRepository) GuardarTokenRecuperacion(ctx context.Context, usuarioID, token string) error {
 	resultado := r.db.WithContext(ctx).
@@ -93,6 +93,13 @@ func (r *UsuarioRepository) GuardarTokenRecuperacion(ctx context.Context, usuari
 	}
 
 	return nil
+}
+
+func (r *UsuarioRepository) CrearUsuario(ctx context.Context, usuario *dominio.Usuario) error {
+	if usuario == nil {
+		return errors.New("usuario requerido")
+	}
+	return r.db.WithContext(ctx).Create(usuario).Error
 }
 
 func (r *UsuarioRepository) ActualizarPasswordYEstado(ctx context.Context, usuarioID, nuevoHash, nuevoEstado string) error {

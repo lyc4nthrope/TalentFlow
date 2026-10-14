@@ -8,9 +8,10 @@ import (
 )
 
 type TokenClaims struct {
-	UsuarioID string `json:"sub"`
-	Email     string `json:"email"`
+	UsuarioID string   `json:"sub"`
+	Email     string   `json:"email"`
 	Roles     []string `json:"roles"`
+	EmpleadoID string  `json:"empleadoId,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -28,13 +29,17 @@ func NuevoTokenProvider(secretKey string, issuer string, duracionHoras int) *Tok
 	}
 }
 
-// GenerarToken crea y firma un nuevo JWT para el usuario
-func (p *TokenProvider) GenerarToken(usuarioID, email string, roles []string) (string, error) {
+// GenerarToken crea y firma un nuevo JWT para el usuario.
+// El campo sub sigue siendo el identificador del usuario de auth, y empleadoId
+// se añade para que el Gateway pueda autorizar correctamente acceso a perfiles
+// propios sin romper la lógica de cambio de contraseña y validación interna.
+func (p *TokenProvider) GenerarToken(usuarioID, email string, roles []string, empleadoID string) (string, error) {
 	ahora := time.Now().UTC()
 	claims := TokenClaims{
-		UsuarioID: usuarioID,
-		Email:     email,
-		Roles:     roles,
+		UsuarioID:  usuarioID,
+		Email:      email,
+		Roles:      roles,
+		EmpleadoID: empleadoID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    p.issuer,
 			Subject:   usuarioID,

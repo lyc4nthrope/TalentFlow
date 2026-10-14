@@ -9,9 +9,9 @@ import (
 
 // Estados de cuenta requeridos por el Reto 5 para manejar el ciclo de vida
 const (
-	EstadoActiva               = "ACTIVA"
-	EstadoInactiva             = "INACTIVA"
-	EstadoSuspendidaTemporal   = "SUSPENDIDA_TEMPORAL"   // Por vacaciones
+	EstadoActiva                = "ACTIVA"
+	EstadoInactiva              = "INACTIVA"
+	EstadoSuspendidaTemporal    = "SUSPENDIDA_TEMPORAL"    // Por vacaciones
 	EstadoDesactivadaPermanente = "DESACTIVADA_PERMANENTE" // Por retiro de empleado
 )
 
@@ -20,7 +20,7 @@ type Usuario struct {
 	Email             string         `json:"email"`
 	PasswordHash      string         `json:"-"`
 	Roles             pq.StringArray `gorm:"type:text[]" json:"roles"` // Soporta ["ADMIN"], ["USER"], etc.
-	Estado            string         `json:"estado"` // ACTIVA | INACTIVA | SUSPENDIDA_TEMPORAL | DESACTIVADA_PERMANENTE
+	Estado            string         `json:"estado"`                   // ACTIVA | INACTIVA | SUSPENDIDA_TEMPORAL | DESACTIVADA_PERMANENTE
 	EmpleadoID        string         `json:"empleadoId"`
 	TokenRecuperacion string         `json:"-"`
 	CreatedAt         time.Time      `json:"createdAt"`
@@ -91,9 +91,12 @@ type EventoCuentaActivada struct {
 }
 
 type EventoUsuarioCreado struct {
-	UsuarioID string `json:"usuarioId"`
-	Email     string `json:"email"`
-	Token     string `json:"token"`
+	UsuarioID  string `json:"usuarioId"`
+	EmpleadoID string `json:"empleadoId,omitempty"`
+	Email      string `json:"email"`
+	Token      string `json:"token"`
+	Nombre     string `json:"nombre,omitempty"`
+	Apellido   string `json:"apellido,omitempty"`
 }
 
 type EventoCuentaDesactivada struct {
