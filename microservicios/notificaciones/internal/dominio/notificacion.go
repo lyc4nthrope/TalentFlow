@@ -22,6 +22,9 @@ const (
 	// Nuevos tipos para Reto 5
 	TipoRecuperacionClave Tipo = "RECUPERACION_CLAVE"
 	TipoClaveCambiada     Tipo = "CLAVE_CAMBIADA"
+
+	TipoSeguridad Tipo = "SEGURIDAD"
+	TipoCuenta    Tipo = "CUENTA"
 )
 
 // Tipos de evento que consume este servicio (Catálogo de Eventos, sección 3).
@@ -99,12 +102,14 @@ type usuarioRecuperacion struct {
 type cuentaActivada struct {
 	UsuarioID string `json:"usuarioId"`
 	Email     string `json:"email"`
+	Motivo    string `json:"motivo,omitempty"`
 }
 
 type cuentaDesactivada struct {
-	UsuarioID string `json:"usuarioId"`
-	Email     string `json:"email"`
-	Motivo    string `json:"motivo"`
+	UsuarioID  string `json:"usuarioId"`
+	Email      string `json:"email"`
+	Motivo     string `json:"motivo"`
+	Permanente bool   `json:"permanente"`
 }
 
 // NotificacionDesdeEvento traduce un evento en la notificación que le corresponde.
@@ -128,6 +133,7 @@ type passwordChanged struct {
 
 func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time.Time) (Notificacion, error) {
 	switch tipoEvento {
+
 	case EventoEmpleadoCreado:
 		var d empleadoCreado
 		if err := decodificar(data, &d); err != nil {
@@ -165,22 +171,8 @@ func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time
 			fmt.Sprintf("Sus vacaciones del %s al %s (%d días hábiles) quedaron programadas.",
 				d.FechaInicio, d.FechaFin, d.DiasHabiles)), nil
 
-	case EventoUsuarioCreado:
-		var d usuarioCreado
-		if err := decodificar(data, &d); err != nil {
-			return Notificacion{}, err
-		}
-		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "empleadoId": d.EmpleadoID, "email": d.Email, "token": d.Token}); err != nil {
-			return Notificacion{}, err
-		}
-		nombreCompleto := strings.TrimSpace(strings.TrimSpace(d.Nombre) + " " + strings.TrimSpace(d.Apellido))
-		if nombreCompleto == "" {
-			nombreCompleto = "empleado"
-		}
-		return nueva(TipoBienvenida, d.Email, d.EmpleadoID, ahora,
-			fmt.Sprintf("Bienvenido %s a TalentFlow. Para establecer tu contraseña y activar tu cuenta, usa este token: %s", nombreCompleto, d.Token)), nil
-
-	case EventoUsuarioRecuperacion:
+	// --- NOTIFICACIONES DE SEGURIDAD (Manejo de Tokens y Claves) ---
+	case EventoUsuarioCreado, EventoUsuarioRecuperacion, EventoPasswordResetRequested:
 		var d usuarioRecuperacion
 		if err := decodificar(data, &d); err != nil {
 			return Notificacion{}, err
@@ -188,41 +180,8 @@ func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time
 		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email, "token": d.Token}); err != nil {
 			return Notificacion{}, err
 		}
-		return nueva(TipoRecuperacionClave, d.Email, d.UsuarioID, ahora,
-			fmt.Sprintf("Has solicitado restablecer tu contraseña. Utiliza el siguiente token para cambiarla: %s", d.Token)), nil
-
-	case EventoCuentaActivada:
-		var d cuentaActivada
-		if err := decodificar(data, &d); err != nil {
-			return Notificacion{}, err
-		}
-		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email}); err != nil {
-			return Notificacion{}, err
-		}
-		return nueva(TipoClaveCambiada, d.Email, d.UsuarioID, ahora,
-			"Tu contraseña ha sido cambiada exitosamente. Si no realizaste esta acción, contacta al administrador."), nil
-
-	case EventoCuentaDesactivada:
-		var d cuentaDesactivada
-		if err := decodificar(data, &d); err != nil {
-			return Notificacion{}, err
-		}
-		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email, "motivo": d.Motivo}); err != nil {
-			return Notificacion{}, err
-		}
-		return nueva(TipoDesvinculacion, d.Email, d.UsuarioID, ahora,
-			fmt.Sprintf("Su cuenta ha sido desactivada por %s. Contacta con tu administrador para reactivarla.", d.Motivo)), nil
-
-	case EventoPasswordResetRequested:
-		var d passwordResetRequested
-		if err := decodificar(data, &d); err != nil {
-			return Notificacion{}, err
-		}
-		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email, "token": d.Token}); err != nil {
-			return Notificacion{}, err
-		}
-		return nueva(TipoRecuperacionClave, d.Email, d.UsuarioID, ahora,
-			fmt.Sprintf("Has solicitado restablecer tu contraseña. Utiliza el siguiente token para cambiarla: %s", d.Token)), nil
+		return nueva(TipoSeguridad, d.Email, d.UsuarioID, ahora,
+			fmt.Sprintf("Para establecer o restablecer su contraseña, utilice el siguiente token de activación: %s", d.Token)), nil
 
 	case EventoPasswordChanged:
 		var d passwordChanged
@@ -232,8 +191,34 @@ func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time
 		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email}); err != nil {
 			return Notificacion{}, err
 		}
-		return nueva(TipoClaveCambiada, d.Email, d.UsuarioID, ahora,
+		return nueva(TipoSeguridad, d.Email, d.UsuarioID, ahora,
 			"Tu contraseña ha sido cambiada exitosamente. Si no realizaste esta acción, contacta al administrador."), nil
+
+	// --- NOTIFICACIONES DE ESTADO DE CUENTA ---
+	case EventoCuentaActivada:
+		var d cuentaActivada
+		if err := decodificar(data, &d); err != nil {
+			return Notificacion{}, err
+		}
+		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email}); err != nil {
+			return Notificacion{}, err
+		}
+		msg := "Bienvenido de regreso. Su cuenta ha sido activada."
+		if d.Motivo != "" {
+			msg = fmt.Sprintf("Bienvenido de regreso. Su cuenta ha sido activada (Motivo: %s).", d.Motivo)
+		}
+		return nueva(TipoCuenta, d.Email, d.UsuarioID, ahora, msg), nil
+
+	case EventoCuentaDesactivada:
+		var d cuentaDesactivada
+		if err := decodificar(data, &d); err != nil {
+			return Notificacion{}, err
+		}
+		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email, "motivo": d.Motivo}); err != nil {
+			return Notificacion{}, err
+		}
+		return nueva(TipoCuenta, d.Email, d.UsuarioID, ahora,
+			fmt.Sprintf("Su cuenta fue desactivada por el siguiente motivo: %s", d.Motivo)), nil
 
 	default:
 		return Notificacion{}, fmt.Errorf("%w: %s", ErrTipoNoSoportado, tipoEvento)

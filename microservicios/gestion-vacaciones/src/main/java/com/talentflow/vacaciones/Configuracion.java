@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.talentflow.vacaciones.aplicacion.ProcesadorEventosEmpleado;
 import com.talentflow.vacaciones.aplicacion.ServicioVacaciones;
 import com.talentflow.vacaciones.aplicacion.Transacciones;
+import com.talentflow.vacaciones.dominio.EventoPublisherPort;
 import com.talentflow.vacaciones.infraestructura.mensajeria.ConsumidorEventosEmpleado;
 import com.talentflow.vacaciones.infraestructura.mensajeria.RabbitPublicadorEventos;
 import com.talentflow.vacaciones.infraestructura.persistencia.JdbcDeduplicador;
@@ -66,24 +67,22 @@ public class Configuracion {
         return new JdbcRepositorioEmpleados(jdbc);
     }
 
-    @Bean
-    RabbitPublicadorEventos publicadorEventos(RabbitTemplate rabbit, ObjectMapper json, Clock reloj,
-            @Value("${vacaciones.eventos.exchange}") String exchange,
-            @Value("${vacaciones.eventos.timeout-confirmacion-ms}") long timeoutMs) {
-        return new RabbitPublicadorEventos(rabbit, json, exchange, "vacaciones-service", timeoutMs, reloj);
-    }
+@Bean
+RabbitPublicadorEventos publicadorEventos(RabbitTemplate rabbit, ObjectMapper json, Clock reloj,
+        @Value("${vacaciones.eventos.exchange}") String exchange,
+        @Value("${vacaciones.eventos.timeout-confirmacion-ms}") long timeoutMs) {
+    return new RabbitPublicadorEventos(rabbit, json, exchange, "vacaciones-service", timeoutMs, reloj);
+}
 
-    @Bean
-    ServicioVacaciones servicioVacaciones(JdbcRepositorioVacaciones vacaciones, JdbcRepositorioEmpleados empleados,
-            RabbitPublicadorEventos publicador, Transacciones transacciones, Clock reloj) {
-        return new ServicioVacaciones(vacaciones, empleados, publicador, transacciones, reloj);
-    }
+@Bean
+ServicioVacaciones servicioVacaciones(JdbcRepositorioVacaciones vacaciones, JdbcRepositorioEmpleados empleados,
+        RabbitPublicadorEventos publicador, Transacciones transacciones, Clock reloj) {
+    return new ServicioVacaciones(vacaciones, empleados, publicador, transacciones, reloj);
+}
 
     @Bean
     ProcesadorEventosEmpleado procesadorEventosEmpleado(JdbcRepositorioEmpleados empleados, JdbcClient jdbc,
             Transacciones transacciones) {
-        // Spring traduce los SQLSTATE 22 (dato inválido) y 23 (restricción violada) a
-        // DataIntegrityViolationException: rechazos permanentes, no se reintentan.
         return new ProcesadorEventosEmpleado(empleados, new JdbcDeduplicador(jdbc), transacciones,
                 e -> e instanceof DataIntegrityViolationException);
     }

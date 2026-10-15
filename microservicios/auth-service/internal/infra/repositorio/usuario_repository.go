@@ -142,3 +142,39 @@ func (r *UsuarioRepository) ActualizarPassword(ctx context.Context, usuarioID, n
 
 	return nil
 }
+// ActualizarEstado modifica únicamente el estado del usuario (ej: "ACTIVA", "SUSPENDIDA_TEMPORAL", "DESACTIVADA_PERMANENTE")
+func (r *UsuarioRepository) ActualizarEstado(ctx context.Context, usuarioID, nuevoEstado string) error {
+	resultado := r.db.WithContext(ctx).
+		Model(&dominio.Usuario{}).
+		Where("id = ?", usuarioID).
+		Updates(map[string]interface{}{
+			"estado":     nuevoEstado,
+			"updated_at": time.Now().UTC(),
+		})
+
+	if resultado.Error != nil {
+		return resultado.Error
+	}
+	if resultado.RowsAffected == 0 {
+		return errors.New("no se encontró el usuario para actualizar el estado")
+	}
+
+	return nil
+}
+// ObtenerPorEmpleadoID busca un usuario asociado a un empleadoID específico.
+func (r *UsuarioRepository) ObtenerPorEmpleadoID(ctx context.Context, empleadoID string) (*dominio.Usuario, error) {
+	var usuario dominio.Usuario
+
+	err := r.db.WithContext(ctx).
+		Where("empleado_id = ?", empleadoID).
+		First(&usuario).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil // Empleado sin usuario asignado
+		}
+		return nil, err
+	}
+
+	return &usuario, nil
+}

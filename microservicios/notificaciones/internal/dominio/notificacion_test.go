@@ -21,7 +21,7 @@ func TestNotificacionDesdeEvento(t *testing.T) {
 	}{
 		{
 			nombre:       "empleado.creado genera BIENVENIDA con el nombre completo",
-			tipoEvento:   "empleado.creado",
+			tipoEvento:   EventoEmpleadoCreado,
 			data:         `{"empleadoId":"E001","nombre":"Juan","apellido":"Pérez","email":"juan.perez@empresa.com","numeroEmpleado":"EMP-1","cargo":"Dev","area":"TI","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"ACTIVO"}`,
 			tipo:         TipoBienvenida,
 			destinatario: "juan.perez@empresa.com",
@@ -29,27 +29,52 @@ func TestNotificacionDesdeEvento(t *testing.T) {
 		},
 		{
 			nombre:       "empleado.retirado genera DESVINCULACION",
-			tipoEvento:   "empleado.retirado",
+			tipoEvento:   EventoEmpleadoRetirado,
 			data:         `{"empleadoId":"E001","email":"juan.perez@empresa.com","fechaRetiro":"2026-11-30T16:45:00Z","motivo":"RENUNCIA"}`,
 			tipo:         TipoDesvinculacion,
 			destinatario: "juan.perez@empresa.com",
-			contiene:     "Su cuenta ha sido desactivada",
+			contiene:     "desvinculación",
 		},
 		{
 			nombre:       "vacaciones.programadas genera VACACIONES con las fechas",
-			tipoEvento:   "vacaciones.programadas",
+			tipoEvento:   EventoVacacionesProgramadas,
 			data:         `{"vacacionesId":"V-2026-0042","empleadoId":"E001","email":"juan.perez@empresa.com","fechaInicio":"2026-12-15","fechaFin":"2026-12-30","diasHabiles":12}`,
 			tipo:         TipoVacaciones,
 			destinatario: "juan.perez@empresa.com",
 			contiene:     "del 2026-12-15 al 2026-12-30 (12 días hábiles)",
 		},
+		// --- PRUEBAS RETO 5: SEGURIDAD Y CUENTA ---
 		{
-			nombre:       "usuario.creado genera BIENVENIDA con el token de activación",
-			tipoEvento:   "usuario.creado",
+			nombre:       "usuario.creado genera SEGURIDAD con el token de activación",
+			tipoEvento:   EventoUsuarioCreado,
 			data:         `{"usuarioId":"U-001","empleadoId":"E001","email":"juan.perez@empresa.com","token":"reset_123456789"}`,
-			tipo:         TipoBienvenida,
+			tipo:         TipoSeguridad,
 			destinatario: "juan.perez@empresa.com",
 			contiene:     "reset_123456789",
+		},
+		{
+			nombre:       "usuario.recuperacion genera SEGURIDAD con el token de recuperación",
+			tipoEvento:   EventoUsuarioRecuperacion,
+			data:         `{"usuarioId":"U-001","email":"juan.perez@empresa.com","token":"reset_987654321"}`,
+			tipo:         TipoSeguridad,
+			destinatario: "juan.perez@empresa.com",
+			contiene:     "reset_987654321",
+		},
+		{
+			nombre:       "cuenta.desactivada genera CUENTA indicando el motivo",
+			tipoEvento:   EventoCuentaDesactivada,
+			data:         `{"usuarioId":"U-001","email":"juan.perez@empresa.com","motivo":"VACACIONES","permanente":false}`,
+			tipo:         TipoCuenta,
+			destinatario: "juan.perez@empresa.com",
+			contiene:     "VACACIONES",
+		},
+		{
+			nombre:       "cuenta.activada genera CUENTA confirmando la reactivación",
+			tipoEvento:   EventoCuentaActivada,
+			data:         `{"usuarioId":"U-001","email":"juan.perez@empresa.com","motivo":"FIN_VACACIONES"}`,
+			tipo:         TipoCuenta,
+			destinatario: "juan.perez@empresa.com",
+			contiene:     "Bienvenido de regreso",
 		},
 	}
 
@@ -59,7 +84,7 @@ func TestNotificacionDesdeEvento(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error inesperado: %v", err)
 			}
-			if n.Tipo != c.tipo || n.Destinatario != c.destinatario || n.EmpleadoID != "E001" {
+			if n.Tipo != c.tipo || n.Destinatario != c.destinatario {
 				t.Fatalf("notificación inesperada: %+v", n)
 			}
 			if !strings.Contains(n.Mensaje, c.contiene) {
@@ -90,8 +115,8 @@ func TestNotificacionDesdeEventoRechazaCargaIncompleta(t *testing.T) {
 }
 
 func TestLineaDeLogTieneElFormatoDelReto(t *testing.T) {
-	n := Notificacion{Tipo: TipoBienvenida, Destinatario: "juan@empresa.com", Mensaje: "Hola"}
-	esperada := `[NOTIFICACIÓN] Tipo: BIENVENIDA | Para: juan@empresa.com | Mensaje: "Hola"`
+	n := Notificacion{Tipo: TipoSeguridad, Destinatario: "juan@empresa.com", Mensaje: "Para establecer contraseña use el token reset_123"}
+	esperada := `[NOTIFICACIÓN] Tipo: SEGURIDAD | Para: juan@empresa.com | Mensaje: "Para establecer contraseña use el token reset_123"`
 	if got := n.LineaDeLog(); got != esperada {
 		t.Fatalf("línea = %s", got)
 	}

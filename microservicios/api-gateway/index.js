@@ -38,13 +38,23 @@ const readToken = (headerValue) => {
 
 const getUserFromToken = (token) => {
     const payload = jwt.verify(token, JWT_SECRET);
-    const roles = Array.isArray(payload.roles)
-        ? payload.roles
-        : payload.roles ? [payload.roles] : [];
+
+    // Normalizar roles
+    let roles = [];
+    if (Array.isArray(payload.roles)) {
+        roles = payload.roles;
+    } else if (payload.role) {
+        roles = [payload.role];
+    } else if (payload.roles) {
+        roles = [payload.roles];
+    }
+
+    // El ID del usuario/empleado puede venir en sub, empleadoId o userId
+    const userId = payload.empleadoId || payload.sub || payload.userId || payload.id;
 
     return {
         ...payload,
-        userId: payload.empleadoId || payload.sub || payload.userId || payload.id,
+        userId: userId ? String(userId) : null,
         email: payload.email,
         roles
     };
@@ -93,36 +103,36 @@ const checkPermissions = (req, res, next) => {
     const user = req.user || {};
     const roles = Array.isArray(user.roles) ? user.roles : (user.roles ? [user.roles] : []);
 
+    // 1. Rol ADMIN tiene acceso total
     if (roles.includes('ADMIN')) {
         return next();
     }
 
+    // 2. Cambio de contraseña propio
     if (method === 'POST' && path === '/auth/change-password') {
         return next();
     }
 
-    if (path.startsWith('/empleados')) {
-        return res.status(403).json({
-            error: 'FORBIDDEN',
-            message: 'No tiene permisos para acceder a los datos de empleados.'
-        });
-    }
-
-    if (path.startsWith('/perfiles/')) {
-        const targetId = path.split('/perfiles/')[1]?.split('/')[0];
-        if (String(user.userId) === String(targetId)) {
-            return next();
-        }
-        return res.status(403).json({
-            error: 'FORBIDDEN',
-            message: 'No tiene permisos para acceder a este perfil.'
-        });
-    }
-
-    if (path.startsWith('/departamentos') && method === 'GET') {
+    // 3. Regla para USER: Lectura (GET) permitida en todos los recursos del ecosistema
+    if (method === 'GET') {
         return next();
     }
 
+    // 4. Regla para USER: Escritura en Perfiles únicamente si es dueño de su perfil
+    if (path.startsWith('/perfiles/')) {
+        const targetEmpleadoId = path.split('/perfiles/')[1]?.split('/')[0];
+
+        if ((method === 'PUT' || method === 'PATCH') && user.userId && String(user.userId) === String(targetEmpleadoId)) {
+            return next();
+        }
+
+        return res.status(403).json({
+            error: 'FORBIDDEN',
+            message: 'No tiene permisos para modificar este perfil.'
+        });
+    }
+
+    // Cualquier otra acción de escritura (POST, PUT, DELETE) por un USER es rechazada
     return res.status(403).json({
         error: 'FORBIDDEN',
         message: 'No tiene permisos para realizar esta acción.'
@@ -173,6 +183,13 @@ app.use((req, res) => {
     });
 });
 
-app.listen(PORT, () => {
-    console.log(`API Gateway ejecutandose en el puerto ${PORT}`);
-});
+
+// Test - Iniciar el servidor solo si no estamos en entorno de pruebas (ej. Jest/Supertest)
+if (process.env.NODE_ENV !== 'test') {
+    const PORT = process.env.PORT || 8080;
+    app.listen(PORT, () => {
+        console.log(`API Gateway ejecutandose en el puerto ${PORT}`);
+    });
+}
+
+module.exports = app;

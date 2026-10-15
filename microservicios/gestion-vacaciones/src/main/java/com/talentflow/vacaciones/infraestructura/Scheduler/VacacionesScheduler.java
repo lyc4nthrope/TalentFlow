@@ -15,7 +15,7 @@ private final ProcesarCicloVacacionesUseCase procesarCicloVacacionesUseCase;
         this.procesarCicloVacacionesUseCase = procesarCicloVacacionesUseCase;
     }
 
-    @Scheduled(cron = "${vacaciones.cron}")
+    @Scheduled(cron = "${vacaciones.cron}", zone = "${vacaciones.zona-horaria}")
     public void procesarCicloVacaciones() {
         procesarCicloVacacionesUseCase.ejecutar();
     }

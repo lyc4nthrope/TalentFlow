@@ -28,11 +28,13 @@ type TokenGenerator interface {
 type UsuarioRepositorio interface {
 	ObtenerPorEmail(ctx context.Context, email string) (*dominio.Usuario, error)
 	ObtenerPorID(ctx context.Context, usuarioID string) (*dominio.Usuario, error)
+	ObtenerPorEmpleadoID(ctx context.Context, empleadoID string) (*dominio.Usuario, error)
 	ObtenerPorTokenRecuperacion(ctx context.Context, token string) (*dominio.Usuario, error)
 	CrearUsuario(ctx context.Context, usuario *dominio.Usuario) error
 	GuardarTokenRecuperacion(ctx context.Context, usuarioID, token string) error
 	ActualizarPasswordYEstado(ctx context.Context, usuarioID, nuevoHash, nuevoEstado string) error
 	ActualizarPassword(ctx context.Context, usuarioID, nuevoHash string) error
+	ActualizarEstado(ctx context.Context, usuarioID, nuevoEstado string) error
 }
 
 type AuthService struct {
@@ -267,4 +269,128 @@ func (s *AuthService) CambiarPasswordAutenticada(ctx context.Context, token, cur
 	}
 
 	return nil
+}
+
+const (
+	// EstadoActiva indica que la cuenta está activa y puede iniciar sesión.
+	EstadoActiva = "ACTIVA"
+	// EstadoInactiva indica que la cuenta está inactiva y no puede iniciar sesión.
+	EstadoInactiva = "INACTIVA"
+	// EstadoSuspendiddaTemporal indica que la cuenta está suspendida temporalmente y no puede iniciar sesión.
+	EstadoSuspendiddaTemporal = "SUSPENDIDA_TEMPORAL"
+	// EstadoDesactivadaPermanente indica que la cuenta está desactivada permanentemente y no puede iniciar sesión.
+	EstadoDesactivadaPermanente = "DESACTIVADA_PERMANENTE"
+)
+
+// SuspenderCuentaPorVacaciones cambia el estado a SUSPENDIDA_TEMPORAL y emite el evento cuenta.desactivada
+func (s *AuthService) SuspenderCuentaPorVacaciones(ctx context.Context, empleadoID string) error {
+	empleadoID = strings.TrimSpace(empleadoID)
+	if empleadoID == "" {
+		return errors.New("empleadoID es obligatorio")
+	}
+
+	usuario, err := s.repo.ObtenerPorEmpleadoID(ctx, empleadoID)
+	if err != nil || usuario == nil {
+		return fmt.Errorf("usuario no encontrado para empleado %s: %w", empleadoID, err)
+	}
+
+	// Si ya está deshabilitado permanentemente, no alteramos su estado
+	if usuario.Estado == dominio.EstadoDesactivadaPermanente {
+		return nil
+	}
+
+	if err := s.repo.ActualizarEstado(ctx, usuario.ID, dominio.EstadoSuspendidaTemporal); err != nil {
+		return fmt.Errorf("error suspendiendo cuenta por vacaciones: %w", err)
+	}
+
+	return s.publicarCuentaDesactivada(ctx, usuario.ID, usuario.Email, "VACACIONES", false)
+}
+
+// ReactivarCuentaPorFinVacaciones reactiva la cuenta solo si no fue desactivada permanentemente
+func (s *AuthService) ReactivarCuentaPorFinVacaciones(ctx context.Context, empleadoID string) error {
+	empleadoID = strings.TrimSpace(empleadoID)
+	if empleadoID == "" {
+		return errors.New("empleadoID es obligatorio")
+	}
+
+	usuario, err := s.repo.ObtenerPorEmpleadoID(ctx, empleadoID)
+	if err != nil || usuario == nil {
+		return fmt.Errorf("usuario no encontrado para empleado %s: %w", empleadoID, err)
+	}
+
+	// CASO BORDE OBLIGATORIO: Si fue retirado durante las vacaciones, NO reactivar
+	if usuario.Estado == dominio.EstadoDesactivadaPermanente {
+		return nil
+	}
+
+	if err := s.repo.ActualizarEstado(ctx, usuario.ID, dominio.EstadoActiva); err != nil {
+		return fmt.Errorf("error reactivando cuenta por fin de vacaciones: %w", err)
+	}
+
+	return s.publicarCuentaActivada(ctx, usuario.ID, usuario.Email, "FIN_VACACIONES")
+}
+
+// DesactivarCuentaPermanente cambia el estado a DESACTIVADA_PERMANENTE e inhabilita logins futuros
+func (s *AuthService) DesactivarCuentaPermanente(ctx context.Context, empleadoID string) error {
+	empleadoID = strings.TrimSpace(empleadoID)
+	if empleadoID == "" {
+		return errors.New("empleadoID es obligatorio")
+	}
+
+	usuario, err := s.repo.ObtenerPorEmpleadoID(ctx, empleadoID)
+	if err != nil || usuario == nil {
+		return fmt.Errorf("usuario no encontrado para empleado %s: %w", empleadoID, err)
+	}
+
+	if err := s.repo.ActualizarEstado(ctx, usuario.ID, dominio.EstadoDesactivadaPermanente); err != nil {
+		return fmt.Errorf("error desactivando cuenta permanentemente: %w", err)
+	}
+
+	return s.publicarCuentaDesactivada(ctx, usuario.ID, usuario.Email, "RETIRO", true)
+}
+
+// Métodos auxiliares de publicación de eventos
+func (s *AuthService) publicarCuentaDesactivada(ctx context.Context, usuarioID, email, motivo string, permanente bool) error {
+	payload, err := json.Marshal(map[string]interface{}{
+		"usuarioId":  usuarioID,
+		"email":      email,
+		"motivo":     motivo,
+		"permanente": permanente,
+	})
+	if err != nil {
+		return fmt.Errorf("error serializando payload cuenta.desactivada: %w", err)
+	}
+
+	sobre := eventos.Envelope{
+		ID:         fmt.Sprintf("evt_%d", time.Now().UnixNano()),
+		Type:       "cuenta.desactivada",
+		Version:    1,
+		OccurredAt: time.Now().UTC(),
+		Producer:   "auth-service",
+		Data:       payload,
+	}
+
+	return s.publisher.Publicar(ctx, "cuenta.desactivada", sobre)
+}
+
+func (s *AuthService) publicarCuentaActivada(ctx context.Context, usuarioID, email, motivo string) error {
+	payload, err := json.Marshal(map[string]interface{}{
+		"usuarioId": usuarioID,
+		"email":     email,
+		"motivo":    motivo,
+	})
+	if err != nil {
+		return fmt.Errorf("error serializando payload cuenta.activada: %w", err)
+	}
+
+	sobre := eventos.Envelope{
+		ID:         fmt.Sprintf("evt_%d", time.Now().UnixNano()),
+		Type:       "cuenta.activada",
+		Version:    1,
+		OccurredAt: time.Now().UTC(),
+		Producer:   "auth-service",
+		Data:       payload,
+	}
+
+	return s.publisher.Publicar(ctx, "cuenta.activada", sobre)
 }
