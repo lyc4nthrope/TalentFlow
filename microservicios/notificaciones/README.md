@@ -1,25 +1,39 @@
 # Servicio de Notificaciones (Go)
 
-Microservicio **puramente reactivo** (Reto 4): ningún servicio lo invoca por REST. Consume eventos de RabbitMQ, **simula el envío** de la notificación con un log estructurado, opcionalmente la **envía como correo real por SMTP** (bonus) y guarda el historial en su propia base de datos (PostgreSQL). Sus endpoints REST solo consultan ese historial.
+Microservicio **puramente reactivo** (Reto 4, actualizado en el Reto 5): ningún servicio lo invoca por REST. Consume eventos de RabbitMQ, **simula el envío** de la notificación con un log estructurado, opcionalmente la **envía como correo real por SMTP** (bonus) y guarda el historial en su propia base de datos (PostgreSQL). Sus endpoints REST solo consultan ese historial.
 
 ## Eventos que consume (cola `notificaciones.eventos`)
 
-| Evento (Catálogo) | Notificación | Destinatario |
+| Evento (Catálogo) | Notificación | `empleadoId` |
 |---|---|---|
-| `empleado.creado` (3.1) | `BIENVENIDA` — "Bienvenido {nombre} {apellido} a la empresa…" | `data.email` |
-| `empleado.retirado` (3.3) | `DESVINCULACION` — "Su cuenta ha sido desactivada…" | `data.email` |
-| `vacaciones.programadas` (3.8) | `VACACIONES` — "Sus vacaciones del {inicio} al {fin} ({diasHabiles} días hábiles)…" | `data.email` |
+| `usuario.creado` (3.4) | `SEGURIDAD` — "Para establecer o recuperar su contraseña use el token {tokenActivacion} (vence {expiraEn}). Bienvenido a TalentFlow." (es la bienvenida) | sí |
+| `usuario.recuperacion` (3.5) | `SEGURIDAD` — "Para establecer o recuperar su contraseña use el token {tokenRecuperacion} (vence {expiraEn})." | **no** (el evento solo trae el email) |
+| `cuenta.desactivada` (3.7) | `CUENTA` — "Su cuenta fue desactivada temporalmente por vacaciones." / "…de forma permanente por retiro." (la despedida) | sí |
+| `cuenta.activada` (3.6) | `CUENTA` — "Bienvenido de regreso. Su cuenta fue reactivada." (FIN_VACACIONES) / "Su cuenta fue activada. Ya puede iniciar sesión." (ACTIVACION_INICIAL) | sí |
+| `vacaciones.programadas` (3.8) | `VACACIONES` — "Sus vacaciones del {inicio} al {fin} ({diasHabiles} días hábiles) quedaron programadas." | sí |
+| `vacaciones.iniciadas` (3.9) | `VACACIONES` — "Sus vacaciones {id} comenzaron ({inicio}) y terminan el {fin}…" | sí |
+
+Desde el Reto 5 (decisiones D12 y D20 de `docs/reto-05/PLAN.md`):
+
+- La bienvenida sale de `usuario.creado` (trae el token de activación) y la despedida de `cuenta.desactivada` con motivo `RETIRO`: `empleado.creado` y `empleado.retirado` **ya no generan notificaciones** (los tipos `BIENVENIDA` y `DESVINCULACION` del Reto 4 desaparecen).
+- `vacaciones.finalizadas` no se consume: la "bienvenida de regreso" sale de `cuenta.activada` (FIN_VACACIONES), así un empleado retirado durante sus vacaciones no la recibe.
+- Una notificación sin `empleadoId` (recuperación de contraseña) se guarda con `empleado_id` nulo: aparece en `GET /notificaciones` sin ese campo y nunca en el historial de un empleado.
+- Un motivo desconocido, o `permanente` que no corresponde al motivo, es un mensaje inválido: se descarta con log.
+- **Los tokens se enmascaran en el historial.** El mensaje que se guarda y que devuelven `GET /notificaciones` y `GET /notificaciones/{empleadoId}` lleva el token como `****` + sus últimos 4 caracteres (`use el token ****14d5 (vence …)`): cualquier usuario autenticado puede leer el historial y un token vigente permite tomar la cuenta. El token completo solo viaja por los canales de entrega, como pide el PDF: la línea `[NOTIFICACIÓN]` del log y el cuerpo del correo (`Notificacion.MensajeEntrega`, que nunca se persiste ni se serializa).
+- La cola debe estar ligada exactamente a estos 6 eventos en `infra/rabbitmq/definitions.json` (una prueba lo verifica).
+- **Volumen existente**: `init.sql` cambió (tipos permitidos, `empleado_id` nulo) y solo corre con un volumen nuevo: `docker compose down -v` o borrar el volumen `vol-notificaciones`.
 
 Simulación del envío (salida estándar del contenedor):
 
 ```
-[NOTIFICACIÓN] Tipo: BIENVENIDA | Para: juan.perez@empresa.com | Mensaje: "Bienvenido Juan Pérez a la empresa. Tu registro como empleado quedó completo."
+[NOTIFICACIÓN] Tipo: SEGURIDAD | Para: juan.perez@empresa.com | Mensaje: "Para establecer o recuperar su contraseña use el token a3f8b2c9-1e4d-07f6-50a1-823bc79e14d5 (vence 2026-02-10T15:30:00Z). Bienvenido a TalentFlow."
+[NOTIFICACIÓN] Tipo: CUENTA | Para: juan.perez@empresa.com | Mensaje: "Bienvenido de regreso. Su cuenta fue reactivada."
 ```
 
 El envío es un puerto (`Canal`) con dos implementaciones; el caso de uso no distingue entre ellas:
 
 - `CanalConsola` (siempre activa): la línea de log anterior, que es lo que exige el reto.
-- `smtp.Canal` (bonus, solo si se define `SMTP_HOST`): correo real de texto plano en UTF-8, con solo la biblioteca estándar de Go (`net/smtp`), sin autenticación ni TLS (lo que ofrece Mailhog). Asunto según el tipo (`Bienvenida a la empresa`, `Vacaciones programadas`, `Desvinculación de la empresa`), cuerpo = `mensaje`, destinatario = `destinatario`.
+- `smtp.Canal` (bonus, solo si se define `SMTP_HOST`): correo real de texto plano en UTF-8, con solo la biblioteca estándar de Go (`net/smtp`), sin autenticación ni TLS (lo que ofrece Mailhog). Asunto elegido por evento (`Bienvenido a TalentFlow: active su cuenta`, `Recuperación de contraseña`, `Estado de su cuenta`, `Vacaciones programadas`, `Inicio de sus vacaciones`), cuerpo = `mensaje`, destinatario = `destinatario`.
 
 Cuando hay SMTP, `CanalMultiple` envía por ambas. En Docker Compose el servidor es **Mailhog** (`http://localhost:8025`); ver el [manual del Reto 4](../../docs/reto-04/README.md#6-bonus-correo-real-por-smtp-mailhog).
 

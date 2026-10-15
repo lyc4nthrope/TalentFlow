@@ -3,7 +3,7 @@
   "info": {
     "title": "TalentFlow - Servicio de Notificaciones",
     "version": "1.0.0",
-    "description": "Servicio puramente reactivo: consume empleado.creado, empleado.retirado y vacaciones.programadas desde RabbitMQ, simula el envío de la notificación (log [NOTIFICACIÓN]) y guarda el historial. Descarta eventos duplicados por el id del mensaje. Ningún servicio lo invoca por REST: estos endpoints solo consultan el historial."
+    "description": "Servicio puramente reactivo: consume usuario.creado, usuario.recuperacion, cuenta.activada, cuenta.desactivada, vacaciones.programadas y vacaciones.iniciadas desde RabbitMQ, simula el envío de la notificación (log [NOTIFICACIÓN]) y guarda el historial. Descarta eventos duplicados por el id del mensaje. Ningún servicio lo invoca por REST: estos endpoints solo consultan el historial."
   },
   "servers": [{ "url": "/" }],
   "paths": {
@@ -47,11 +47,11 @@
         "type": "object",
         "properties": {
           "id": { "type": "string", "format": "uuid" },
-          "tipo": { "type": "string", "enum": ["BIENVENIDA", "DESVINCULACION", "VACACIONES"] },
+          "tipo": { "type": "string", "enum": ["SEGURIDAD", "CUENTA", "VACACIONES"] },
           "destinatario": { "type": "string", "format": "email", "example": "juan.perez@empresa.com" },
-          "mensaje": { "type": "string", "example": "Bienvenido Juan Pérez a la empresa. Tu registro como empleado quedó completo." },
+          "mensaje": { "type": "string", "example": "Bienvenido de regreso. Su cuenta fue reactivada." },
           "fechaEnvio": { "type": "string", "format": "date-time" },
-          "empleadoId": { "type": "string", "example": "E001" }
+          "empleadoId": { "type": "string", "example": "E001", "description": "Ausente cuando el evento no lo trae (recuperación de contraseña)." }
         }
       }
     }

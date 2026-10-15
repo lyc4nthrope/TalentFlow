@@ -51,7 +51,7 @@ func nuevoManejadorDePrueba(c consultasFalsas) http.Handler {
 }
 
 var historial = []dominio.Notificacion{
-	{ID: "1", Tipo: dominio.TipoBienvenida, EmpleadoID: "E001", Destinatario: "a@x.com"},
+	{ID: "1", Tipo: dominio.TipoSeguridad, EmpleadoID: "E001", Destinatario: "a@x.com"},
 	{ID: "2", Tipo: dominio.TipoVacaciones, EmpleadoID: "E002", Destinatario: "b@x.com"},
 }
 
@@ -113,5 +113,28 @@ func TestRutaDesconocidaResponde404EnJSON(t *testing.T) {
 
 	if respuesta.Code != http.StatusNotFound || !strings.Contains(respuesta.Body.String(), `"status":404`) {
 		t.Fatalf("respuesta inesperada: %d %s", respuesta.Code, respuesta.Body)
+	}
+}
+
+// D20: la recuperación de contraseña no trae empleadoId. Aparece en el listado
+// general sin ese campo y nunca en el historial de un empleado.
+func TestNotificacionSinEmpleadoID(t *testing.T) {
+	conRecuperacion := append(append([]dominio.Notificacion(nil), historial...),
+		dominio.Notificacion{ID: "3", Tipo: dominio.TipoSeguridad, Destinatario: "c@x.com"})
+	manejador := nuevoManejadorDePrueba(consultasFalsas{notificaciones: conRecuperacion})
+
+	todas := peticion(t, manejador, "/notificaciones")
+	var cuerpo []map[string]any
+	if err := json.Unmarshal(todas.Body.Bytes(), &cuerpo); err != nil || len(cuerpo) != 3 {
+		t.Fatalf("listado inesperado: %s", todas.Body)
+	}
+	if _, tiene := cuerpo[2]["empleadoId"]; tiene {
+		t.Fatalf("la notificación sin empleado no debe traer empleadoId: %v", cuerpo[2])
+	}
+	if _, tiene := cuerpo[0]["empleadoId"]; !tiene {
+		t.Fatalf("la notificación de un empleado debe traer empleadoId: %v", cuerpo[0])
+	}
+	if strings.Contains(todas.Body.String(), "Asunto") || strings.Contains(todas.Body.String(), "asunto") {
+		t.Fatalf("el asunto del correo no se expone: %s", todas.Body)
 	}
 }

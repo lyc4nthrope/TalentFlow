@@ -3,6 +3,7 @@ package smtp
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"mime"
@@ -96,20 +97,24 @@ func nuevoCanalDePrueba(host, puerto string, plazo time.Duration) (*Canal, *byte
 	return NuevoCanal(cfg, logger), &registro
 }
 
-var desvinculacion = dominio.Notificacion{
-	ID:           "n-1",
-	Tipo:         dominio.TipoDesvinculacion,
-	Destinatario: "juan.perez@empresa.com",
-	Mensaje:      "Su cuenta ha sido desactivada por desvinculación de la empresa. Gracias por su trabajo.",
-	FechaEnvio:   time.Date(2026, 9, 28, 14, 0, 0, 0, time.UTC),
-	EmpleadoID:   "E001",
-}
+// Notificación real de recuperación de contraseña: asunto y cuerpo con tildes
+// ("Recuperación", "contraseña"), así la prueba de los 7 bits cubre ambos.
+var recuperacion = func() dominio.Notificacion {
+	n, err := dominio.NotificacionDesdeEvento("usuario.recuperacion",
+		json.RawMessage(`{"email":"juan.perez@empresa.com","tokenRecuperacion":"9c1d4e7a-2b8f-4a30-b6e5-1f207d9a4c88","expiraEn":"2026-05-14T11:00:00Z"}`),
+		time.Date(2026, 9, 28, 14, 0, 0, 0, time.UTC))
+	if err != nil {
+		panic(err)
+	}
+	n.ID = "n-1"
+	return n
+}()
 
 func TestEnviaElCorreoConRemitenteDestinatarioAsuntoYCuerpo(t *testing.T) {
 	host, puerto, recibidos := servidorSMTP(t)
 	canal, registro := nuevoCanalDePrueba(host, puerto, 2*time.Second)
 
-	canal.Enviar(desvinculacion)
+	canal.Enviar(recuperacion)
 
 	var correo correoRecibido
 	select {
@@ -143,25 +148,54 @@ func TestEnviaElCorreoConRemitenteDestinatarioAsuntoYCuerpo(t *testing.T) {
 		t.Errorf("el correo contiene bytes fuera de ASCII:\n%s", correo.datos)
 	}
 	asunto, err := new(mime.WordDecoder).DecodeHeader(mensaje.Header.Get("Subject"))
-	if err != nil || asunto != "Desvinculación de la empresa" {
-		t.Errorf("asunto = %q (err %v), se esperaba %q", asunto, err, "Desvinculación de la empresa")
+	if err != nil || asunto != "Recuperación de contraseña" {
+		t.Errorf("asunto = %q (err %v), se esperaba %q", asunto, err, "Recuperación de contraseña")
 	}
 	cuerpo, err := io.ReadAll(quotedprintable.NewReader(mensaje.Body))
-	if err != nil || strings.TrimSpace(string(cuerpo)) != desvinculacion.Mensaje {
-		t.Errorf("cuerpo = %q (err %v), se esperaba %q", cuerpo, err, desvinculacion.Mensaje)
+	// El correo lleva el token completo (es el canal de entrega); el historial no.
+	if err != nil || strings.TrimSpace(string(cuerpo)) != recuperacion.TextoAEntregar() {
+		t.Errorf("cuerpo = %q (err %v), se esperaba %q", cuerpo, err, recuperacion.TextoAEntregar())
+	}
+	if !strings.Contains(string(cuerpo), "9c1d4e7a-2b8f-4a30-b6e5-1f207d9a4c88") || !strings.Contains(string(cuerpo), "contraseña") {
+		t.Errorf("el cuerpo debe llevar el token completo y las tildes decodificadas: %q", cuerpo)
 	}
 }
 
-func TestAsuntoSegunElTipoDeNotificacion(t *testing.T) {
+// El asunto lo elige el dominio por evento; sin asunto, se usa uno por tipo.
+func TestAsuntoDelCorreo(t *testing.T) {
+	if obtenido := asunto(dominio.Notificacion{Tipo: dominio.TipoSeguridad, Asunto: "Recuperación de contraseña"}); obtenido != "Recuperación de contraseña" {
+		t.Errorf("con asunto del dominio = %q", obtenido)
+	}
 	casos := map[dominio.Tipo]string{
-		dominio.TipoBienvenida:     "Bienvenida a la empresa",
-		dominio.TipoDesvinculacion: "Desvinculación de la empresa",
-		dominio.TipoVacaciones:     "Vacaciones programadas",
-		dominio.Tipo("OTRO"):       "Notificación: OTRO",
+		dominio.TipoSeguridad:  "Seguridad de su cuenta",
+		dominio.TipoCuenta:     "Estado de su cuenta",
+		dominio.TipoVacaciones: "Vacaciones",
+		dominio.Tipo("OTRO"):   "Notificación: OTRO",
 	}
 	for tipo, esperado := range casos {
-		if obtenido := asunto(tipo); obtenido != esperado {
+		if obtenido := asunto(dominio.Notificacion{Tipo: tipo}); obtenido != esperado {
 			t.Errorf("asunto(%s) = %q, se esperaba %q", tipo, obtenido, esperado)
+		}
+	}
+}
+
+// Cada evento que llega por correo lleva el asunto que le corresponde.
+func TestAsuntoPorEvento(t *testing.T) {
+	casos := map[string]struct{ data, asunto string }{
+		"usuario.creado":         {`{"empleadoId":"E001","email":"a@b.co","tokenActivacion":"t","expiraEn":"x"}`, "Bienvenido a TalentFlow: active su cuenta"},
+		"usuario.recuperacion":   {`{"email":"a@b.co","tokenRecuperacion":"t","expiraEn":"x"}`, "Recuperación de contraseña"},
+		"cuenta.desactivada":     {`{"empleadoId":"E001","email":"a@b.co","motivo":"RETIRO","permanente":true}`, "Estado de su cuenta"},
+		"cuenta.activada":        {`{"empleadoId":"E001","email":"a@b.co","motivo":"FIN_VACACIONES"}`, "Estado de su cuenta"},
+		"vacaciones.programadas": {`{"empleadoId":"E001","email":"a@b.co","fechaInicio":"i","fechaFin":"f","diasHabiles":1}`, "Vacaciones programadas"},
+		"vacaciones.iniciadas":   {`{"vacacionesId":"V1","empleadoId":"E001","email":"a@b.co","fechaInicio":"i","fechaFin":"f"}`, "Inicio de sus vacaciones"},
+	}
+	for evento, c := range casos {
+		n, err := dominio.NotificacionDesdeEvento(evento, json.RawMessage(c.data), time.Now())
+		if err != nil {
+			t.Fatalf("%s: %v", evento, err)
+		}
+		if obtenido := asunto(n); obtenido != c.asunto {
+			t.Errorf("%s: asunto = %q, se esperaba %q", evento, obtenido, c.asunto)
 		}
 	}
 }
@@ -177,7 +211,7 @@ func TestServidorInalcanzableRegistraElErrorYNoBloquea(t *testing.T) {
 	canal, registro := nuevoCanalDePrueba(host, puerto, 2*time.Second)
 
 	inicio := time.Now()
-	canal.Enviar(desvinculacion) // no debe entrar en pánico
+	canal.Enviar(recuperacion) // no debe entrar en pánico
 
 	if duracion := time.Since(inicio); duracion > 3*time.Second {
 		t.Fatalf("el envío tardó %v: superó el plazo", duracion)
@@ -198,7 +232,7 @@ func TestServidorQueNoRespondeSeAbandonaAlVencerElPlazo(t *testing.T) {
 	canal, registro := nuevoCanalDePrueba(host, puerto, 200*time.Millisecond)
 
 	inicio := time.Now()
-	canal.Enviar(desvinculacion)
+	canal.Enviar(recuperacion)
 
 	if duracion := time.Since(inicio); duracion > 2*time.Second {
 		t.Fatalf("el envío tardó %v con un plazo de 200ms", duracion)

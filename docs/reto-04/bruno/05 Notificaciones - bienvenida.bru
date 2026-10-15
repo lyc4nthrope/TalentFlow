@@ -11,8 +11,11 @@ get {
 }
 
 tests {
-  test("se registró la notificación BIENVENIDA", function () {
+  // Desde el Reto 5 la bienvenida llega como SEGURIDAD (usuario.creado del auth-service, con el token de activación).
+  test("se registró la bienvenida (SEGURIDAD con el token de activación)", function () {
     expect(res.getStatus()).to.equal(200);
-    expect(res.getBody().map((n) => n.tipo)).to.include("BIENVENIDA");
+    const bienvenida = res.getBody().find((n) => n.tipo === "SEGURIDAD");
+    expect(bienvenida).to.not.equal(undefined);
+    expect(bienvenida.mensaje).to.include("Para establecer o recuperar su contraseña");
   });
 }

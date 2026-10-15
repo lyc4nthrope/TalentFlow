@@ -9,14 +9,18 @@ CREATE TABLE IF NOT EXISTS eventos_procesados (
 );
 
 -- Historial de notificaciones enviadas (reto4.pdf, "Estructura de una notificación").
+-- Reto 5: tipos SEGURIDAD y CUENTA (formato del reto5.pdf) además de VACACIONES. Los
+-- tipos BIENVENIDA y DESVINCULACION del Reto 4 ya no se escriben. empleado_id es
+-- nulo cuando el evento no lo trae (usuario.recuperacion solo trae el email, D20).
+-- Un volumen existente debe recrearse: este script solo corre con un volumen nuevo.
 CREATE TABLE IF NOT EXISTS notificaciones (
     id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     tipo          VARCHAR(20)  NOT NULL
-                  CHECK (tipo IN ('BIENVENIDA', 'DESVINCULACION', 'VACACIONES')),
+                  CHECK (tipo IN ('SEGURIDAD', 'CUENTA', 'VACACIONES')),
     destinatario  VARCHAR(150) NOT NULL,
     mensaje       TEXT         NOT NULL,
     fecha_envio   TIMESTAMPTZ  NOT NULL,
-    empleado_id   VARCHAR(20)  NOT NULL,
+    empleado_id   VARCHAR(20),
     -- Trazabilidad: qué evento originó cada notificación (y a lo sumo una por evento).
     evento_id     VARCHAR(100) NOT NULL UNIQUE REFERENCES eventos_procesados (id)
 );

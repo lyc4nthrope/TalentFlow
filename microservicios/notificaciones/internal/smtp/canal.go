@@ -99,27 +99,32 @@ func (c *Canal) mensaje(n dominio.Notificacion) []byte {
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "From: %s\r\n", c.cfg.Remitente)
 	fmt.Fprintf(&b, "To: %s\r\n", n.Destinatario)
-	fmt.Fprintf(&b, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", asunto(n.Tipo)))
+	fmt.Fprintf(&b, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", asunto(n)))
 	fmt.Fprintf(&b, "Date: %s\r\n", n.FechaEnvio.Format(time.RFC1123Z))
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
 	b.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 	b.WriteString("\r\n")
 	qp := quotedprintable.NewWriter(&b)
-	_, _ = qp.Write([]byte(n.Mensaje + "\r\n")) // escribir en un bytes.Buffer no falla
+	_, _ = qp.Write([]byte(n.TextoAEntregar() + "\r\n")) // escribir en un bytes.Buffer no falla
 	_ = qp.Close()
 	return b.Bytes()
 }
 
-func asunto(tipo dominio.Tipo) string {
-	switch tipo {
-	case dominio.TipoBienvenida:
-		return "Bienvenida a la empresa"
-	case dominio.TipoDesvinculacion:
-		return "Desvinculación de la empresa"
+// asunto: el que eligió el dominio para el evento (por ejemplo, la bienvenida y la
+// recuperación son ambas SEGURIDAD pero con asuntos distintos); si no hay, uno por tipo.
+func asunto(n dominio.Notificacion) string {
+	if n.Asunto != "" {
+		return n.Asunto
+	}
+	switch n.Tipo {
+	case dominio.TipoSeguridad:
+		return "Seguridad de su cuenta"
+	case dominio.TipoCuenta:
+		return "Estado de su cuenta"
 	case dominio.TipoVacaciones:
-		return "Vacaciones programadas"
+		return "Vacaciones"
 	default:
-		return "Notificación: " + string(tipo)
+		return "Notificación: " + string(n.Tipo)
 	}
 }

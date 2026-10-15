@@ -8,7 +8,7 @@ import (
 )
 
 // CanalConsola simula el envío escribiendo la línea que pide el reto4.pdf:
-// [NOTIFICACIÓN] Tipo: BIENVENIDA | Para: juan@empresa.com | Mensaje: "..."
+// [NOTIFICACIÓN] Tipo: SEGURIDAD | Para: juan@empresa.com | Mensaje: "..." (con el token completo)
 type CanalConsola struct {
 	Salida io.Writer
 }

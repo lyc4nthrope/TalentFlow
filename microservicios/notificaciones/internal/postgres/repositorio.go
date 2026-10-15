@@ -34,6 +34,10 @@ func NuevoRepositorio(pool *pgxpool.Pool) *Repositorio {
 	return &Repositorio{pool: pool}
 }
 
+// La notificación sin empleadoId (usuario.recuperacion, D20) se guarda con
+// empleado_id NULL y se lee como "" (el JSON lo omite); por eso nunca aparece en el
+// historial de un empleado.
+
 // RegistrarSiEsNuevo aplica la deduplicación y el efecto en UNA transacción: o quedan
 // registrados el id del evento y la notificación, o no queda ninguno. Si el registro
 // del id y la notificación fueran operaciones separadas, una caída entre ambas dejaría
@@ -59,7 +63,7 @@ func (r *Repositorio) RegistrarSiEsNuevo(ctx context.Context, eventoID string, n
 
 	err = tx.QueryRow(ctx,
 		`INSERT INTO notificaciones (tipo, destinatario, mensaje, fecha_envio, empleado_id, evento_id)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		 VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)
 		 RETURNING id`,
 		n.Tipo, n.Destinatario, n.Mensaje, n.FechaEnvio, n.EmpleadoID, eventoID,
 	).Scan(&n.ID)
@@ -74,12 +78,12 @@ func (r *Repositorio) RegistrarSiEsNuevo(ctx context.Context, eventoID string, n
 }
 
 func (r *Repositorio) Listar(ctx context.Context) ([]dominio.Notificacion, error) {
-	return r.consultar(ctx, `SELECT id, tipo, destinatario, mensaje, fecha_envio, empleado_id
+	return r.consultar(ctx, `SELECT id, tipo, destinatario, mensaje, fecha_envio, COALESCE(empleado_id, '')
 	                           FROM notificaciones ORDER BY fecha_envio, id`)
 }
 
 func (r *Repositorio) ListarPorEmpleado(ctx context.Context, empleadoID string) ([]dominio.Notificacion, error) {
-	return r.consultar(ctx, `SELECT id, tipo, destinatario, mensaje, fecha_envio, empleado_id
+	return r.consultar(ctx, `SELECT id, tipo, destinatario, mensaje, fecha_envio, COALESCE(empleado_id, '')
 	                           FROM notificaciones WHERE empleado_id = $1 ORDER BY fecha_envio, id`, empleadoID)
 }
 
