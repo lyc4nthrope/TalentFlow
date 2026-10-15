@@ -1,11 +1,11 @@
-const express = require('express');
-const jwt = require('jsonwebtoken');
-const { createProxyMiddleware } = require('http-proxy-middleware');
-const { saludDelSistema } = require('./salud');
+// Punto de entrada: lee la configuración del entorno y abre el puerto. La lógica vive en
+// app.js (construible sin red, para las pruebas).
+const { crearApp } = require('./app');
 
-const app = express();
 const PORT = process.env.PORT || 8080;
+// TODO(F6): el secreto pasa a ser obligatorio (sin valor por defecto en el código).
 const JWT_SECRET = process.env.JWT_SECRET || 'talentflow_super_secret_2026';
+const JWT_ISSUER = process.env.JWT_ISSUER || 'auth-service';
 
 // Tabla única de servicios detrás del Gateway: de aquí salen tanto las rutas como el
 // /health agregado. Agregar un servicio = agregar una fila. Todos usan expose: en Compose
@@ -20,163 +20,6 @@ const SERVICIOS = [
     { nombre: 'vacaciones-service', prefijo: '/vacaciones', url: process.env.VACACIONES_SERVICE_URL || 'http://vacaciones-service:8085' }
 ];
 
-const PUBLIC_PATHS = [
-    '/health',
-    '/auth/login',
-    '/auth/recover-password',
-    '/auth/reset-password'
-];
-
-const readToken = (headerValue) => {
-    if (!headerValue) {
-        return null;
-    }
-
-    const match = /^Bearer\s+(.+)$/i.exec(headerValue);
-    return match ? match[1] : null;
-};
-
-const JWT_ISSUER = process.env.JWT_ISSUER || 'auth-service';
-
-// Token de acceso del auth-service (Reto 5, D2): sub = empleadoId (o "admin"),
-// role = "ADMIN" | "USER". Solo se acepta HS256, del emisor esperado y con exp
-// (jsonwebtoken acepta tokens sin exp como si no vencieran).
-const getUserFromToken = (token) => {
-    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], issuer: JWT_ISSUER });
-    if (typeof payload.exp !== 'number') {
-        throw new Error('token sin exp');
-    }
-
-    return {
-        userId: payload.sub,
-        email: payload.email,
-        roles: payload.role ? [payload.role] : []
-    };
-};
-
-const ensureAuthenticated = (req, res, next) => {
-    const path = req.path || req.originalUrl || '/';
-
-    if (PUBLIC_PATHS.includes(path) || PUBLIC_PATHS.some(publicPath => path.startsWith(`${publicPath}/`))) {
-        return next();
-    }
-
-    const token = readToken(req.headers.authorization);
-    if (!token) {
-        return res.status(401).json({
-            error: 'UNAUTHORIZED',
-            message: 'Token requerido para acceder a este recurso.'
-        });
-    }
-
-    try {
-        const user = getUserFromToken(token);
-        req.user = user;
-        req.headers['x-user-id'] = user.userId;
-        req.headers['x-user-email'] = user.email || '';
-        req.headers['x-user-role'] = rolesToHeader(user.roles);
-        next();
-    } catch (error) {
-        return res.status(401).json({
-            error: 'UNAUTHORIZED',
-            message: 'Token inválido o expirado.'
-        });
-    }
-};
-
-const rolesToHeader = (roles = []) => Array.isArray(roles) ? roles.join(',') : String(roles || '');
-
-const checkPermissions = (req, res, next) => {
-    const path = (req.path || req.originalUrl || '/').split('?')[0];
-    const method = (req.method || 'GET').toUpperCase();
-
-    if (PUBLIC_PATHS.includes(path) || PUBLIC_PATHS.some(publicPath => path.startsWith(`${publicPath}/`))) {
-        return next();
-    }
-
-    const user = req.user || {};
-    const roles = Array.isArray(user.roles) ? user.roles : (user.roles ? [user.roles] : []);
-
-    if (roles.includes('ADMIN')) {
-        return next();
-    }
-
-    if (method === 'POST' && path === '/auth/change-password') {
-        return next();
-    }
-
-    if (path.startsWith('/empleados')) {
-        return res.status(403).json({
-            error: 'FORBIDDEN',
-            message: 'No tiene permisos para acceder a los datos de empleados.'
-        });
-    }
-
-    if (path.startsWith('/perfiles/')) {
-        const targetId = path.split('/perfiles/')[1]?.split('/')[0];
-        if (String(user.userId) === String(targetId)) {
-            return next();
-        }
-        return res.status(403).json({
-            error: 'FORBIDDEN',
-            message: 'No tiene permisos para acceder a este perfil.'
-        });
-    }
-
-    if (path.startsWith('/departamentos') && method === 'GET') {
-        return next();
-    }
-
-    return res.status(403).json({
-        error: 'FORBIDDEN',
-        message: 'No tiene permisos para realizar esta acción.'
-    });
-};
-
-// Salud propia del Gateway + estado de cada servicio, su BD, el Circuit Breaker y la
-// conexión de cada uno con el broker; "problemas" explica por qué el sistema está
-// DEGRADADO. Responde 200 mientras el Gateway esté vivo (healthcheck de Docker).
-app.get('/health', async (req, res) => {
-    res.status(200).json(await saludDelSistema(SERVICIOS));
-});
-
-app.use(ensureAuthenticated);
-app.use(checkPermissions);
-
-const handleProxyError = (err, req, res) => {
-    console.error(`[Gateway Error] ${err.message}`);
-    res.status(503).json({
-        error: 'Service Unavailable',
-        message: 'El servicio solicitado no está disponible temporalmente',
-        path: req.originalUrl
-    });
-};
-
-// Nota: se monta en '/' (sin prefijo) y se usa pathFilter en vez de mount-path,
-// porque Express recorta el prefijo del mount antes de invocar el proxy y
-// pathRewrite solo puede reponer un string fijo, rompiendo rutas con parámetros
-// como /empleados/:id (verificado: producía /empleadosE001 en vez de /empleados/E001).
-for (const { prefijo, url } of SERVICIOS) {
-    app.use(
-        createProxyMiddleware({
-            target: url,
-            changeOrigin: true,
-            pathFilter: [prefijo],
-            on: { error: handleProxyError }
-        })
-    );
-}
-
-// Cualquier ruta no enrutada: 404 en JSON con el mismo formato que el 503, en vez de la
-// página HTML por defecto de Express.
-app.use((req, res) => {
-    res.status(404).json({
-        error: 'Not Found',
-        message: 'Ruta no enrutada por el API Gateway',
-        path: req.originalUrl
-    });
-});
-
-app.listen(PORT, () => {
+crearApp({ jwtSecret: JWT_SECRET, jwtIssuer: JWT_ISSUER, servicios: SERVICIOS }).listen(PORT, () => {
     console.log(`API Gateway ejecutandose en el puerto ${PORT}`);
 });
