@@ -2,6 +2,7 @@ package com.talentflow.vacaciones.infraestructura.web;
 
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
+import com.talentflow.vacaciones.aplicacion.FechaHoraEntrada;
 import com.talentflow.vacaciones.dominio.ConflictoDeEstadoException;
 import com.talentflow.vacaciones.dominio.SolicitudInvalidaException;
 import com.talentflow.vacaciones.dominio.VacacionesNoEncontradasException;
@@ -54,7 +55,7 @@ public class ManejadorErrores {
             errores = List.of(Map.of("field", desconocido.getPropertyName(), "message", "Campo desconocido"));
         } else if (e.getCause() instanceof InvalidFormatException formato && !formato.getPath().isEmpty()) {
             String campo = formato.getPath().get(formato.getPath().size() - 1).getFieldName();
-            errores = List.of(Map.of("field", campo, "message", "Debe ser una fecha válida YYYY-MM-DD"));
+            errores = List.of(Map.of("field", campo, "message", "Debe ser una fecha válida " + FechaHoraEntrada.FORMATO));
         }
         return ResponseEntity.badRequest().body(cuerpo(HttpStatus.BAD_REQUEST, "La solicitud no es válida", req, errores));
     }

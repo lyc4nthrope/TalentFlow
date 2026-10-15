@@ -66,39 +66,46 @@ final class Fakes {
             return true;
         }
 
+        /** Se ejecuta al empezar cambiarEstado: simula otra operación que llega justo antes. */
+        Runnable alCambiarEstado = () -> { };
+        /** Ids cuyo cambio de estado falla (p. ej. BD caída para ese período). */
+        final Set<String> fallarCambioDe = new HashSet<>();
+
         @Override
-        public List<Vacaciones> findByEstadoAndFechaInicioLessThanEqual(EstadoVacaciones estado, LocalDateTime fecha) {
+        public List<Vacaciones> listarPorIniciar(LocalDateTime ahora) {
             return datos.values().stream()
-                    .filter(v -> v.estado() == estado)
-                    .filter(v -> !v.fechaInicio().isAfter(fecha))
+                    .filter(v -> v.estado() == EstadoVacaciones.PROGRAMADA && !v.fechaInicio().isAfter(ahora))
+                    .sorted(java.util.Comparator.comparing(Vacaciones::fechaInicio))
                     .toList();
         }
 
         @Override
-        public List<Vacaciones> findByEstadoAndFechaFinLessThanEqual(EstadoVacaciones estado, LocalDateTime fecha) {
+        public List<Vacaciones> listarPorFinalizar(LocalDateTime ahora) {
             return datos.values().stream()
-                    .filter(v -> v.estado() == estado)
-                    .filter(v -> !v.fechaFin().isAfter(fecha))
+                    .filter(v -> v.estado() == EstadoVacaciones.EN_CURSO && !v.fechaFin().isAfter(ahora))
+                    .sorted(java.util.Comparator.comparing(Vacaciones::fechaFin))
                     .toList();
         }
 
         @Override
-        public boolean actualizarEstado(String id, EstadoVacaciones nuevoEstado) {
+        public boolean cambiarEstado(String id, EstadoVacaciones esperado, EstadoVacaciones nuevo) {
+            alCambiarEstado.run();
+            if (fallarCambioDe.contains(id)) {
+                throw new IllegalStateException("BD caída para " + id);
+            }
             Vacaciones actual = datos.get(id);
-            if (actual == null) {
+            if (actual == null || actual.estado() != esperado) {
                 return false;
             }
-            datos.put(id, actual.conEstado(nuevoEstado));
+            datos.put(id, actual.conEstado(nuevo));
             return true;
         }
 
-        @Override
-        public boolean actualizar(Vacaciones vacaciones) {
-            if (!datos.containsKey(vacaciones.id())) {
-                return false;
-            }
-            datos.put(vacaciones.id(), vacaciones);
-            return true;
+        /** Atajo de las pruebas: inserta un período tal cual, sin validaciones. */
+        Vacaciones agregar(String id, String empleadoId, LocalDateTime inicio, LocalDateTime fin, EstadoVacaciones estado) {
+            Vacaciones v = new Vacaciones(id, empleadoId, inicio, fin, estado, Instant.parse("2026-09-28T15:00:00Z"));
+            datos.put(id, v);
+            return v;
         }
     }
 
@@ -107,6 +114,11 @@ final class Fakes {
 
         @Override
         public Optional<EmpleadoReplica> buscarParaProgramar(String empleadoId) {
+            return Optional.ofNullable(datos.get(empleadoId));
+        }
+
+        @Override
+        public Optional<EmpleadoReplica> buscar(String empleadoId) {
             return Optional.ofNullable(datos.get(empleadoId));
         }
 
@@ -146,12 +158,40 @@ final class Fakes {
         }
 
         final List<Publicado> publicados = new ArrayList<>();
+        /** Si se asigna, registra en cada publicación si había una transacción abierta. */
+        TransaccionesRastreadas transacciones;
+        final List<Boolean> dentroDeTransaccionAlPublicar = new ArrayList<>();
         boolean exito = true;
+        /** Viola el contrato (lanza) en la publicación número n (1 = la primera); 0 = nunca. */
+        int lanzarEnLaPublicacion;
 
         @Override
         public boolean publicar(String tipo, Object data) {
+            if (transacciones != null) {
+                dentroDeTransaccionAlPublicar.add(transacciones.dentro);
+            }
             publicados.add(new Publicado(tipo, data));
+            if (publicados.size() == lanzarEnLaPublicacion) {
+                throw new IllegalStateException("fallo inesperado del publicador");
+            }
             return exito;
+        }
+    }
+
+    /** Como SinTransaccion, pero sabe si hay una transacción abierta y cuántas se abrieron. */
+    static final class TransaccionesRastreadas implements Transacciones {
+        boolean dentro;
+        int abiertas;
+
+        @Override
+        public <T> T ejecutar(Supplier<T> bloque) {
+            abiertas++;
+            dentro = true;
+            try {
+                return bloque.get();
+            } finally {
+                dentro = false;
+            }
         }
     }
 

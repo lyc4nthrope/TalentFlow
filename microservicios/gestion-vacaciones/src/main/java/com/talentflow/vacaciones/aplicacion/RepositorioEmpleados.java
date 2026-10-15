@@ -13,6 +13,9 @@ public interface RepositorioEmpleados {
      */
     Optional<EmpleadoReplica> buscarParaProgramar(String empleadoId);
 
+    /** Consulta sin bloqueo (el scheduler solo necesita el email para el evento). */
+    Optional<EmpleadoReplica> buscar(String empleadoId);
+
     /** empleado.creado: registra al empleado si no existía. */
     void registrar(String empleadoId, String email);
 

@@ -34,8 +34,11 @@ public class ServicioVacaciones {
     }
 
     public Vacaciones programar(SolicitudVacaciones solicitud) {
-        // Validaciones 1 y 2 (no requieren BD).
-        ReglasVacaciones.validarFechas(solicitud.fechaInicio().atStartOfDay(), solicitud.fechaFin().atStartOfDay(), LocalDateTime.now(reloj));
+        // Validaciones 1 y 2 (no requieren BD). Fechas con hora, comparadas con ahora (D6).
+        LocalDateTime ahora = LocalDateTime.now(reloj).truncatedTo(ChronoUnit.SECONDS);
+        LocalDateTime fechaInicio = FechaHoraEntrada.inicioEfectivo(solicitud.fechaInicio(), ahora);
+        LocalDateTime fechaFin = solicitud.fechaFin().valor();
+        ReglasVacaciones.validarFechas(fechaInicio, fechaFin, ahora);
 
         Programacion programacion = transacciones.ejecutar(() -> {
             // Validación 4: el empleado debe existir en la réplica (y no estar retirado).
@@ -48,7 +51,7 @@ public class ServicioVacaciones {
             }
 
             // Validación 3: sin solapamiento con un período PROGRAMADA o EN_CURSO.
-            vacaciones.buscarVigenteSolapado(solicitud.empleadoId(), solicitud.fechaInicio().atStartOfDay(), solicitud.fechaFin().atStartOfDay())
+            vacaciones.buscarVigenteSolapado(solicitud.empleadoId(), fechaInicio, fechaFin)
                     .ifPresent(conflicto -> {
                         throw new SolicitudInvalidaException("fechaInicio",
                                 "El período se cruza con otro período " + conflicto.estado() + " del empleado ("
@@ -57,22 +60,16 @@ public class ServicioVacaciones {
                                 conflicto);
                     });
 
-            Instant ahora = Instant.now(reloj).truncatedTo(ChronoUnit.SECONDS);
-            Vacaciones creada = vacaciones.crear(
-                    solicitud.empleadoId(), solicitud.fechaInicio().atStartOfDay(), solicitud.fechaFin().atStartOfDay(), ahora);
+            Vacaciones creada = vacaciones.crear(solicitud.empleadoId(), fechaInicio, fechaFin,
+                    Instant.now(reloj).truncatedTo(ChronoUnit.SECONDS));
             return new Programacion(creada, empleado.email());
         });
 
         // Después del commit: si la publicación falla, el período queda registrado igual
         // (el publicador deja el error en el log). Mismo contrato que empleados-service.
         Vacaciones creada = programacion.vacaciones();
-        publicador.publicar(VacacionesProgramadas.TIPO, new VacacionesProgramadas(
-                creada.id(),
-                creada.empleadoId(),
-                programacion.email(),
-                creada.fechaInicio(),
-                creada.fechaFin(),
-                ReglasVacaciones.diasHabiles(creada.fechaInicio(), creada.fechaFin())));
+        publicador.publicar(VacacionesProgramadas.TIPO,
+                VacacionesProgramadas.de(creada, programacion.email(), reloj.getZone()));
         return creada;
     }
 

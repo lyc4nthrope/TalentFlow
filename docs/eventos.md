@@ -35,6 +35,10 @@ Documento vivo: registro de los eventos del ecosistema y de su implementación. 
 | `empleado.actualizado` | 3.2 | empleados-service (`PUT /empleados/{id}`) | perfiles, vacaciones | `empleadoId, nombre, apellido, email, cargo, area, departamentoId` |
 | `empleado.retirado` | 3.3 | empleados-service (`DELETE /empleados/{id}`) | perfiles, notificaciones, vacaciones | `empleadoId, email, fechaRetiro, motivo` |
 | `vacaciones.programadas` | 3.8 | vacaciones-service (`POST /vacaciones`) | notificaciones | `vacacionesId, empleadoId, email, fechaInicio, fechaFin, diasHabiles` |
+| `vacaciones.iniciadas` | 3.9 | vacaciones-service (scheduler, Reto 5) | consumidores en el Reto 5: auth-service | `vacacionesId, empleadoId, email, fechaInicio, fechaFin` |
+| `vacaciones.finalizadas` | 3.10 | vacaciones-service (scheduler, Reto 5) | consumidores en el Reto 5: auth-service | `vacacionesId, empleadoId, email, fechaFin` |
+
+**Fechas de los eventos `vacaciones.*` (desde el Reto 5).** Los períodos tienen fecha y hora, así que `fechaInicio` y `fechaFin` viajan en ISO-8601 **con el desfase** de `ZONA_HORARIA`: `"2026-10-20T08:00:00-05:00"`. Es una desviación documentada del catálogo, cuyos ejemplos muestran solo la fecha (`"2026-03-15"`); los nombres y el conjunto de campos no cambian. El desfase evita que un consumidor interprete la hora en otra zona. El scheduler publica `vacaciones.iniciadas` al llegar `fechaInicio` y `vacaciones.finalizadas` al llegar `fechaFin` (decisiones D6 y D7 de [`docs/reto-05/PLAN.md`](reto-05/PLAN.md)).
 
 Consumidores adicionales al catálogo: **vacaciones-service** consume los tres eventos de empleado para mantener su réplica local (decisión (b) del Reto 4, ver README raíz). No se agregaron ni renombraron eventos ni campos.
 
@@ -58,5 +62,5 @@ Garantías de los consumidores: deduplicación por `id` (tabla `eventos_procesad
 | `usuario.recuperacion` | 3.5 | auth-service | notificaciones |
 | `cuenta.activada` | 3.6 | auth-service | notificaciones |
 | `cuenta.desactivada` | 3.7 | auth-service | notificaciones |
-| `vacaciones.iniciadas` | 3.9 | vacaciones-service (scheduler) | auth-service, notificaciones |
-| `vacaciones.finalizadas` | 3.10 | vacaciones-service (scheduler) | auth-service, notificaciones |
+| `vacaciones.iniciadas` | 3.9 | vacaciones-service (scheduler) — **ya se publica** | auth-service, notificaciones |
+| `vacaciones.finalizadas` | 3.10 | vacaciones-service (scheduler) — **ya se publica** | auth-service, notificaciones |

@@ -9,51 +9,77 @@ import org.junit.jupiter.api.Test;
 
 class ReglasVacacionesTest {
 
-    private static final LocalDateTime HOY = LocalDateTime.of(2026, 9, 28, 0, 0);
+    private static final LocalDateTime AHORA = LocalDateTime.of(2026, 10, 15, 10, 30, 0);
 
     @Test
     void rechazaFechaFinAnteriorOIgualAlInicio() {
-        assertThatThrownBy(() -> ReglasVacaciones.validarFechas(LocalDateTime.of(2026, 12, 30, 0, 0), LocalDateTime.of(2026, 12, 15, 0, 0), HOY))
-                .isInstanceOf(SolicitudInvalidaException.class)
-                .hasMessageContaining("posterior");
-        // "posterior" es estricto: el mismo día no lo es (texto literal del reto).
-        assertThatThrownBy(() -> ReglasVacaciones.validarFechas(LocalDateTime.of(2026, 12, 15, 0, 0), LocalDateTime.of(2026, 12, 15, 0, 0), HOY))
+        assertThatThrownBy(() -> ReglasVacaciones.validarFechas(AHORA.plusDays(10), AHORA.plusDays(5), AHORA))
+                .isInstanceOfSatisfying(SolicitudInvalidaException.class, e -> {
+                    assertThat(e.campo()).isEqualTo("fechaFin");
+                    assertThat(e.getMessage()).contains("posterior");
+                });
+        // El mismo instante no es posterior.
+        assertThatThrownBy(() -> ReglasVacaciones.validarFechas(AHORA.plusHours(1), AHORA.plusHours(1), AHORA))
                 .isInstanceOf(SolicitudInvalidaException.class);
     }
 
     @Test
-    void rechazaInicioEnElPasadoPeroAceptaHoy() {
-        assertThatThrownBy(() -> ReglasVacaciones.validarFechas(HOY.minusDays(1), HOY.plusDays(5), HOY))
-                .isInstanceOf(SolicitudInvalidaException.class)
-                .hasMessageContaining("anterior a hoy");
-        assertThatCode(() -> ReglasVacaciones.validarFechas(HOY, HOY.plusDays(5), HOY)).doesNotThrowAnyException();
+    void aceptaUnPeriodoDeMinutosElMismoDia() {
+        // Con hora, un período de un mismo día es válido (D6): así se demuestra el ciclo en minutos.
+        assertThatCode(() -> ReglasVacaciones.validarFechas(AHORA.plusMinutes(2), AHORA.plusMinutes(5), AHORA))
+                .doesNotThrowAnyException();
     }
 
     @Test
-    void cuentaDiasHabilesDeLunesAViernesInclusive() {
-        // Semana completa lunes 14 a domingo 20 de diciembre de 2026: 5 días hábiles.
-        assertThat(ReglasVacaciones.diasHabiles(LocalDateTime.of(2026, 12, 14, 0, 0), LocalDateTime.of(2026, 12, 20, 0, 0))).isEqualTo(5);
+    void rechazaInicioEnElPasadoAunqueSeaHoyPeroAceptaAhora() {
+        // Una hora antes, el mismo día: ya es pasado.
+        assertThatThrownBy(() -> ReglasVacaciones.validarFechas(AHORA.minusHours(1), AHORA.plusDays(5), AHORA))
+                .isInstanceOfSatisfying(SolicitudInvalidaException.class, e -> {
+                    assertThat(e.campo()).isEqualTo("fechaInicio");
+                    assertThat(e.getMessage()).contains("pasado");
+                });
+        assertThatThrownBy(() -> ReglasVacaciones.validarFechas(AHORA.minusSeconds(1), AHORA.plusDays(5), AHORA))
+                .isInstanceOf(SolicitudInvalidaException.class);
+        assertThatCode(() -> ReglasVacaciones.validarFechas(AHORA, AHORA.plusDays(5), AHORA)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void cuentaDiasHabilesDeLunesAViernesInclusiveSinImportarLaHora() {
+        // Lunes 14 (08:00) a domingo 20 (18:00) de diciembre de 2026: 5 días hábiles.
+        assertThat(ReglasVacaciones.diasHabiles(LocalDateTime.of(2026, 12, 14, 8, 0), LocalDateTime.of(2026, 12, 20, 18, 0)))
+                .isEqualTo(5);
         // Ejemplo del catálogo (15 al 30 de marzo de 2026): 11 de lunes a viernes.
-        assertThat(ReglasVacaciones.diasHabiles(LocalDateTime.of(2026, 3, 15, 0, 0), LocalDateTime.of(2026, 3, 30, 0, 0))).isEqualTo(11);
+        assertThat(ReglasVacaciones.diasHabiles(LocalDateTime.of(2026, 3, 15, 0, 0), LocalDateTime.of(2026, 3, 30, 23, 59, 59)))
+                .isEqualTo(11);
+        // Unos minutos de un jueves: 1 día.
+        assertThat(ReglasVacaciones.diasHabiles(AHORA.plusMinutes(2), AHORA.plusMinutes(5))).isEqualTo(1);
         // Solo fin de semana: 0.
-        assertThat(ReglasVacaciones.diasHabiles(LocalDateTime.of(2026, 12, 19, 0, 0), LocalDateTime.of(2026, 12, 20, 0, 0))).isZero();
+        assertThat(ReglasVacaciones.diasHabiles(LocalDateTime.of(2026, 12, 19, 0, 0), LocalDateTime.of(2026, 12, 20, 23, 0)))
+                .isZero();
     }
 
     @Test
-    void detectaSolapamientoDeRangosCerrados() {
-        LocalDateTime d1 = LocalDateTime.of(2026, 12, 1, 0, 0);
-        LocalDateTime d10 = LocalDateTime.of(2026, 12, 10, 0, 0);
-        assertThat(ReglasVacaciones.seSolapan(d1, d10, LocalDateTime.of(2026, 12, 5, 0, 0), LocalDateTime.of(2026, 12, 20, 0, 0))).isTrue();
-        assertThat(ReglasVacaciones.seSolapan(d1, d10, d10, LocalDateTime.of(2026, 12, 20, 0, 0))).isTrue(); // comparten el día 10
-        assertThat(ReglasVacaciones.seSolapan(d1, d10, LocalDateTime.of(2026, 12, 11, 0, 0), LocalDateTime.of(2026, 12, 20, 0, 0))).isFalse();
+    void detectaSolapamientoDeRangosSemiabiertos() {
+        LocalDateTime d1 = LocalDateTime.of(2026, 12, 1, 8, 0);
+        LocalDateTime d10 = LocalDateTime.of(2026, 12, 10, 18, 0);
+        assertThat(ReglasVacaciones.seSolapan(d1, d10, LocalDateTime.of(2026, 12, 5, 0, 0), LocalDateTime.of(2026, 12, 20, 0, 0)))
+                .isTrue();
+        // Uno contiene al otro.
+        assertThat(ReglasVacaciones.seSolapan(d1, d10, d1.plusHours(1), d10.minusHours(1))).isTrue();
+        // Un segundo en común ya es cruce.
+        assertThat(ReglasVacaciones.seSolapan(d1, d10, d10.minusSeconds(1), d10.plusDays(3))).isTrue();
+        // Contiguos: uno termina justo cuando empieza el otro → no se cruzan (en ambos órdenes).
+        assertThat(ReglasVacaciones.seSolapan(d1, d10, d10, d10.plusDays(3))).isFalse();
+        assertThat(ReglasVacaciones.seSolapan(d10, d10.plusDays(3), d1, d10)).isFalse();
+        assertThat(ReglasVacaciones.seSolapan(d1, d10, d10.plusDays(1), d10.plusDays(3))).isFalse();
     }
 
     @Test
     void soloSeCancelaUnPeriodoProgramadoQueNoHaIniciado() {
-        Vacaciones futura = new Vacaciones("V-1", "E1", HOY.plusDays(1), HOY.plusDays(5), EstadoVacaciones.PROGRAMADA, null);
-        Vacaciones deHoy = new Vacaciones("V-2", "E1", HOY, HOY.plusDays(5), EstadoVacaciones.PROGRAMADA, null);
-        assertThat(futura.esCancelable(HOY)).isTrue();
-        assertThat(deHoy.esCancelable(HOY)).isFalse();
-        assertThat(futura.cancelada().esCancelable(HOY)).isFalse();
+        Vacaciones futura = new Vacaciones("V-1", "E1", AHORA.plusMinutes(1), AHORA.plusDays(5), EstadoVacaciones.PROGRAMADA, null);
+        Vacaciones yaInicio = new Vacaciones("V-2", "E1", AHORA, AHORA.plusDays(5), EstadoVacaciones.PROGRAMADA, null);
+        assertThat(futura.esCancelable(AHORA)).isTrue();
+        assertThat(yaInicio.esCancelable(AHORA)).isFalse();
+        assertThat(futura.cancelada().esCancelable(AHORA)).isFalse();
     }
 }

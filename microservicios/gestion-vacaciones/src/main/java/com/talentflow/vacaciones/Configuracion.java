@@ -1,6 +1,7 @@
 package com.talentflow.vacaciones;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.talentflow.vacaciones.aplicacion.ProcesadorCicloVacaciones;
 import com.talentflow.vacaciones.aplicacion.ProcesadorEventosEmpleado;
 import com.talentflow.vacaciones.aplicacion.ServicioVacaciones;
 import com.talentflow.vacaciones.aplicacion.Transacciones;
@@ -10,6 +11,7 @@ import com.talentflow.vacaciones.infraestructura.persistencia.JdbcDeduplicador;
 import com.talentflow.vacaciones.infraestructura.persistencia.JdbcRepositorioEmpleados;
 import com.talentflow.vacaciones.infraestructura.persistencia.JdbcRepositorioVacaciones;
 import com.talentflow.vacaciones.infraestructura.persistencia.TransaccionesSpring;
+import com.talentflow.vacaciones.infraestructura.scheduler.VacacionesScheduler;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 import java.time.Clock;
@@ -37,7 +39,9 @@ public class Configuracion {
                 .version("1.0.0")
                 .description("REST para RR. HH.: programa, consulta y cancela períodos de vacaciones con las "
                         + "cuatro validaciones del reto. Mantiene una réplica local de empleados consumiendo "
-                        + "empleado.creado/actualizado/retirado y publica vacaciones.programadas (Catálogo de Eventos)."));
+                        + "empleado.creado/actualizado/retirado y publica vacaciones.programadas; un scheduler publica "
+                        + "vacaciones.iniciadas y vacaciones.finalizadas al llegar cada fecha (Catálogo de Eventos). "
+                        + "Las fechas son fecha y hora locales (America/Bogota)."));
     }
 
     @Bean
@@ -45,7 +49,7 @@ public class Configuracion {
         return ZoneId.of(zona);
     }
 
-    /** "Hoy" es el día en la zona horaria del negocio, no en UTC. */
+    /** "Ahora" es la fecha y hora en la zona horaria del negocio, no en UTC. */
     @Bean
     Clock reloj(ZoneId zonaHoraria) {
         return Clock.system(zonaHoraria);
@@ -77,6 +81,18 @@ public class Configuracion {
     ServicioVacaciones servicioVacaciones(JdbcRepositorioVacaciones vacaciones, JdbcRepositorioEmpleados empleados,
             RabbitPublicadorEventos publicador, Transacciones transacciones, Clock reloj) {
         return new ServicioVacaciones(vacaciones, empleados, publicador, transacciones, reloj);
+    }
+
+    @Bean
+    ProcesadorCicloVacaciones procesadorCicloVacaciones(JdbcRepositorioVacaciones vacaciones,
+            JdbcRepositorioEmpleados empleados, RabbitPublicadorEventos publicador, Transacciones transacciones,
+            Clock reloj) {
+        return new ProcesadorCicloVacaciones(vacaciones, empleados, publicador, transacciones, reloj);
+    }
+
+    @Bean
+    VacacionesScheduler vacacionesScheduler(ProcesadorCicloVacaciones ciclo) {
+        return new VacacionesScheduler(ciclo);
     }
 
     @Bean

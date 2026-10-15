@@ -384,6 +384,9 @@ services:
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
       RABBITMQ_COLA: vacaciones.eventos
       ZONA_HORARIA: America/Bogota
+      # Scheduler (Reto 5): inicia y finaliza los períodos al llegar sus fechas. Cron de Spring
+      # (seg min hora día mes día-semana); por defecto cada minuto.
+      VACACIONES_CRON: ${VACACIONES_CRON:-0 * * * * *}
     depends_on:
       database-vacaciones:
         condition: service_healthy
