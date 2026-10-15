@@ -1,74 +1,75 @@
+// Package jwt emite y valida los tokens de acceso (HS256) del Reto 5.
 package jwt
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/aplicacion"
 )
 
-type TokenClaims struct {
-	UsuarioID string   `json:"sub"`
-	Email     string   `json:"email"`
-	Roles     []string `json:"roles"`
-	EmpleadoID string  `json:"empleadoId,omitempty"`
+// Claims del token de acceso: exactamente la estructura del PDF (sub, role, iat,
+// exp) más email e iss. La contraseña nunca viaja en el token.
+type Claims struct {
+	Role  string `json:"role"`
+	Email string `json:"email"`
 	jwt.RegisteredClaims
 }
 
 type TokenProvider struct {
-	secretKey []byte
-	issuer    string
-	duracion  time.Duration
+	secreto  []byte
+	emisor   string
+	duracion time.Duration
+	ahora    func() time.Time
 }
 
-func NuevoTokenProvider(secretKey string, issuer string, duracionHoras int) *TokenProvider {
-	return &TokenProvider{
-		secretKey: []byte(secretKey),
-		issuer:    issuer,
-		duracion:  time.Duration(duracionHoras) * time.Hour,
+// NuevoTokenProvider exige un secreto no vacío: firmar con una clave vacía
+// permitiría a cualquiera fabricar tokens.
+func NuevoTokenProvider(secreto, emisor string, duracion time.Duration, ahora func() time.Time) (*TokenProvider, error) {
+	if secreto == "" {
+		return nil, errors.New("JWT_SECRET vacío")
 	}
+	if duracion <= 0 {
+		return nil, errors.New("la duración del token de acceso debe ser positiva")
+	}
+	return &TokenProvider{secreto: []byte(secreto), emisor: emisor, duracion: duracion, ahora: ahora}, nil
 }
 
-// GenerarToken crea y firma un nuevo JWT para el usuario.
-// El campo sub sigue siendo el identificador del usuario de auth, y empleadoId
-// se añade para que el Gateway pueda autorizar correctamente acceso a perfiles
-// propios sin romper la lógica de cambio de contraseña y validación interna.
-func (p *TokenProvider) GenerarToken(usuarioID, email string, roles []string, empleadoID string) (string, error) {
-	ahora := time.Now().UTC()
-	claims := TokenClaims{
-		UsuarioID:  usuarioID,
-		Email:      email,
-		Roles:      roles,
-		EmpleadoID: empleadoID,
+// Emitir firma un token de acceso para el sujeto (empleadoId o "admin").
+func (p *TokenProvider) Emitir(sujeto, rol, email string) (string, error) {
+	ahora := p.ahora().UTC().Truncate(time.Second)
+	claims := Claims{
+		Role:  rol,
+		Email: email,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    p.issuer,
-			Subject:   usuarioID,
+			Subject:   sujeto,
+			Issuer:    p.emisor,
 			IssuedAt:  jwt.NewNumericDate(ahora),
 			ExpiresAt: jwt.NewNumericDate(ahora.Add(p.duracion)),
 		},
 	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(p.secretKey)
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(p.secreto)
 }
 
-// ValidarToken parsea y verifica la firma del token JWT
-func (p *TokenProvider) ValidarToken(tokenString string) (*TokenClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("método de firma inesperado: %v", t.Header["alg"])
-		}
-		return p.secretKey, nil
-	})
-
+// Validar verifica firma (solo HS256: rechaza "none" y cualquier otro algoritmo),
+// emisor, expiración obligatoria y que el token traiga sujeto y rol.
+func (p *TokenProvider) Validar(token string) (*aplicacion.Identidad, error) {
+	claims := &Claims{}
+	_, err := jwt.ParseWithClaims(token, claims,
+		func(*jwt.Token) (any, error) { return p.secreto, nil },
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuer(p.emisor),
+		jwt.WithTimeFunc(p.ahora),
+	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("token de acceso inválido: %w", err)
 	}
-
-	claims, ok := token.Claims.(*TokenClaims)
-	if !ok || !token.Valid {
-		return nil, fmt.Errorf("token inválido o expirado")
+	if claims.Subject == "" || claims.Role == "" {
+		return nil, errors.New("token de acceso sin sub o role")
 	}
-
-	return claims, nil
+	return &aplicacion.Identidad{Sujeto: claims.Subject, Rol: claims.Role, Email: claims.Email}, nil
 }

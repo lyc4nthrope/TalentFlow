@@ -41,6 +41,13 @@ services:
       DB_USER: ${DB_AUTH_USER:-user_auth}
       DB_PASS: ${DB_AUTH_PASS:-pass_auth}
       JWT_SECRET: ${JWT_SECRET:-talentflow_super_secret_2026}
+      JWT_VIGENCIA: ${JWT_VIGENCIA:-1h}
+      # Vigencia de los tokens de activación (alta) y de recuperación de contraseña.
+      TOKEN_ACTIVACION_VIGENCIA: ${TOKEN_ACTIVACION_VIGENCIA:-24h}
+      TOKEN_RECUPERACION_VIGENCIA: ${TOKEN_RECUPERACION_VIGENCIA:-1h}
+      # Administrador semilla: se crea al arrancar si no existe (valores académicos).
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@empresa.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123*}
       RABBITMQ_HOST: message-broker
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}

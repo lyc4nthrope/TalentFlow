@@ -9,16 +9,23 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/aplicacion"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/dominio"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/eventos"
 	amqp091 "github.com/rabbitmq/amqp091-go"
 )
 
 type ProcesadorEmpleado interface {
-	CrearCuentaDesdeEmpleado(ctx context.Context, email, nombre, apellido, empleadoID string) error
+	CrearCuentaDesdeEmpleado(ctx context.Context, e dominio.EmpleadoCreado) error
 }
+
+// esperaReintento evita reencolar al instante un mensaje que falló por un problema
+// transitorio (BD caída): sin espera sería un bucle que consume CPU sin avanzar.
+const esperaReintento = 5 * time.Second
 
 type Config struct {
 	URL      string
+	Exchange string
 	Cola     string
 	Etiqueta string
 	Prefetch int
@@ -74,7 +81,7 @@ func (c *Consumidor) consumir(ctx context.Context) error {
 		return fmt.Errorf("declarar cola %q: %w", c.cfg.Cola, err)
 	}
 
-	if err := canal.QueueBind(c.cfg.Cola, "empleado.creado", "talentflow.eventos", false, nil); err != nil {
+	if err := canal.QueueBind(c.cfg.Cola, dominio.EventoEmpleadoCreado, c.cfg.Exchange, false, nil); err != nil {
 		return fmt.Errorf("bind cola %q a empleado.creado: %w", c.cfg.Cola, err)
 	}
 
@@ -109,27 +116,33 @@ func (c *Consumidor) manejar(ctx context.Context, entrega amqp091.Delivery) {
 		_ = entrega.Ack(false)
 		return
 	}
-
-	var payload struct {
-		EmpleadoID string `json:"empleadoId"`
-		Nombre     string `json:"nombre"`
-		Apellido   string `json:"apellido"`
-		Email      string `json:"email"`
-	}
-	if err := json.Unmarshal(sobre.Data, &payload); err != nil {
-		log.Printf("auth-service: evento descartado, payload inválido: %v", err)
+	if sobre.Type != dominio.EventoEmpleadoCreado {
+		log.Printf("auth-service: evento descartado, tipo no soportado %q (id %s)", sobre.Type, sobre.ID)
 		_ = entrega.Ack(false)
 		return
 	}
 
-	if err := c.procesador.CrearCuentaDesdeEmpleado(ctx, payload.Email, payload.Nombre, payload.Apellido, payload.EmpleadoID); err != nil {
-		log.Printf("auth-service: no se pudo crear la cuenta: %v", err)
-		_ = entrega.Nack(false, true)
+	var datos dominio.EmpleadoCreado
+	if err := json.Unmarshal(sobre.Data, &datos); err != nil {
+		log.Printf("auth-service: evento descartado, payload inválido (id %s): %v", sobre.ID, err)
+		_ = entrega.Ack(false)
 		return
 	}
 
-	if err := entrega.Ack(false); err != nil {
-		log.Printf("auth-service: no se pudo confirmar el mensaje: %v", err)
+	err := c.procesador.CrearCuentaDesdeEmpleado(ctx, datos)
+	switch {
+	case err == nil:
+		if err := entrega.Ack(false); err != nil {
+			log.Printf("auth-service: no se pudo confirmar el mensaje %s: %v", sobre.ID, err)
+		}
+	case errors.Is(err, aplicacion.ErrSolicitudInvalida), errors.Is(err, aplicacion.ErrRechazoPermanente):
+		// Mensaje envenenado o dato que la BD nunca aceptará: reintentarlo no sirve.
+		log.Printf("auth-service: evento descartado (id %s): %v", sobre.ID, err)
+		_ = entrega.Ack(false)
+	default:
+		log.Printf("auth-service: fallo transitorio procesando %s; se reintentará: %v", sobre.ID, err)
+		dormir(ctx, esperaReintento)
+		_ = entrega.Nack(false, true)
 	}
 }
 

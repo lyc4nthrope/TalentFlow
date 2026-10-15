@@ -36,17 +36,21 @@ const readToken = (headerValue) => {
     return match ? match[1] : null;
 };
 
+const JWT_ISSUER = process.env.JWT_ISSUER || 'auth-service';
+
+// Token de acceso del auth-service (Reto 5, D2): sub = empleadoId (o "admin"),
+// role = "ADMIN" | "USER". Solo se acepta HS256, del emisor esperado y con exp
+// (jsonwebtoken acepta tokens sin exp como si no vencieran).
 const getUserFromToken = (token) => {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const roles = Array.isArray(payload.roles)
-        ? payload.roles
-        : payload.roles ? [payload.roles] : [];
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], issuer: JWT_ISSUER });
+    if (typeof payload.exp !== 'number') {
+        throw new Error('token sin exp');
+    }
 
     return {
-        ...payload,
-        userId: payload.empleadoId || payload.sub || payload.userId || payload.id,
+        userId: payload.sub,
         email: payload.email,
-        roles
+        roles: payload.role ? [payload.role] : []
     };
 };
 
