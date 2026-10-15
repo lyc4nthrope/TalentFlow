@@ -69,12 +69,13 @@ func emailConFormato(email string) bool {
 // CrearCuentaDesdeEmpleado reacciona a empleado.creado: crea la cuenta en
 // PENDIENTE_ACTIVACION, sin contraseña, con rol USER y un token de activación, y
 // publica usuario.creado.
-//   - Si la cuenta del empleado ya existe, no hace nada (la deduplicación por id
-//     del evento llega en la F3).
+//   - El id del evento se registra en la misma transacción que la cuenta (D4): un
+//     mensaje repetido no crea nada ni vuelve a publicar.
+//   - Si la cuenta del empleado ya existe, no hace nada.
 //   - Si el email ya pertenece a otra cuenta, o los datos no caben o no tienen
 //     formato válido, devuelve ErrSolicitudInvalida / ErrRechazoPermanente: el
 //     consumidor descarta el mensaje, porque reintentarlo nunca funcionaría.
-func (s *AuthService) CrearCuentaDesdeEmpleado(ctx context.Context, e dominio.EmpleadoCreado) error {
+func (s *AuthService) CrearCuentaDesdeEmpleado(ctx context.Context, eventoID string, e dominio.EmpleadoCreado) error {
 	empleadoID := strings.TrimSpace(e.EmpleadoID)
 	email := normalizarEmail(e.Email)
 	switch {
@@ -84,49 +85,75 @@ func (s *AuthService) CrearCuentaDesdeEmpleado(ctx context.Context, e dominio.Em
 		return fmt.Errorf("%w: empleadoId de más de %d caracteres", ErrSolicitudInvalida, longitudMaximaEmpleadoID)
 	case len(email) > longitudMaximaEmail || !emailConFormato(email):
 		return fmt.Errorf("%w: email sin formato válido", ErrSolicitudInvalida)
+	case empleadoID == dominio.SujetoAdmin:
+		// El "sub" del administrador semilla está reservado: una cuenta de empleado
+		// con ese id compartiría la identidad del administrador en el JWT.
+		log.Printf("auth-service: no se crea la cuenta: el empleadoId %q está reservado para el administrador", empleadoID)
+		return fmt.Errorf("%w: empleadoId reservado para el administrador", ErrRechazoPermanente)
 	}
-
-	if hecho, err := s.cuentaYaResuelta(ctx, empleadoID, email); hecho || err != nil {
+	if err := validarEventoID(eventoID); err != nil {
 		return err
 	}
 
-	token, err := s.generar()
-	if err != nil {
-		return fmt.Errorf("generar token de activación: %w", err)
-	}
-	expiraEn := s.ahora().UTC().Add(s.opciones.VigenciaActivacion)
-	usuario := &dominio.Usuario{
-		Sujeto:        empleadoID,
-		EmpleadoID:    empleadoID,
-		Email:         email,
-		Rol:           dominio.RolUser,
-		Estado:        dominio.EstadoPendienteActivacion,
-		TokenHash:     dominio.HashToken(token),
-		TokenTipo:     dominio.TokenActivacion,
-		TokenExpiraEn: expiraEn,
-	}
-	if err := s.repo.Crear(ctx, usuario); err != nil {
-		if errors.Is(err, ErrUsuarioDuplicado) {
-			// Otra creación ganó la carrera: se vuelve a mirar quién es el dueño.
-			_, err := s.cuentaYaResuelta(ctx, empleadoID, email)
+	var aPublicar *dominio.UsuarioCreado
+	duplicado, err := s.repo.ProcesarUnaVez(ctx, eventoID, func(repo Repositorio) error {
+		if hecho, err := cuentaYaResuelta(ctx, repo, empleadoID, email); hecho || err != nil {
 			return err
 		}
-		return fmt.Errorf("crear cuenta: %w", err)
-	}
-
-	s.publicar(ctx, dominio.EventoUsuarioCreado, dominio.UsuarioCreado{
-		EmpleadoID:      empleadoID,
-		Email:           email,
-		TokenActivacion: token,
-		ExpiraEn:        expiraEn.Format(time.RFC3339),
+		token, err := s.generar()
+		if err != nil {
+			return fmt.Errorf("generar token de activación: %w", err)
+		}
+		expiraEn := s.ahora().UTC().Add(s.opciones.VigenciaActivacion)
+		usuario := &dominio.Usuario{
+			Sujeto:        empleadoID,
+			EmpleadoID:    empleadoID,
+			Email:         email,
+			Rol:           dominio.RolUser,
+			Estado:        dominio.EstadoPendienteActivacion,
+			TokenHash:     dominio.HashToken(token),
+			TokenTipo:     dominio.TokenActivacion,
+			TokenExpiraEn: expiraEn,
+		}
+		if err := repo.Crear(ctx, usuario); err != nil {
+			if errors.Is(err, ErrUsuarioDuplicado) {
+				// Otra creación ganó la carrera: se vuelve a mirar quién es el dueño.
+				hecho, err := cuentaYaResuelta(ctx, repo, empleadoID, email)
+				if !hecho && err == nil {
+					// El choque no es con la cuenta del empleado ni con su email (p. ej. el
+					// sujeto de otra cuenta): no se puede crear y reintentarlo no cambia nada.
+					log.Printf("auth-service: no se crea la cuenta del empleado %s: choca con una cuenta existente que no es la suya", empleadoID)
+					return fmt.Errorf("%w: el empleadoId choca con otra cuenta", ErrRechazoPermanente)
+				}
+				return err
+			}
+			return fmt.Errorf("crear cuenta: %w", err)
+		}
+		aPublicar = &dominio.UsuarioCreado{
+			EmpleadoID:      empleadoID,
+			Email:           email,
+			TokenActivacion: token,
+			ExpiraEn:        expiraEn.Format(time.RFC3339),
+		}
+		return nil
 	})
+	if duplicado {
+		log.Printf("auth-service: evento duplicado descartado: %s ya se había procesado (empleado.creado)", eventoID)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if aPublicar != nil {
+		s.publicar(ctx, dominio.EventoUsuarioCreado, *aPublicar)
+	}
 	return nil
 }
 
 // cuentaYaResuelta indica si no hay nada que crear: la cuenta del empleado ya
 // existe (true, nil) o el email pertenece a otra cuenta (true, ErrRechazoPermanente).
-func (s *AuthService) cuentaYaResuelta(ctx context.Context, empleadoID, email string) (bool, error) {
-	propia, err := s.repo.BuscarPorEmpleadoID(ctx, empleadoID)
+func cuentaYaResuelta(ctx context.Context, repo Repositorio, empleadoID, email string) (bool, error) {
+	propia, err := repo.BuscarPorEmpleadoID(ctx, empleadoID)
 	if err != nil {
 		return true, fmt.Errorf("buscar cuenta del empleado: %w", err)
 	}
@@ -134,7 +161,7 @@ func (s *AuthService) cuentaYaResuelta(ctx context.Context, empleadoID, email st
 		log.Printf("auth-service: la cuenta del empleado %s ya existe; no se crea otra", empleadoID)
 		return true, nil
 	}
-	conEseEmail, err := s.repo.BuscarPorEmail(ctx, email)
+	conEseEmail, err := repo.BuscarPorEmail(ctx, email)
 	if err != nil {
 		return true, fmt.Errorf("buscar cuenta por email: %w", err)
 	}

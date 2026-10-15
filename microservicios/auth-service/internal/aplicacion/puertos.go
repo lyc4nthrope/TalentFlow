@@ -31,6 +31,24 @@ type Repositorio interface {
 	ConsumirToken(ctx context.Context, usuarioID, tokenHash, estadoEsperado, passwordHash, nuevoEstado string) (bool, error)
 	// ActualizarPassword cambia la contraseña y anula el token pendiente, si lo hay.
 	ActualizarPassword(ctx context.Context, usuarioID, passwordHash string) error
+
+	// Ciclo de vida (F3). Cada método es un UPDATE condicional y devuelve true solo si
+	// cambió algo; así el caso de uso publica únicamente cuando hubo transición.
+
+	// Retirar pasa a DESACTIVADA_PERMANENTE desde cualquier otro estado y borra el
+	// token pendiente y la suspensión.
+	Retirar(ctx context.Context, usuarioID string) (bool, error)
+	// Suspender pasa de ACTIVA a SUSPENDIDA_TEMPORAL recordando qué vacaciones la causan.
+	Suspender(ctx context.Context, usuarioID, vacacionesID string) (bool, error)
+	// CambiarSuspension reemplaza el id de vacaciones de una cuenta ya suspendida.
+	CambiarSuspension(ctx context.Context, usuarioID, vacacionesID string) (bool, error)
+	// Reactivar pasa de SUSPENDIDA_TEMPORAL a ACTIVA solo si la suspensión es de esas vacaciones.
+	Reactivar(ctx context.Context, usuarioID, vacacionesID string) (bool, error)
+
+	// ProcesarUnaVez registra el id del evento y ejecuta fn en la MISMA transacción,
+	// con un repositorio ligado a ella (D4). Si el id ya estaba registrado devuelve
+	// duplicado = true sin ejecutar fn. Si fn falla, nada queda registrado.
+	ProcesarUnaVez(ctx context.Context, eventoID string, fn func(Repositorio) error) (duplicado bool, err error)
 }
 
 // Publicador envía un evento al broker con routing key = tipo.

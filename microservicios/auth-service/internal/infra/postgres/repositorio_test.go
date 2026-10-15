@@ -34,7 +34,7 @@ func repoReal(t *testing.T) *Repositorio {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS usuarios"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS usuarios, eventos_procesados"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, string(esquema)); err != nil {

@@ -50,6 +50,10 @@ type Usuario struct {
 	TokenHash     string
 	TokenTipo     TipoToken
 	TokenExpiraEn time.Time
+
+	// VacacionesSuspension es el id de las vacaciones que suspendieron la cuenta (D18);
+	// vacío salvo en SUSPENDIDA_TEMPORAL.
+	VacacionesSuspension string
 }
 
 // PuedeAutenticarse indica si la cuenta puede iniciar sesión o cambiar su contraseña.

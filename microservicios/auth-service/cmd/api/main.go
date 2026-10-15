@@ -72,14 +72,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// empleado.creado → cuenta pendiente de activación + usuario.creado.
-	consumidor := amqp.NuevoConsumidor(amqp.Config{
-		URL:      cfg.AMQPURL,
-		Exchange: cfg.Exchange,
-		Cola:     "auth.eventos",
-		Etiqueta: "auth-service",
-		Prefetch: 10,
-	}, servicio)
+	// Ciclo de vida de la cuenta: empleado.creado/retirado y vacaciones.iniciadas/finalizadas.
+	// Prefetch 1 para conservar el orden ante reintentos (ver amqp.PrefetchOrdenado).
+	consumidor := amqp.NuevoConsumidor(amqp.ConfigConsumidorAuth(cfg.AMQPURL, cfg.Exchange), servicio)
 	go consumidor.Ejecutar(ctx)
 
 	servidor := &http.Server{

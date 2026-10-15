@@ -45,7 +45,7 @@ var ctx = context.Background()
 // altaYActivacion crea la cuenta de E001 por evento y la activa con su token (tok-1).
 func (e *entorno) altaYActivacion(t *testing.T) {
 	t.Helper()
-	if err := e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "Juan@Empresa.com"}); err != nil {
+	if err := e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "Juan@Empresa.com"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.svc.RestablecerPassword(ctx, "tok-1", passwordValida); err != nil {
@@ -75,7 +75,7 @@ func claves(m map[string]any) string {
 
 func TestEmpleadoCreadoCreaCuentaPendienteSinPasswordYPublicaUsuarioCreado(t *testing.T) {
 	e := nuevoEntorno(t)
-	if err := e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: " Juan@Empresa.com "}); err != nil {
+	if err := e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: " Juan@Empresa.com "}); err != nil {
 		t.Fatal(err)
 	}
 	u, _ := e.repo.BuscarPorSujeto(ctx, "E001")
@@ -105,8 +105,8 @@ func TestEmpleadoCreadoCreaCuentaPendienteSinPasswordYPublicaUsuarioCreado(t *te
 func TestEmpleadoCreadoRepetidoNoDuplicaLaCuentaNiElEvento(t *testing.T) {
 	e := nuevoEntorno(t)
 	evento := dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "juan@empresa.com"}
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, evento)
-	if err := e.svc.CrearCuentaDesdeEmpleado(ctx, evento); err != nil {
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), evento)
+	if err := e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), evento); err != nil {
 		t.Fatal(err)
 	}
 	if len(e.repo.usuarios) != 1 || len(e.pub.tipos()) != 1 {
@@ -116,9 +116,9 @@ func TestEmpleadoCreadoRepetidoNoDuplicaLaCuentaNiElEvento(t *testing.T) {
 
 func TestEmailDeOtraCuentaEsRechazoPermanenteYSeRegistraLaCausa(t *testing.T) {
 	e := nuevoEntorno(t)
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "juan@empresa.com"})
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "juan@empresa.com"})
 	buf := capturarLog(t)
-	err := e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E009", Email: "JUAN@empresa.com"})
+	err := e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E009", Email: "JUAN@empresa.com"})
 	if !errors.Is(err, ErrRechazoPermanente) {
 		t.Fatalf("err = %v", err)
 	}
@@ -143,7 +143,7 @@ func TestDatosQueNoCabenOSinFormatoSonSolicitudInvalida(t *testing.T) {
 	}
 	for _, c := range casos {
 		e := nuevoEntorno(t)
-		if err := e.svc.CrearCuentaDesdeEmpleado(ctx, c); !errors.Is(err, ErrSolicitudInvalida) {
+		if err := e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), c); !errors.Is(err, ErrSolicitudInvalida) {
 			t.Fatalf("%q/%q: err = %v", c.EmpleadoID, c.Email, err)
 		}
 		if len(e.repo.usuarios) != 0 {
@@ -151,7 +151,7 @@ func TestDatosQueNoCabenOSinFormatoSonSolicitudInvalida(t *testing.T) {
 		}
 	}
 	e := nuevoEntorno(t)
-	if err := e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: strings.Repeat("E", 36), Email: "juan.perez@empresa.com.co"}); err != nil {
+	if err := e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: strings.Repeat("E", 36), Email: "juan.perez@empresa.com.co"}); err != nil {
 		t.Fatalf("datos válidos en el límite: %v", err)
 	}
 }
@@ -159,7 +159,7 @@ func TestDatosQueNoCabenOSinFormatoSonSolicitudInvalida(t *testing.T) {
 func TestRechazoPermanenteDeLaBDSePropaga(t *testing.T) {
 	e := nuevoEntorno(t)
 	e.repo.fallar = fmt.Errorf("crear cuenta: %w: valor demasiado largo", ErrRechazoPermanente)
-	err := e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	err := e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
 	if !errors.Is(err, ErrRechazoPermanente) {
 		t.Fatalf("err = %v", err)
 	}
@@ -167,7 +167,7 @@ func TestRechazoPermanenteDeLaBDSePropaga(t *testing.T) {
 
 func TestEmpleadoCreadoSinEmailEsSolicitudInvalida(t *testing.T) {
 	e := nuevoEntorno(t)
-	err := e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001"})
+	err := e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001"})
 	if !errors.Is(err, ErrSolicitudInvalida) {
 		t.Fatalf("err = %v", err)
 	}
@@ -176,7 +176,7 @@ func TestEmpleadoCreadoSinEmailEsSolicitudInvalida(t *testing.T) {
 func TestFalloDelRepositorioEsTransitorio(t *testing.T) {
 	e := nuevoEntorno(t)
 	e.repo.fallar = errors.New("bd caída")
-	err := e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	err := e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
 	if err == nil || errors.Is(err, ErrSolicitudInvalida) {
 		t.Fatalf("err = %v; se esperaba un error transitorio", err)
 	}
@@ -211,7 +211,7 @@ func TestElTokenEsDeUnSoloUso(t *testing.T) {
 
 func TestTokenExpiradoSeRechaza(t *testing.T) {
 	e := nuevoEntorno(t)
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
 	e.reloj.avanzar(24 * time.Hour)
 	if err := e.svc.RestablecerPassword(ctx, "tok-1", passwordValida); !errors.Is(err, ErrTokenInvalido) {
 		t.Fatalf("token vencido: err = %v", err)
@@ -224,7 +224,7 @@ func TestTokenExpiradoSeRechaza(t *testing.T) {
 
 func TestTokenVigenteUnSegundoAntesDeVencer(t *testing.T) {
 	e := nuevoEntorno(t)
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
 	e.reloj.avanzar(24*time.Hour - time.Second)
 	if err := e.svc.RestablecerPassword(ctx, "tok-1", passwordValida); err != nil {
 		t.Fatalf("err = %v", err)
@@ -242,7 +242,7 @@ func TestTokenDesconocidoOVacioSeRechaza(t *testing.T) {
 
 func TestTokenConTipoDesconocidoSeRechaza(t *testing.T) {
 	e := nuevoEntorno(t)
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
 	u, _ := e.repo.BuscarPorSujeto(ctx, "E001")
 	_ = e.repo.GuardarToken(ctx, u.ID, dominio.HashToken("tok-1"), "OTRO", inicio.Add(time.Hour))
 	if err := e.svc.RestablecerPassword(ctx, "tok-1", passwordValida); !errors.Is(err, ErrTokenInvalido) {
@@ -270,7 +270,7 @@ func TestResetSobreCuentaSuspendidaMantieneLaSuspension(t *testing.T) {
 
 func TestResetSobreCuentaRetiradaSeRechaza(t *testing.T) {
 	e := nuevoEntorno(t)
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
 	e.repo.fijarEstado("E001", dominio.EstadoDesactivadaPermanente)
 	if err := e.svc.RestablecerPassword(ctx, "tok-1", passwordValida); !errors.Is(err, ErrTokenInvalido) {
 		t.Fatalf("err = %v", err)
@@ -283,7 +283,7 @@ func TestResetSobreCuentaRetiradaSeRechaza(t *testing.T) {
 
 func TestResetValidaLaPoliticaAntesDeConsumirElToken(t *testing.T) {
 	e := nuevoEntorno(t)
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
 	if err := e.svc.RestablecerPassword(ctx, "tok-1", "corta"); !errors.Is(err, dominio.ErrPoliticaPassword) {
 		t.Fatalf("err = %v", err)
 	}
@@ -295,7 +295,7 @@ func TestResetValidaLaPoliticaAntesDeConsumirElToken(t *testing.T) {
 func TestEstadoCambiadoEntreLecturaYConsumoNoSeSobrescribe(t *testing.T) {
 	// ConsumirToken exige el estado leído: si un retiro llega en medio, no se aplica.
 	e := nuevoEntorno(t)
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
 	u, _ := e.repo.BuscarPorSujeto(ctx, "E001")
 	ok, _ := e.repo.ConsumirToken(ctx, u.ID, u.TokenHash, dominio.EstadoActiva, "hash", dominio.EstadoActiva)
 	if ok {
@@ -305,7 +305,7 @@ func TestEstadoCambiadoEntreLecturaYConsumoNoSeSobrescribe(t *testing.T) {
 
 func TestSiOtroUsoConsumioElTokenNoSeActivaNiSePublica(t *testing.T) {
 	e := nuevoEntorno(t)
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
 	e.repo.consumoGanadoPorOtro = true
 	antes := len(e.pub.tipos())
 	if err := e.svc.RestablecerPassword(ctx, "tok-1", passwordValida); !errors.Is(err, ErrTokenInvalido) {
@@ -318,7 +318,7 @@ func TestSiOtroUsoConsumioElTokenNoSeActivaNiSePublica(t *testing.T) {
 
 func TestEnLaBDSoloQuedaElHashDelToken(t *testing.T) {
 	e := nuevoEntorno(t)
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
 	_ = e.svc.SolicitarRecuperacion(ctx, "a@b.com")
 	u, _ := e.repo.BuscarPorSujeto(ctx, "E001")
 	if u.TokenHash == "tok-2" || u.TokenHash != dominio.HashToken("tok-2") {
@@ -353,7 +353,7 @@ func TestLoginFallaEnTodoEstadoNoActivo(t *testing.T) {
 
 func TestLoginSinActivarFalla(t *testing.T) {
 	e := nuevoEntorno(t)
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
 	if _, err := e.svc.Login(ctx, "a@b.com", ""); !errors.Is(err, ErrCredencialesInvalidas) {
 		t.Fatalf("err = %v", err)
 	}
@@ -375,7 +375,7 @@ func TestLoginConPasswordIncorrectaOEmailDesconocidoFalla(t *testing.T) {
 
 func TestLaPasswordNoSeRecorta(t *testing.T) {
 	e := nuevoEntorno(t)
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
 	if err := e.svc.RestablecerPassword(ctx, "tok-1", " Clave2026 "); err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +441,7 @@ func TestRecuperacionDeEmailDesconocidoOCuentaRetiradaNoHaceNada(t *testing.T) {
 func TestFalloAlPublicarNoRevierteElCambio(t *testing.T) {
 	e := nuevoEntorno(t)
 	e.pub.fallar = errors.New("broker caído")
-	if err := e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"}); err != nil {
+	if err := e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"}); err != nil {
 		t.Fatalf("err = %v", err)
 	}
 	if u, _ := e.repo.BuscarPorSujeto(ctx, "E001"); u == nil {
@@ -545,7 +545,7 @@ func TestSembrarAdminCreaAdminActivoSinEscribirLaPasswordEnElLog(t *testing.T) {
 
 func TestSembrarAdminConEmailDeOtraCuentaNoLoCreaYLoDiceAsi(t *testing.T) {
 	e := nuevoEntorno(t)
-	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "admin@empresa.com"})
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "admin@empresa.com"})
 	buf := capturarLog(t)
 	if err := e.svc.SembrarAdmin(ctx, "admin@empresa.com", "SemillaSegura9"); err != nil {
 		t.Fatal(err)

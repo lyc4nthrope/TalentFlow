@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/dominio"
@@ -21,9 +22,19 @@ type repoMemoria struct {
 	fallar    error // si no es nil, toda operación falla con este error
 	// consumoGanadoPorOtro simula que otro uso simultáneo consumió el token primero.
 	consumoGanadoPorOtro bool
+	// procesados imita la tabla eventos_procesados (deduplicación, D4).
+	procesados map[string]bool
+	// transaccion serializa ProcesarUnaVez completo (comprobar, aplicar y marcar),
+	// como lo hace la BD con el INSERT del id: dos entregas simultáneas del mismo
+	// mensaje no pueden aplicarse ambas.
+	transaccion sync.Mutex
+	// fallarEfecto hace fallar el siguiente UPDATE del ciclo de vida (prueba de rollback).
+	fallarEfecto error
 }
 
-func nuevoRepo() *repoMemoria { return &repoMemoria{usuarios: map[string]*dominio.Usuario{}} }
+func nuevoRepo() *repoMemoria {
+	return &repoMemoria{usuarios: map[string]*dominio.Usuario{}, procesados: map[string]bool{}}
+}
 
 func (r *repoMemoria) copia(u *dominio.Usuario) *dominio.Usuario {
 	if u == nil {
@@ -114,6 +125,90 @@ func (r *repoMemoria) ActualizarPassword(_ context.Context, id, pass string) err
 	return nil
 }
 
+// ProcesarUnaVez imita la transacción: registra el id y aplica fn; si fn falla
+// restaura las cuentas y no registra el id (rollback).
+func (r *repoMemoria) ProcesarUnaVez(_ context.Context, id string, fn func(Repositorio) error) (bool, error) {
+	r.transaccion.Lock()
+	defer r.transaccion.Unlock()
+	r.mu.Lock()
+	if r.procesados[id] {
+		r.mu.Unlock()
+		return true, nil
+	}
+	foto := map[string]dominio.Usuario{}
+	for k, u := range r.usuarios {
+		foto[k] = *u
+	}
+	r.mu.Unlock()
+
+	err := fn(r)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err != nil {
+		r.usuarios = map[string]*dominio.Usuario{}
+		for k, u := range foto {
+			c := u
+			r.usuarios[k] = &c
+		}
+		return false, err
+	}
+	r.procesados[id] = true
+	return false, nil
+}
+
+// actualizar aplica cambio a la cuenta si cumple la condición (UPDATE condicional).
+func (r *repoMemoria) actualizar(id string, condicion func(*dominio.Usuario) bool, cambio func(*dominio.Usuario)) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.fallarEfecto != nil {
+		err := r.fallarEfecto
+		r.fallarEfecto = nil
+		return false, err
+	}
+	u, ok := r.usuarios[id]
+	if !ok || !condicion(u) {
+		return false, nil
+	}
+	cambio(u)
+	return true, nil
+}
+
+func (r *repoMemoria) Retirar(_ context.Context, id string) (bool, error) {
+	return r.actualizar(id,
+		func(u *dominio.Usuario) bool { return u.Estado != dominio.EstadoDesactivadaPermanente },
+		func(u *dominio.Usuario) {
+			u.Estado, u.VacacionesSuspension = dominio.EstadoDesactivadaPermanente, ""
+			u.TokenHash, u.TokenTipo, u.TokenExpiraEn = "", "", time.Time{}
+		})
+}
+
+func (r *repoMemoria) Suspender(_ context.Context, id, vac string) (bool, error) {
+	return r.actualizar(id,
+		func(u *dominio.Usuario) bool { return u.Estado == dominio.EstadoActiva },
+		func(u *dominio.Usuario) { u.Estado, u.VacacionesSuspension = dominio.EstadoSuspendidaTemporal, vac })
+}
+
+func (r *repoMemoria) CambiarSuspension(_ context.Context, id, vac string) (bool, error) {
+	return r.actualizar(id,
+		func(u *dominio.Usuario) bool { return u.Estado == dominio.EstadoSuspendidaTemporal },
+		func(u *dominio.Usuario) { u.VacacionesSuspension = vac })
+}
+
+func (r *repoMemoria) Reactivar(_ context.Context, id, vac string) (bool, error) {
+	return r.actualizar(id,
+		func(u *dominio.Usuario) bool {
+			return u.Estado == dominio.EstadoSuspendidaTemporal && u.VacacionesSuspension == vac
+		},
+		func(u *dominio.Usuario) { u.Estado, u.VacacionesSuspension = dominio.EstadoActiva, "" })
+}
+
+// cuenta devuelve una copia de la cuenta con ese sujeto (nil si no existe).
+func (r *repoMemoria) cuenta(sujeto string) *dominio.Usuario {
+	u, _ := r.BuscarPorSujeto(context.Background(), sujeto)
+	return u
+}
+
 // estado cambia el estado de una cuenta directamente (simula la F3: vacaciones o retiro).
 func (r *repoMemoria) fijarEstado(sujeto, estado string) {
 	r.mu.Lock()
@@ -186,3 +281,8 @@ type relojManual struct{ t time.Time }
 
 func (r *relojManual) ahora() time.Time        { return r.t }
 func (r *relojManual) avanzar(d time.Duration) { r.t = r.t.Add(d) }
+
+var contadorEventos atomic.Int64
+
+// nuevoEventoID devuelve un id de evento distinto en cada llamada.
+func nuevoEventoID() string { return fmt.Sprintf("evt-%d", contadorEventos.Add(1)) }
