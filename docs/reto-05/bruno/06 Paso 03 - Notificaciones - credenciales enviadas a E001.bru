@@ -1,0 +1,43 @@
+meta {
+  name: Paso 03 - Notificaciones - credenciales enviadas a E001
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/notificaciones/{{e1}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+script:pre-request {
+  // empleado.creado -> auth-service -> usuario.creado -> notificaciones-service (asincrónico).
+  await bru.sleep(3000);
+}
+
+tests {
+  test("notificaciones-service procesó usuario.creado (SEGURIDAD, token enmascarado)", function () {
+    expect(res.getStatus()).to.equal(200);
+    const n = res.getBody().find((x) => x.tipo === "SEGURIDAD");
+    expect(n).to.not.equal(undefined);
+    expect(n.mensaje).to.include("Para establecer o recuperar su contraseña use el token ****");
+  });
+}
+
+docs {
+  Paso 3 del PDF. Bruno no lee los logs; se comprueban en una terminal:
+
+  ```
+  docker compose logs auth-service | grep -E "empleado.creado recibido|usuario.creado"
+  docker compose logs notificaciones-service | grep -E "usuario.creado|NOTIFICACI"
+  ```
+
+  auth-service registra `empleado.creado recibido (id …): cuenta del empleado <id> creada en PENDIENTE_ACTIVACION`
+  y `evento publicado usuario.creado (id …)`; notificaciones-service, `notificación registrada` con ese mismo
+  `eventoId` y la línea `[NOTIFICACIÓN] Tipo: SEGURIDAD | Para: <email> | …` con el token completo.
+  Esta petición comprueba lo mismo por la API.
+}

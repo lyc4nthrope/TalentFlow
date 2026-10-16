@@ -145,6 +145,9 @@ func (s *AuthService) CrearCuentaDesdeEmpleado(ctx context.Context, eventoID str
 		return err
 	}
 	if aPublicar != nil {
+		// Paso 3 del reto5.pdf: el log debe mostrar que se detectó empleado.creado y se generó el usuario.
+		log.Printf("auth-service: empleado.creado recibido (id %s): cuenta del empleado %s creada en %s",
+			eventoID, empleadoID, dominio.EstadoPendienteActivacion)
 		s.publicar(ctx, dominio.EventoUsuarioCreado, *aPublicar)
 	}
 	return nil

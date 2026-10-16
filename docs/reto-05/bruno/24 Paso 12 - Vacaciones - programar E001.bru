@@ -1,0 +1,48 @@
+meta {
+  name: Paso 12 - Vacaciones - programar E001
+  type: http
+  seq: 24
+}
+
+post {
+  url: {{baseUrl}}/vacaciones
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "empleadoId": "{{e1}}",
+    "fechaInicio": "{{inicio1}}",
+    "fechaFin": "{{fin1}}"
+  }
+}
+
+script:pre-request {
+  // Desviación del PDF (fechaInicio = fechaFin = hoy): con fecha sola el fin sería las 23:59:59 (D6).
+  // Se usan fecha y hora reales de hoy en America/Bogota (UTC-5, sin horario de verano):
+  // inicio en el próximo minuto exacto a 20 s o más de ahora y fin 60 s después.
+  const bogota = (ms) => new Date(ms - 5 * 3600000).toISOString().slice(0, 19);
+  const inicio = Math.ceil((Date.now() + 20000) / 60000) * 60000;
+  const fin = inicio + 60 * 1000;
+  bru.setVar("inicio1Ms", String(inicio));
+  bru.setVar("fin1Ms", String(fin));
+  bru.setVar("inicio1", bogota(inicio));
+  bru.setVar("fin1", bogota(fin));
+}
+
+tests {
+  test("201 PROGRAMADA (publica vacaciones.programadas)", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().estado).to.equal("PROGRAMADA");
+    bru.setVar("vac1", res.getBody().id);
+  });
+}

@@ -18,24 +18,38 @@
  * Uso:
  *   php test_departamentos.php
  *   TEST_BASE_URL=http://localhost:8080 php test_departamentos.php
+ *   TEST_ADMIN_EMAIL=admin@empresa.com TEST_ADMIN_PASSWORD='Admin123*' php test_departamentos.php
  *
  * Nota (Reto 3): desde que existe el API Gateway, departamentos-service ya no
  * publica su puerto al host (pasó de "ports: 8081:8081" a "expose: 8082").
  * Por eso el default ahora apunta al Gateway (:8080), que enruta /departamentos
  * hacia el servicio interno — las rutas y respuestas no cambiaron, solo el puerto.
+ *
+ * Nota (Reto 5): el Gateway exige un JWT en todas las rutas salvo las públicas (D9);
+ * sin token responde 401. El script inicia sesión como el administrador semilla
+ * (ADMIN_EMAIL / ADMIN_PASSWORD de docker-compose.yml; sobrescribibles con
+ * TEST_ADMIN_EMAIL / TEST_ADMIN_PASSWORD) y envía Authorization: Bearer en cada petición.
  */
 
 $baseUrl = getenv('TEST_BASE_URL') ?: 'http://localhost:8080';
+$adminEmail = getenv('TEST_ADMIN_EMAIL') ?: 'admin@empresa.com';
+$adminPassword = getenv('TEST_ADMIN_PASSWORD') ?: 'Admin123*';
+$token = null; // JWT del administrador; se obtiene antes de las pruebas
 
 $totalPruebas = 0;
 $totalFallos = 0;
 
-function peticion(string $metodo, string $url, ?array $cuerpo = null): array
+function peticion(string $metodo, string $url, ?array $cuerpo = null, bool $conToken = true): array
 {
+    global $token;
+    $cabeceras = "Content-Type: application/json\r\n";
+    if ($conToken && $token !== null) {
+        $cabeceras .= "Authorization: Bearer {$token}\r\n";
+    }
     $opciones = [
         'http' => [
             'method' => $metodo,
-            'header' => "Content-Type: application/json\r\n",
+            'header' => $cabeceras,
             'ignore_errors' => true, // para poder leer el body en respuestas 4xx/5xx
         ],
     ];
@@ -78,6 +92,19 @@ $idPrueba = 'TST_' . substr(md5((string) microtime(true)), 0, 8);
 $idInexistente = 'NOEXISTE_' . substr(md5((string) microtime(true) . 'x'), 0, 8);
 
 echo "== Pruebas del Servicio de Departamentos ({$baseUrl}) ==\n\n";
+
+// --- Reto 5: JWT del administrador semilla (sin él, el Gateway responde 401) ---
+echo "POST /auth/login (administrador semilla)\n";
+$respuesta = peticion('POST', "{$baseUrl}/auth/login", ['email' => $adminEmail, 'password' => $adminPassword], false);
+$token = $respuesta['body']['token'] ?? null;
+verificar('Responde 200 OK con un token', $respuesta['status'] === 200 && is_string($token), "status recibido: {$respuesta['status']}");
+if ($token === null) {
+    echo "\nRESULTADO: FALLÓ (sin token no se puede probar nada a través del Gateway)\n";
+    exit(1);
+}
+$respuesta = peticion('GET', "{$baseUrl}/departamentos", null, false);
+verificar('Sin token el Gateway responde 401', $respuesta['status'] === 401, "status recibido: {$respuesta['status']}");
+echo "\n";
 
 // --- Requisito: POST /departamentos registra un nuevo departamento -> 201 ---
 echo "POST /departamentos (registro exitoso)\n";
@@ -153,7 +180,7 @@ verificar('Responde 400 Bad Request', $respuesta['status'] === 400, "status reci
 echo "\n";
 
 echo "GET /departamentos/openapi.json (seguridad declarada, D13)\n";
-$respuesta = peticion('GET', "{$baseUrl}/departamentos/openapi.json");
+$respuesta = peticion('GET', "{$baseUrl}/departamentos/openapi.json", null, false);
 verificar('Responde 200 OK sin token', $respuesta['status'] === 200, "status recibido: {$respuesta['status']}");
 verificar(
     'Declara el esquema bearerAuth (HTTP bearer, JWT)',

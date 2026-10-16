@@ -1,0 +1,17 @@
+meta {
+  name: Paso 04 - Empleados - sin token
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/empleados
+  body: none
+  auth: none
+}
+
+tests {
+  test("401 sin cabecera Authorization", function () {
+    expect(res.getStatus()).to.equal(401);
+  });
+}

@@ -1,0 +1,22 @@
+meta {
+  name: Paso 15 - Empleados - retirar E002 durante sus vacaciones
+  type: http
+  seq: 35
+}
+
+delete {
+  url: {{baseUrl}}/empleados/{{e2}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+tests {
+  test("200 RETIRADO (publica empleado.retirado)", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().estado).to.equal("RETIRADO");
+  });
+}

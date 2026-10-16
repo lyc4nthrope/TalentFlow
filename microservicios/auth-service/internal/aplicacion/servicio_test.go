@@ -102,6 +102,18 @@ func TestEmpleadoCreadoCreaCuentaPendienteSinPasswordYPublicaUsuarioCreado(t *te
 	}
 }
 
+func TestEmpleadoCreadoRegistraEnElLogLaCuentaCreada(t *testing.T) {
+	e := nuevoEntorno(t)
+	buf := capturarLog(t)
+	if err := e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "juan@empresa.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "empleado.creado recibido") ||
+		!strings.Contains(buf.String(), "cuenta del empleado E001 creada en PENDIENTE_ACTIVACION") {
+		t.Fatalf("el log no muestra el alta de la cuenta: %s", buf.String())
+	}
+}
+
 func TestEmpleadoCreadoRepetidoNoDuplicaLaCuentaNiElEvento(t *testing.T) {
 	e := nuevoEntorno(t)
 	evento := dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "juan@empresa.com"}

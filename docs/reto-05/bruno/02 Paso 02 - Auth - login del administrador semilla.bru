@@ -1,0 +1,56 @@
+meta {
+  name: Paso 02 - Auth - login del administrador semilla
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{adminEmail}}",
+    "password": "{{adminPassword}}"
+  }
+}
+
+script:pre-request {
+  // Datos únicos por corrida: la colección se puede ejecutar varias veces sobre los mismos datos.
+  // Los ids los elige el cliente (POST /empleados exige "id"); el PDF los llama E001 y E002.
+  const sufijo = Date.now().toString().slice(-9);
+  bru.setVar("e1", "E1-" + sufijo);
+  bru.setVar("e2", "E2-" + sufijo);
+  bru.setVar("email1", "juan.perez." + sufijo + "@empresa.com");
+  bru.setVar("email2", "ana.munoz." + sufijo + "@empresa.com");
+  bru.setVar("numero1", "EMP-" + sufijo + "-1");
+  bru.setVar("numero2", "EMP-" + sufijo + "-2");
+  // Política de contraseñas (D14): 8 a 72 caracteres, mayúscula, minúscula y dígito.
+  bru.setVar("passInicial", "Inicial123");
+  bru.setVar("passRecuperada", "Recuperada123");
+  bru.setVar("passNueva", "Cambiada123");
+}
+
+tests {
+  // Claims del JWT (sin verificar la firma; solo para mostrarlos). Decodificación base64url a mano:
+  // el sandbox seguro de Bruno no tiene Buffer ni atob.
+  function claimsDe(jwt) {
+    const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let bits = "";
+    let texto = "";
+    for (const c of jwt.split(".")[1]) bits += abc.indexOf(c).toString(2).padStart(6, "0");
+    for (let i = 0; i + 8 <= bits.length; i += 8) texto += String.fromCharCode(parseInt(bits.slice(i, i + 8), 2));
+    return JSON.parse(texto);
+  }
+  test("200 con un JWT de rol ADMIN", function () {
+    expect(res.getStatus()).to.equal(200);
+    bru.setVar("adminToken", res.getBody().token);
+    expect(claimsDe(res.getBody().token).role).to.equal("ADMIN");
+  });
+}

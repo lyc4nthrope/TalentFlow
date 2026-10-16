@@ -1,0 +1,39 @@
+meta {
+  name: Paso 08 - Mailhog - token de recuperación
+  type: http
+  seq: 15
+}
+
+get {
+  url: {{mailhogUrl}}/api/v2/search?kind=to&query={{email1}}
+  body: none
+  auth: none
+}
+
+script:pre-request {
+  // usuario.recuperacion -> notificaciones-service -> correo (asincrónico).
+  await bru.sleep(2000);
+}
+
+tests {
+  // Mailhog devuelve los correos del más reciente al más antiguo. El cuerpo viaja en
+  // quoted-printable: se quitan los saltos suaves ("=\r\n") antes de buscar el token.
+  function tokenDe(items, filtro) {
+    for (const m of items) {
+      const cuerpo = m.Content.Body.replace(/=\r?\n/g, "");
+      const t = cuerpo.match(/use el token ([0-9a-f-]{36})/);
+      if (t && filtro(cuerpo)) return t[1];
+    }
+    return null;
+  }
+  test("llegó un token de recuperación nuevo", function () {
+    const t = tokenDe(res.getBody().items, (c) => !c.includes("Bienvenido"));
+    expect(t).to.not.equal(null);
+    expect(t).to.not.equal(bru.getVar("tokenActivacion1"));
+    bru.setVar("tokenRecuperacion", t);
+  });
+}
+
+docs {
+  En el log: `docker compose logs notificaciones-service | grep usuario.recuperacion` (evento sin empleadoId, D20).
+}

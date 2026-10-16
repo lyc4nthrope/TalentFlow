@@ -1,0 +1,23 @@
+meta {
+  name: Paso 15 - Notificaciones - E002 sin bienvenida de regreso
+  type: http
+  seq: 38
+}
+
+get {
+  url: {{baseUrl}}/notificaciones/{{e2}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+tests {
+  test("no hay 'Bienvenido de regreso' y sí la desactivación permanente", function () {
+    const mensajes = res.getBody().map((x) => x.mensaje);
+    expect(mensajes.some((m) => m.includes("Bienvenido de regreso"))).to.equal(false);
+    expect(mensajes.some((m) => m.includes("de forma permanente por retiro"))).to.equal(true);
+  });
+}

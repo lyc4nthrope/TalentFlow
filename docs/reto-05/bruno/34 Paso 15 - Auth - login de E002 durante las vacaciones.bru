@@ -1,0 +1,28 @@
+meta {
+  name: Paso 15 - Auth - login de E002 durante las vacaciones
+  type: http
+  seq: 34
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{email2}}",
+    "password": "{{passInicial}}"
+  }
+}
+
+tests {
+  test("401", function () {
+    expect(res.getStatus()).to.equal(401);
+  });
+}
