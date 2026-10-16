@@ -6,7 +6,7 @@ decide los permisos en un solo lugar** (opción 1 del PDF).
 
 | Archivo | Responsabilidad |
 |---|---|
-| `index.js` | Lee el entorno (`PORT`, `JWT_SECRET`, `JWT_ISSUER`, URL de cada servicio) y abre el puerto |
+| `index.js` | Lee el entorno (`PORT`, `JWT_SECRET`, `JWT_ISSUER`, URL de cada servicio) y abre el puerto. `JWT_SECRET` es **obligatoria**: sin ella el Gateway escribe el motivo y termina con código 1, sin abrir el puerto (no hay secreto por defecto en el código; Compose lo inyecta desde el bloque `x-jwt`, el mismo que recibe `auth-service`). `JWT_ISSUER` vale `auth-service` por defecto |
 | `app.js` | `crearApp(config)`: arma el Gateway sin red (así se prueba) |
 | `autenticacion.js` | Valida el token de acceso: solo HS256, emisor `auth-service`, `exp` obligatorio, `sub` y `role` válidos |
 | `autorizacion.js` | Análisis seguro de la ruta, rutas públicas y matriz de permisos |

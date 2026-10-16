@@ -3,8 +3,15 @@
 const { crearApp } = require('./app');
 
 const PORT = process.env.PORT || 8080;
-// TODO(F6): el secreto pasa a ser obligatorio (sin valor por defecto en el código).
-const JWT_SECRET = process.env.JWT_SECRET || 'talentflow_super_secret_2026';
+// Reto 5, D11/D21: el secreto es obligatorio y no tiene valor por defecto en el código.
+// Lo inyecta Compose (el mismo que recibe auth-service); sin él, el Gateway no arranca.
+const JWT_SECRET = process.env.JWT_SECRET;
+// Un valor de solo espacios cuenta como ausente: firmar con él sería trivialmente adivinable.
+if (!JWT_SECRET || JWT_SECRET.trim() === '') {
+    console.error('API Gateway: falta la variable de entorno JWT_SECRET; no se puede validar ningún token. No se inicia.');
+    process.exit(1);
+}
+// El emisor no es un secreto: tiene valor por defecto.
 const JWT_ISSUER = process.env.JWT_ISSUER || 'auth-service';
 
 // Tabla única de servicios detrás del Gateway: de aquí salen tanto las rutas como el

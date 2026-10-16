@@ -55,7 +55,17 @@ La cola `auth.eventos` escucha cuatro eventos. Cada uno se aplica en una sola tr
 | `JWT_ISSUER` / `JWT_VIGENCIA` | `auth-service` / `1h` | Emisor y vigencia del token de acceso |
 | `TOKEN_ACTIVACION_VIGENCIA` / `TOKEN_RECUPERACION_VIGENCIA` | `24h` / `1h` | Vigencia de los tokens de activación y recuperación |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | sin valor | Administrador semilla, creado al arrancar si no existe. La contraseña debe cumplir la política y nunca se escribe en el log |
-| `DB_*`, `RABBITMQ_*`, `AMQP_EXCHANGE` | ver `config/config.go` | Conexiones |
+| `DB_USER` / `DB_PASS` | **obligatorias** (salvo que llegue `DATABASE_URL` completa) | Credenciales de la BD; sin valor por defecto en el código |
+| `RABBITMQ_USER` / `RABBITMQ_PASS` | **obligatorias** (salvo que llegue `AMQP_URL` completa) | Credenciales del broker; sin valor por defecto en el código |
+| `DB_HOST` / `DB_PORT` / `DB_NAME`, `RABBITMQ_HOST`, `AMQP_EXCHANGE`, `PORT` | `localhost` / `5432` / `db_auth`, `localhost`, `talentflow.eventos`, `8086` | Ubicación (no secretos). Usuario y contraseña se codifican en la URL de conexión |
+
+Si falta una variable obligatoria, el servicio escribe cuál en el log y termina con código 1.
+
+## Salud
+
+- `GET /health` (interno, lo consultan el `/health` agregado del Gateway y Docker): `{status, service, timestamp, components: {app, db, broker}}`. Responde 200 si la BD contesta en menos de 2 s y 503 si no. El broker se informa pero no cambia el estado: sin broker el servicio sigue atendiendo login y contraseñas, y el consumidor se reconecta solo.
+- Healthcheck de Docker: `/auth-service -salud`. La imagen distroless no tiene shell ni `wget`, así que el propio binario consulta `http://127.0.0.1:$PORT/health` (plazo de 2 s) y termina con 0 si responde 200, o con 1 en cualquier otro caso.
+- El servicio no publica su puerto al host: solo se alcanza a través del Gateway (`expose: 8086`).
 
 ## Comportamientos que conviene conocer
 

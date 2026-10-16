@@ -4,7 +4,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -38,7 +41,8 @@ func Cargar() (*Config, error) {
 		AdminEmail:    os.Getenv("ADMIN_EMAIL"),
 		AdminPassword: os.Getenv("ADMIN_PASSWORD"),
 	}
-	if cfg.JWTSecret == "" {
+	// Un valor de solo espacios cuenta como ausente.
+	if strings.TrimSpace(cfg.JWTSecret) == "" {
 		return nil, errors.New("JWT_SECRET es obligatorio")
 	}
 
@@ -53,18 +57,47 @@ func Cargar() (*Config, error) {
 		return nil, err
 	}
 
+	// Reto 5, D23: las credenciales no tienen valor por defecto en el código. Se arman desde
+	// DB_* / RABBITMQ_* (las inyecta Compose) o llegan completas en DATABASE_URL / AMQP_URL.
 	cfg.DatabaseURL = os.Getenv("DATABASE_URL")
 	if cfg.DatabaseURL == "" {
-		cfg.DatabaseURL = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			obtenerEnv("DB_USER", "user_auth"), obtenerEnv("DB_PASS", "pass_auth"),
-			obtenerEnv("DB_HOST", "localhost"), obtenerEnv("DB_PORT", "5432"), obtenerEnv("DB_NAME", "db_auth"))
+		usuario, clave, err := credenciales("DB_USER", "DB_PASS", "DATABASE_URL")
+		if err != nil {
+			return nil, err
+		}
+		cfg.DatabaseURL = (&url.URL{
+			Scheme:   "postgres",
+			User:     url.UserPassword(usuario, clave),
+			Host:     net.JoinHostPort(obtenerEnv("DB_HOST", "localhost"), obtenerEnv("DB_PORT", "5432")),
+			Path:     "/" + obtenerEnv("DB_NAME", "db_auth"),
+			RawQuery: "sslmode=disable",
+		}).String()
 	}
 	cfg.AMQPURL = os.Getenv("AMQP_URL")
 	if cfg.AMQPURL == "" {
-		cfg.AMQPURL = fmt.Sprintf("amqp://%s:%s@%s:5672/",
-			obtenerEnv("RABBITMQ_USER", "guest"), obtenerEnv("RABBITMQ_PASS", "guest"), obtenerEnv("RABBITMQ_HOST", "localhost"))
+		usuario, clave, err := credenciales("RABBITMQ_USER", "RABBITMQ_PASS", "AMQP_URL")
+		if err != nil {
+			return nil, err
+		}
+		cfg.AMQPURL = (&url.URL{
+			Scheme: "amqp",
+			User:   url.UserPassword(usuario, clave),
+			Host:   net.JoinHostPort(obtenerEnv("RABBITMQ_HOST", "localhost"), "5672"),
+			Path:   "/",
+		}).String()
 	}
 	return cfg, nil
+}
+
+// credenciales exige usuario y contraseña cuando no se entrega la URL completa. Como con
+// JWT_SECRET, un valor de solo espacios cuenta como ausente (falla aquí, con un mensaje
+// claro, y no después como un error de autenticación de Postgres o RabbitMQ).
+func credenciales(claveUsuario, claveClave, claveURL string) (string, string, error) {
+	usuario, clave := os.Getenv(claveUsuario), os.Getenv(claveClave)
+	if strings.TrimSpace(usuario) == "" || strings.TrimSpace(clave) == "" {
+		return "", "", fmt.Errorf("%s y %s son obligatorias (o %s completa)", claveUsuario, claveClave, claveURL)
+	}
+	return usuario, clave, nil
 }
 
 func duracion(clave, porDefecto string) (time.Duration, error) {

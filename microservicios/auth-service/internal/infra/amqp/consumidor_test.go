@@ -183,3 +183,15 @@ func TestElConsumidorDelAuthServiceUsaPrefetchUnoParaConservarElOrden(t *testing
 		t.Fatalf("config = %+v", cfg)
 	}
 }
+
+// GET /health publica el estado del consumidor: DOWN hasta que hay una conexión viva.
+func TestEstadoDelConsumidor(t *testing.T) {
+	c := NuevoConsumidor(Config{}, nil)
+	if c.Estado() != "DOWN" {
+		t.Fatalf("sin conexión: %s", c.Estado())
+	}
+	c.conectado.Store(true)
+	if c.Estado() != "UP" {
+		t.Fatalf("conectado: %s", c.Estado())
+	}
+}

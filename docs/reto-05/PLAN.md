@@ -39,6 +39,9 @@ Cada fase termina **verificada** (pruebas + comprobación real en Docker cuando 
 | D18 | Qué vacaciones suspendieron la cuenta | Columna `vacaciones_suspension` con el `vacacionesId` de `vacaciones.iniciadas`; `vacaciones.finalizadas` solo reactiva si trae ese mismo id. Si llega otro `vacaciones.iniciadas` estando suspendida, el id se reemplaza | Con períodos contiguos el scheduler publica en la misma pasada el inicio de B antes que el fin de A: sin esto, el fin de A reactivaría la cuenta durante B. Así el resultado no depende del orden de llegada |
 | D19 | Reglas por estado en el ciclo de vida | `empleado.retirado`: desde cualquier estado → `DESACTIVADA_PERMANENTE`, se borra el token pendiente, `cuenta.desactivada {motivo: RETIRO, permanente: true}`. `vacaciones.iniciadas`: solo `ACTIVA` (o `SUSPENDIDA_TEMPORAL`, para actualizar el id) → `SUSPENDIDA_TEMPORAL`, `cuenta.desactivada {motivo: VACACIONES, permanente: false}` solo en la transición desde `ACTIVA`. `vacaciones.finalizadas`: solo `SUSPENDIDA_TEMPORAL` con el mismo id → `ACTIVA`, `cuenta.activada {motivo: FIN_VACACIONES}`; sobre `DESACTIVADA_PERMANENTE` se ignora (caso borde). Si el efecto no cambia nada, no se publica. Deduplicación por `id` del envelope en la misma transacción que el efecto | Catálogo 3.6, 3.7, 3.9 y 3.10. Una cuenta pendiente no tiene nada que suspender y no puede quedar `ACTIVA` sin contraseña |
 | D20 | Notificaciones sin empleadoId | `usuario.recuperacion` solo trae el email: la notificación se guarda con `empleado_id` nulo y aparece en `GET /notificaciones` (no en el historial por empleado) | El catálogo no incluye `empleadoId` en ese evento; inventarlo o deducirlo acoplaría notificaciones a auth |
+| D21 | Valor del secreto en Compose | El código de `auth-service` y del Gateway exige `JWT_SECRET` (sin él no arrancan). En `docker-compose.yml` el valor académico se define una sola vez (ancla YAML) y lo reciben ambos servicios; `.env` lo sobrescribe | El README promete arrancar con un solo comando sin pasos manuales: exigir un `.env` rompería `docker compose up` en un clon nuevo. La rúbrica pide que no esté en el código y que se inyecte por Compose. Definirlo una vez evita que firmante y validador diverjan. Sacarlo de Compose es el Reto 9 |
+| D22 | `auth-service` detrás del Gateway | Solo `expose: 8086` (sin `ports`); `GET /health` con el estado de la BD y del broker, en el formato del ecosistema; healthcheck de Docker con el propio binario (`/auth-service -salud`), porque la imagen distroless no tiene shell ni `wget` | Regla del Reto 3 (único punto de entrada). El `/health` agregado del Gateway ya lo consulta |
+| D23 | Credenciales y arranque | Sin usuario/contraseña por defecto de BD ni de RabbitMQ en el código de `auth-service` (falla al arrancar si faltan); `start_period` en el healthcheck de MySQL (`db-departamentos`) | Rúbrica, criterio 5. El `start_period` corresponde a la sospecha de un primer `up --build` fallido |
 
 ## Fases
 
@@ -50,7 +53,7 @@ Cada fase termina **verificada** (pruebas + comprobación real en Docker cuando 
 | **F3** Auth: ciclo de vida | D4, D5, D18, D19; publicar los 4 eventos con el payload exacto y `id` UUID; quitar `auth.password_*` de la topología | Pruebas; en Docker: alta → activación → suspensión → reactivación → retiro, y el caso borde | ✅ |
 | **F4** Notificaciones | D12, D20; bindings de `notificaciones.eventos`; colección Bruno y `demo.sh` del Reto 4 ajustados al cambio de la bienvenida | Pruebas; logs con el formato del PDF | ✅ |
 | **F5** Gateway | D8, D9, D10; eliminar el árbol `src/` sin uso; Gateway importable para pruebas | Pruebas de la matriz completa (401 / 403 / 200 y propiedad) | ✅ |
-| **F6** Configuración | D11; borrar `env.js`; `auth-service` con `expose` y `/health`; compose y `.env.example` al día | `docker compose up` desde cero, todo sano | ⬜ |
+| **F6** Configuración | D11, D21, D22, D23; borrar `env.js`; `auth-service` con `expose` y `/health`; compose y `.env.example` al día | `docker compose up` desde cero, todo sano | ✅ |
 | **F7** Swagger | D13 en los 7 servicios | Probar desde Swagger con el botón *Authorize* | ⬜ |
 | **F8** Pruebas E2E | `docs/reto-05/demo.sh` con los 18 pasos del PDF; colección Bruno; evidencia del caso borde | Desde cero, todos los pasos | ⬜ |
 | **F9** Documentación | README: cómo obtener un token, estrategia Gateway vs. interceptores, secreto, diagrama de secuencia, scheduler y su limitación (ShedLock); manual `docs/reto-05/` | Cada entregable del PDF presente | ⬜ |
@@ -58,7 +61,7 @@ Cada fase termina **verificada** (pruebas + comprobación real en Docker cuando 
 
 ## Fuera de alcance (anotado para después)
 
-Defectos de retos anteriores encontrados en la auditoría, sin relación con el Reto 5: `departamentoId` sin codificar en la URL, espera fija entre reintentos (el Reto 2 pide creciente), reconciliación solo al cerrar el circuito, `fechaIngreso` sin validar al crear, capturas o video de los Retos 3 y 4.
+Defectos de retos anteriores encontrados en la auditoría, sin relación con el Reto 5: `proxyTimeout` del Gateway (requiere análisis: empleados puede tardar ~20 s legítimamente por los reintentos del Circuit Breaker), `departamentoId` sin codificar en la URL, espera fija entre reintentos (el Reto 2 pide creciente), reconciliación solo al cerrar el circuito, `fechaIngreso` sin validar al crear, capturas o video de los Retos 3 y 4.
 
 ## Aprendizajes por fase
 

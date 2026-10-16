@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -30,6 +31,14 @@ func tokenAleatorio() (string, error) {
 }
 
 func main() {
+	// Reto 5, D22: la imagen distroless no tiene shell ni wget, así que el healthcheck de
+	// Docker ejecuta el propio binario con -salud.
+	salud := flag.Bool("salud", false, "consulta GET /health del servicio local y termina (0 = sano)")
+	flag.Parse()
+	if *salud {
+		os.Exit(codigoSalida(comprobarSalud(urlSaludLocal(), &http.Client{Timeout: timeoutChequeo})))
+	}
+
 	cfg, err := config.Cargar()
 	if err != nil {
 		log.Printf("auth-service: configuración inválida: %v", err)
@@ -79,7 +88,7 @@ func main() {
 
 	servidor := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.ConfigurarRutas(api.NuevoAuthHandler(servicio)),
+		Handler:           api.ConfigurarRutas(api.NuevoAuthHandler(servicio), api.NuevoSaludHandler(pool, consumidor)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

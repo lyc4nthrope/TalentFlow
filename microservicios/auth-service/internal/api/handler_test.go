@@ -52,7 +52,7 @@ func llamar(t *testing.T, casos *casosFalsos, ruta, cuerpo string, cabeceras map
 	rec := httptest.NewRecorder()
 	h := NuevoAuthHandler(casos)
 	h.enSegundoPlano = func(f func()) { f() } // síncrono: las pruebas ven el efecto
-	ConfigurarRutas(h).ServeHTTP(rec, req)
+	ConfigurarRutas(h, nil).ServeHTTP(rec, req)
 	var m map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &m)
 	return rec, m
@@ -126,7 +126,7 @@ func TestRecuperacionResponde202SinEsperarAlTrabajo(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/recover-password", strings.NewReader(`{"email":"a@b.com"}`))
 	ctxReq, cancelar := context.WithCancel(req.Context())
 	rec := httptest.NewRecorder()
-	ConfigurarRutas(h).ServeHTTP(rec, req.WithContext(ctxReq))
+	ConfigurarRutas(h, nil).ServeHTTP(rec, req.WithContext(ctxReq))
 	if rec.Code != 202 || c.recibido != nil || pendiente == nil {
 		t.Fatalf("código %d, caso de uso llamado antes de responder: %v", rec.Code, c.recibido)
 	}
@@ -203,7 +203,7 @@ func TestConElConstructorRealLaRecuperacionNoBloqueaLaRespuesta(t *testing.T) {
 	go func() {
 		req := httptest.NewRequest(http.MethodPost, "/auth/recover-password", strings.NewReader(`{"email":"a@b.com"}`))
 		rec := httptest.NewRecorder()
-		ConfigurarRutas(NuevoAuthHandler(c)).ServeHTTP(rec, req)
+		ConfigurarRutas(NuevoAuthHandler(c), nil).ServeHTTP(rec, req)
 		respondio <- rec.Code
 	}()
 	select {

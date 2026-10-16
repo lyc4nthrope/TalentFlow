@@ -60,6 +60,15 @@ func NuevoConsumidor(cfg Config, procesador ProcesadorEventos) *Consumidor {
 	return &Consumidor{cfg: cfg, procesador: procesador}
 }
 
+// Estado informa si el consumidor tiene una conexión viva con el broker ("UP" / "DOWN");
+// lo publica GET /health.
+func (c *Consumidor) Estado() string {
+	if c.conectado.Load() {
+		return "UP"
+	}
+	return "DOWN"
+}
+
 func (c *Consumidor) Ejecutar(ctx context.Context) {
 	const esperaInicial = time.Second
 	espera := esperaInicial
