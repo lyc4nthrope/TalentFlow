@@ -4,7 +4,7 @@
 # Requisito: el sistema levantado desde la raíz del repo (este script NO lo levanta):
 #   docker compose up --build -d
 # Uso (desde cualquier carpeta):   bash docs/reto-05/demo.sh
-# Duración: unos 5 a 7 minutos con el scheduler por defecto (VACACIONES_CRON = cada minuto).
+# Duración: unos 5 minutos con el scheduler por defecto (VACACIONES_CRON = cada minuto).
 # Termina con código 0 solo si todas las verificaciones pasan.
 #
 # Variables opcionales:
