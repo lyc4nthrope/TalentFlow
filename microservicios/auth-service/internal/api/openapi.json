@@ -165,6 +165,7 @@
       "SolicitudLogin": {
         "type": "object",
         "required": ["password"],
+        "example": { "email": "admin@empresa.com", "password": "Admin123*" },
         "properties": {
           "email": { "type": "string", "format": "email", "example": "juan.perez@empresa.com" },
           "username": { "type": "string", "description": "Alternativa a email: se usa solo si email viene vacío." },
