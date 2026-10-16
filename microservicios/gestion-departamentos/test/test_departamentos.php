@@ -152,6 +152,17 @@ $respuesta = peticion('POST', "{$baseUrl}/departamentos", [
 verificar('Responde 400 Bad Request', $respuesta['status'] === 400, "status recibido: {$respuesta['status']}");
 echo "\n";
 
+echo "GET /departamentos/openapi.json (seguridad declarada, D13)\n";
+$respuesta = peticion('GET', "{$baseUrl}/departamentos/openapi.json");
+verificar('Responde 200 OK sin token', $respuesta['status'] === 200, "status recibido: {$respuesta['status']}");
+verificar(
+    'Declara el esquema bearerAuth (HTTP bearer, JWT)',
+    ($respuesta['body']['components']['securitySchemes']['bearerAuth'] ?? null) === ['type' => 'http', 'scheme' => 'bearer', 'bearerFormat' => 'JWT']
+);
+// Sobre el texto crudo: json_decode convertiría tanto [] como {} en un array PHP.
+verificar('Exige bearerAuth de forma global (serializado como [])', str_contains((string) $respuesta['raw'], '"security":[{"bearerAuth":[]}]'));
+echo "\n";
+
 // --- Resumen ---
 echo "== Resumen ==\n";
 echo "Total de verificaciones: {$totalPruebas}\n";

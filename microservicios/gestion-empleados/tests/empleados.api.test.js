@@ -427,4 +427,11 @@ describe("Documentación OpenAPI bajo el prefijo /empleados (alcanzable por el G
     const especificacion = await (await fetch(`${baseUrl}/empleados/openapi.json`)).json();
     assert.deepEqual(Object.keys(especificacion.paths["/empleados/{id}"]).sort(), ["delete", "get", "put"]);
   });
+
+  it("declara bearerAuth como seguridad global y deja /health público", async () => {
+    const especificacion = await (await fetch(`${baseUrl}/empleados/openapi.json`)).json();
+    assert.deepEqual(especificacion.components.securitySchemes.bearerAuth, { type: "http", scheme: "bearer", bearerFormat: "JWT" });
+    assert.deepEqual(especificacion.security, [{ bearerAuth: [] }]);
+    assert.deepEqual(especificacion.paths["/health"].get.security, []);
+  });
 });

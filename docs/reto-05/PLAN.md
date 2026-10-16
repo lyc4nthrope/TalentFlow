@@ -54,14 +54,14 @@ Cada fase termina **verificada** (pruebas + comprobación real en Docker cuando 
 | **F4** Notificaciones | D12, D20; bindings de `notificaciones.eventos`; colección Bruno y `demo.sh` del Reto 4 ajustados al cambio de la bienvenida | Pruebas; logs con el formato del PDF | ✅ |
 | **F5** Gateway | D8, D9, D10; eliminar el árbol `src/` sin uso; Gateway importable para pruebas | Pruebas de la matriz completa (401 / 403 / 200 y propiedad) | ✅ |
 | **F6** Configuración | D11, D21, D22, D23; borrar `env.js`; `auth-service` con `expose` y `/health`; compose y `.env.example` al día | `docker compose up` desde cero, todo sano | ✅ |
-| **F7** Swagger | D13 en los 7 servicios | Probar desde Swagger con el botón *Authorize* | ⬜ |
+| **F7** Swagger | D13 en los 7 servicios | Probar desde Swagger con el botón *Authorize* | ✅ |
 | **F8** Pruebas E2E | `docs/reto-05/demo.sh` con los 18 pasos del PDF; colección Bruno; evidencia del caso borde | Desde cero, todos los pasos | ⬜ |
 | **F9** Documentación | README: cómo obtener un token, estrategia Gateway vs. interceptores, secreto, diagrama de secuencia, scheduler y su limitación (ShedLock); manual `docs/reto-05/` | Cada entregable del PDF presente | ⬜ |
 | **F10** Cierre | Pruebas completas, revisión, `dev` a la par de `lyc4nthrope`, push | Ramas sincronizadas | ⬜ |
 
 ## Fuera de alcance (anotado para después)
 
-Defectos de retos anteriores encontrados en la auditoría, sin relación con el Reto 5: `proxyTimeout` del Gateway (requiere análisis: empleados puede tardar ~20 s legítimamente por los reintentos del Circuit Breaker), `departamentoId` sin codificar en la URL, espera fija entre reintentos (el Reto 2 pide creciente), reconciliación solo al cerrar el circuito, `fechaIngreso` sin validar al crear, capturas o video de los Retos 3 y 4.
+Defectos de retos anteriores encontrados en la auditoría, sin relación con el Reto 5: `proxyTimeout` del Gateway (requiere análisis: empleados puede tardar ~20 s legítimamente por los reintentos del Circuit Breaker), `departamentoId` sin codificar en la URL, espera fija entre reintentos (el Reto 2 pide creciente), reconciliación solo al cerrar el circuito, `fechaIngreso` sin validar al crear, `rejectedValue: []` en el OpenAPI de departamentos (PHP lo emite como arreglo; un esquema debe ser objeto: `new stdClass()`), capturas o video de los Retos 3 y 4.
 
 ## Aprendizajes por fase
 

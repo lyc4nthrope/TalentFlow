@@ -117,6 +117,17 @@ def test_swagger_bajo_el_prefijo_del_servicio(cliente):
     assert {"/perfiles", "/perfiles/{empleadoId}"} <= set(especificacion["paths"])
 
 
+def test_swagger_declara_bearer_global(cliente):
+    especificacion = cliente.get("/perfiles/openapi.json").json()
+    assert especificacion["components"]["securitySchemes"]["bearerAuth"] == {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+    }
+    assert especificacion["security"] == [{"bearerAuth": []}]
+    assert "persistAuthorization" in cliente.get("/perfiles/docs").text
+
+
 def test_ruta_desconocida_404_en_el_formato_del_ecosistema(cliente):
     respuesta = cliente.get("/otra-cosa")
     assert respuesta.status_code == 404

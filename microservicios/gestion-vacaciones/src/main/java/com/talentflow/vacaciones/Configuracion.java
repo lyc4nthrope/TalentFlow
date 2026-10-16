@@ -12,10 +12,15 @@ import com.talentflow.vacaciones.infraestructura.persistencia.JdbcRepositorioEmp
 import com.talentflow.vacaciones.infraestructura.persistencia.JdbcRepositorioVacaciones;
 import com.talentflow.vacaciones.infraestructura.persistencia.TransaccionesSpring;
 import com.talentflow.vacaciones.infraestructura.scheduler.VacacionesScheduler;
+import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.servers.Server;
 import java.time.Clock;
 import java.time.ZoneId;
+import java.util.List;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -31,10 +36,20 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Configuration
 public class Configuracion {
 
-    /** Metadatos de la especificación (sin esto springdoc usa "OpenAPI definition"). */
+    /**
+     * Metadatos de la especificación (sin esto springdoc usa "OpenAPI definition").
+     * El servidor relativo "/" evita que springdoc lo derive del Host de la petición: tras el
+     * Gateway (changeOrigin) sería vacaciones-service:8085 y "Try it out" fallaría desde el host.
+     * D13: el Gateway exige un JWT, por eso bearerAuth es requisito global.
+     */
     @Bean
     OpenAPI especificacion() {
-        return new OpenAPI().info(new Info()
+        return new OpenAPI()
+                .servers(List.of(new Server().url("/")))
+                .components(new Components().addSecuritySchemes("bearerAuth", new SecurityScheme()
+                        .type(SecurityScheme.Type.HTTP).scheme("bearer").bearerFormat("JWT")))
+                .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
+                .info(new Info()
                 .title("TalentFlow - Servicio de Gestión de Vacaciones")
                 .version("1.0.0")
                 .description("REST para RR. HH.: programa, consulta y cancela períodos de vacaciones con las "

@@ -95,6 +95,8 @@ const openapiSpec = {
       "Registro, actualización, baja lógica y auditoría de empleados. Persiste en PostgreSQL, valida el departamento contra departamentos-service y publica los eventos empleado.creado, empleado.actualizado y empleado.retirado (Catálogo de Eventos)."
   },
   servers: [{ url: "/" }],
+  // D13: el Gateway exige un JWT; Swagger UI lo envía tras pulsar "Authorize".
+  security: [{ bearerAuth: [] }],
   paths: {
     "/empleados": {
       post: {
@@ -177,6 +179,7 @@ const openapiSpec = {
     "/health": {
       get: {
         summary: "Salud interna del servicio (no enrutada por el Gateway)",
+        security: [],
         responses: {
           200: { description: "Servicio y base de datos UP", content: { "application/json": { schema: { $ref: "#/components/schemas/Health" } } } },
           503: { description: "La base de datos no responde", content: { "application/json": { schema: { $ref: "#/components/schemas/Health" } } } }
@@ -248,6 +251,9 @@ const openapiSpec = {
     }
   },
   components: {
+    securitySchemes: {
+      bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" }
+    },
     schemas: {
       Empleado: empleadoSchema,
       ActualizacionEmpleado: actualizacionSchema,

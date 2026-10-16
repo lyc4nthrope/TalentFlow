@@ -6,6 +6,7 @@
     "description": "Servicio puramente reactivo: consume usuario.creado, usuario.recuperacion, cuenta.activada, cuenta.desactivada, vacaciones.programadas y vacaciones.iniciadas desde RabbitMQ, simula el envío de la notificación (log [NOTIFICACIÓN]) y guarda el historial. Descarta eventos duplicados por el id del mensaje. Ningún servicio lo invoca por REST: estos endpoints solo consultan el historial."
   },
   "servers": [{ "url": "/" }],
+  "security": [{ "bearerAuth": [] }],
   "paths": {
     "/notificaciones": {
       "get": {
@@ -42,6 +43,9 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
     "schemas": {
       "Notificacion": {
         "type": "object",

@@ -134,13 +134,13 @@ const paginaSwagger = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <title>Notificaciones - Swagger UI</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.11.0/swagger-ui.css">
 </head>
 <body>
   <div id="swagger-ui"></div>
-  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.11.0/swagger-ui-bundle.js"></script>
   <script>
-    window.ui = SwaggerUIBundle({ url: "/notificaciones/openapi.json", dom_id: "#swagger-ui" });
+    window.ui = SwaggerUIBundle({ url: "/notificaciones/openapi.json", dom_id: "#swagger-ui", persistAuthorization: true });
   </script>
 </body>
 </html>`

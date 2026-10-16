@@ -1,0 +1,202 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "TalentFlow - Servicio de Autenticación",
+    "version": "1.0.0",
+    "description": "Inicio de sesión con JWT, recuperación y cambio de contraseña. No hay registro público: las cuentas nacen del evento empleado.creado y se activan con el token enviado por correo (POST /auth/reset-password). El token de /auth/login se usa en \"Authorize\" para el resto de servicios."
+  },
+  "servers": [{ "url": "/" }],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "summary": "Inicia sesión y devuelve un token de acceso (JWT)",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SolicitudLogin" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credenciales válidas",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RespuestaLogin" } } }
+          },
+          "400": { "$ref": "#/components/responses/CuerpoInvalido" },
+          "401": {
+            "description": "Credenciales inválidas (mismo mensaje exista o no la cuenta, o si está inactiva)",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "500": { "$ref": "#/components/responses/ErrorInterno" }
+        }
+      }
+    },
+    "/auth/recover-password": {
+      "post": {
+        "summary": "Solicita la recuperación de contraseña",
+        "description": "Responde 202 de inmediato exista o no la cuenta: ni la respuesta ni su tiempo revelan qué emails existen. Si la cuenta existe, se publica usuario.recuperacion y notificaciones envía el token por correo.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email"],
+                "properties": { "email": { "type": "string", "format": "email", "example": "juan.perez@empresa.com" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Solicitud aceptada",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Mensaje" },
+                "example": { "message": "Si el correo corresponde a una cuenta, recibirá las instrucciones para restablecer la contraseña" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/CuerpoInvalido" }
+        }
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "summary": "Establece la contraseña con el token recibido por correo (activación o recuperación)",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["token", "newPassword"],
+                "properties": {
+                  "token": { "type": "string", "description": "Token de un solo uso recibido por correo" },
+                  "newPassword": { "$ref": "#/components/schemas/Password" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Contraseña establecida",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Mensaje" },
+                "example": { "message": "Contraseña establecida correctamente" }
+              }
+            }
+          },
+          "400": {
+            "description": "Cuerpo JSON inválido o la contraseña no cumple la política",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "401": {
+            "description": "Token inválido o expirado (inexistente, ya usado, vencido o cuenta desactivada)",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "500": { "$ref": "#/components/responses/ErrorInterno" }
+        }
+      }
+    },
+    "/auth/change-password": {
+      "post": {
+        "summary": "Cambia la contraseña de quien está autenticado",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["currentPassword", "newPassword"],
+                "properties": {
+                  "currentPassword": { "type": "string", "format": "password" },
+                  "newPassword": { "$ref": "#/components/schemas/Password" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Contraseña actualizada",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Mensaje" },
+                "example": { "message": "Contraseña actualizada correctamente" }
+              }
+            }
+          },
+          "400": {
+            "description": "Cuerpo JSON inválido, contraseña actual incorrecta o vacía, nueva contraseña igual a la actual o fuera de la política",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "401": {
+            "description": "Token de acceso ausente, inválido o expirado, o la cuenta ya no puede autenticarse",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "500": { "$ref": "#/components/responses/ErrorInterno" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "responses": {
+      "CuerpoInvalido": {
+        "description": "Cuerpo JSON inválido",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "ErrorInterno": {
+        "description": "Error interno del servidor (el detalle queda solo en el log)",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    },
+    "schemas": {
+      "SolicitudLogin": {
+        "type": "object",
+        "required": ["password"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "example": "juan.perez@empresa.com" },
+          "username": { "type": "string", "description": "Alternativa a email: se usa solo si email viene vacío." },
+          "password": { "type": "string", "format": "password" }
+        }
+      },
+      "RespuestaLogin": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string", "description": "JWT HS256 para la cabecera Authorization: Bearer <token>" },
+          "tipo": { "type": "string", "enum": ["Bearer"] }
+        }
+      },
+      "Password": {
+        "type": "string",
+        "format": "password",
+        "description": "Entre 8 y 72 bytes, con al menos una mayúscula, una minúscula y un dígito."
+      },
+      "Mensaje": {
+        "type": "object",
+        "properties": { "message": { "type": "string" } }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "integer", "example": 401 },
+          "error": { "type": "string", "example": "Unauthorized" },
+          "message": { "type": "string", "example": "credenciales inválidas" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "path": { "type": "string", "example": "/auth/login" }
+        }
+      }
+    }
+  }
+}

@@ -108,6 +108,31 @@ func TestDocumentacionDisponibleBajoElPrefijoDelServicio(t *testing.T) {
 	}
 }
 
+// D13: el Gateway exige un JWT; la especificación lo declara para que Swagger UI lo envíe.
+func TestEspecificacionDeclaraBearerGlobal(t *testing.T) {
+	spec := peticion(t, nuevoManejadorDePrueba(consultasFalsas{}), "/notificaciones/openapi.json")
+
+	var doc struct {
+		Security   []map[string][]string `json:"security"`
+		Components struct {
+			SecuritySchemes map[string]map[string]string `json:"securitySchemes"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(spec.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("openapi.json no es JSON válido: %v", err)
+	}
+	esquema := doc.Components.SecuritySchemes["bearerAuth"]
+	if esquema["type"] != "http" || esquema["scheme"] != "bearer" || esquema["bearerFormat"] != "JWT" {
+		t.Fatalf("esquema bearerAuth inesperado: %v", esquema)
+	}
+	if len(doc.Security) != 1 {
+		t.Fatalf("se esperaba seguridad global bearerAuth: %v", doc.Security)
+	}
+	if _, ok := doc.Security[0]["bearerAuth"]; !ok {
+		t.Fatalf("se esperaba seguridad global bearerAuth: %v", doc.Security)
+	}
+}
+
 func TestRutaDesconocidaResponde404EnJSON(t *testing.T) {
 	respuesta := peticion(t, nuevoManejadorDePrueba(consultasFalsas{}), "/otra-cosa")
 
