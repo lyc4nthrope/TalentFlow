@@ -58,7 +58,7 @@ El PDF parte de un ecosistema "sin una sola prueba automatizada". Este repo ya t
 | **F10** Escenarios de offboarding | P5: notificación de desvinculación, login bloqueado, recuperación que falla, auditoría `?estado=RETIRADO`; reutilizar pasos | En verde | ✅ |
 | **F11** Reproducibilidad | P6: 3 ejecuciones seguidas sin fallos; fallo simulado (mensaje claro, rojo en el HTML, registrado en el XML, código de salida ≠ 0); D13 opcional; un solo comando que aplique `docker-compose.e2e.yml` antes de la suite, porque sin el override el ciclo de vacaciones falla con `E2E_SCHEDULER_SEGUNDOS=5` (pasa con 60, en unos 2 min); medir si la duración crece entre corridas, porque `GET /notificaciones` devuelve todo el historial y cada corrida lo agranda | Evidencia en `pruebas.md` | ✅ |
 | **F12** Documentación | README: pirámide y reparto, BDD y por qué, prerrequisitos, ejecución paso a paso, escenarios, herramientas y **tabla de reportes**; manual `docs/reto-06/` | Cada entregable del PDF presente | ✅ |
-| **F13** Cierre | Pruebas completas, revisión, PR `lyc4nthrope` → `dev` → `main` | Ramas sincronizadas | ⬜ |
+| **F13** Cierre | Pruebas completas, revisión, PR `lyc4nthrope` → `dev` → `main` | Ramas sincronizadas | ✅ |
 
 ## Fuera de alcance (anotado para después)
 

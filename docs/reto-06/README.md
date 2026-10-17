@@ -6,6 +6,7 @@ Cómo ejecutar cada suite, dónde quedan los reportes y dónde se demuestra cada
 |---|---|
 | **Este README** | Manual: criterios y entregables → dónde se demuestran, inicio rápido, cómo abrir los reportes, preguntas para la sustentación, problemas comunes |
 | [`pruebas.md`](pruebas.md) | Evidencia: reglas rotas a propósito y qué prueba lo detectó, tres corridas consecutivas con tiempos, fallo simulado (consola, XML, JSON, HTML y código de salida) |
+| [`sustentacion.md`](sustentacion.md) | Paso a paso para la sustentación, en el orden de los criterios de evaluación |
 | [`PLAN.md`](PLAN.md) | Diagnóstico de partida, decisiones de diseño (D1-D14), fases y aprendizajes de cada una |
 | [README raíz](../../README.md#automatización-de-pruebas-reto-6) | Documento de entrega: pirámide, BDD, prerrequisitos, ejecución paso a paso, **tabla de reportes**, escenarios, herramientas y decisiones técnicas |
 | [`../../Makefile`](../../Makefile) · [`../../docker-compose.e2e.yml`](../../docker-compose.e2e.yml) | Comandos únicos y override de la suite (scheduler cada 5 s + contenedor `bdd-tests`) |
