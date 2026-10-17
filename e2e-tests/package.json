@@ -1,0 +1,17 @@
+{
+  "name": "talentflow-e2e-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Suite BDD (Cucumber.js) contra el sistema TalentFlow desplegado (Reto 6)",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "pretest": "node -e \"const fs=require('fs');fs.rmSync('reports',{recursive:true,force:true});fs.mkdirSync('reports')\"",
+    "test": "cucumber-js",
+    "test:unidad": "node --test \"tests/*.test.js\""
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "13.3.0"
+  }
+}
