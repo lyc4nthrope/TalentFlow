@@ -61,6 +61,22 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Reto 6 (D8): pruebas de integración contra PostgreSQL 16 real (versiones del BOM de Spring Boot) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -70,18 +86,70 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+            <!-- Reto 6 (D9): reports/ se vacía al comienzo de cada build. Si no, un mvn test
+                 dejaría los TEST-*IT.xml de un verify anterior y el pipeline los publicaría
+                 como si fueran de esta ejecución. Solo borra reports/, no target/. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>limpiar-reportes</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                            <filesets>
+                                <fileset>
+                                    <directory>${project.basedir}/reports</directory>
+                                </fileset>
+                            </filesets>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <!-- Reto 6 (D9): un TEST-*.xml por clase de prueba en reports/junit -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <reportsDirectory>${project.basedir}/reports/junit</reportsDirectory>
+                    <!-- Agente de JaCoCo de las unitarias (target/jacoco.exec) -->
+                    <argLine>@{jacocoUnitarias}</argLine>
+                    <!-- Las *IT necesitan Docker: solo las corre Failsafe (mvn verify) -->
+                    <excludes>
+                        <exclude>**/*IT.java</exclude>
+                    </excludes>
                     <!-- El XML usa el nombre visible: cada fila de una tabla de casos
                          (@ParameterizedTest) aparece con su descripción, no solo con [n]. -->
                     <statelessTestsetReporter implementation="org.apache.maven.plugin.surefire.extensions.junit5.JUnit5Xml30StatelessReporter">
                         <usePhrasedTestCaseMethodName>true</usePhrasedTestCaseMethodName>
                     </statelessTestsetReporter>
                 </configuration>
+            </plugin>
+            <!-- Reto 6 (D8): pruebas de integración (*IT) con Testcontainers en integration-test/verify.
+                 Sus TEST-*IT.xml van al mismo reports/junit que las unitarias: un solo patrón para el pipeline. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <reportsDirectory>${project.basedir}/reports/junit</reportsDirectory>
+                    <!-- Agente aparte (target/jacoco-it.exec): no pisa la cobertura de las unitarias -->
+                    <argLine>@{jacocoIntegracion}</argLine>
+                    <statelessTestsetReporter implementation="org.apache.maven.plugin.surefire.extensions.junit5.JUnit5Xml30StatelessReporter">
+                        <usePhrasedTestCaseMethodName>true</usePhrasedTestCaseMethodName>
+                    </statelessTestsetReporter>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <!-- Reto 6 (D11, D14): cobertura de la lógica de negocio (dominio y aplicacion).
                  Arranque, configuración e infraestructura quedan fuera de la medición; la
@@ -90,13 +158,8 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>${jacoco.version}</version>
-                <configuration>
-                    <excludes>
-                        <exclude>com/talentflow/vacaciones/infraestructura/**</exclude>
-                        <exclude>com/talentflow/vacaciones/Configuracion*</exclude>
-                        <exclude>com/talentflow/vacaciones/VacacionesApplication*</exclude>
-                    </excludes>
-                </configuration>
+                <!-- Las exclusiones (D11) van en report y check, no a nivel del plugin: ahí también
+                     las tomaría el agente y no instrumentaría la persistencia que miden las *IT. -->
                 <executions>
                     <execution>
                         <id>prepare-agent</id>
@@ -104,8 +167,19 @@
                             <goal>prepare-agent</goal>
                         </goals>
                         <configuration>
+                            <propertyName>jacocoUnitarias</propertyName>
                             <!-- Por defecto el agente acumula en target/jacoco.exec entre ejecuciones:
                                  sin esto, una prueba borrada seguiría "cubriendo" desde la corrida anterior. -->
+                            <append>false</append>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>prepare-agent-integration</id>
+                        <goals>
+                            <goal>prepare-agent-integration</goal>
+                        </goals>
+                        <configuration>
+                            <propertyName>jacocoIntegracion</propertyName>
                             <append>false</append>
                         </configuration>
                     </execution>
@@ -117,6 +191,29 @@
                         </goals>
                         <configuration>
                             <outputDirectory>${project.basedir}/reports/coverage</outputDirectory>
+                            <excludes>
+                                <exclude>com/talentflow/vacaciones/infraestructura/**</exclude>
+                                <exclude>com/talentflow/vacaciones/Configuracion*</exclude>
+                                <exclude>com/talentflow/vacaciones/VacacionesApplication*</exclude>
+                            </excludes>
+                            <formats>
+                                <format>XML</format>
+                                <format>HTML</format>
+                            </formats>
+                        </configuration>
+                    </execution>
+                    <!-- Informativo, sin umbral: qué de la persistencia ejercitan las *IT -->
+                    <execution>
+                        <id>report-integration</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report-integration</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.basedir}/reports/coverage-integracion</outputDirectory>
+                            <includes>
+                                <include>com/talentflow/vacaciones/infraestructura/persistencia/**</include>
+                            </includes>
                             <formats>
                                 <format>XML</format>
                                 <format>HTML</format>
@@ -130,6 +227,11 @@
                             <goal>check</goal>
                         </goals>
                         <configuration>
+                            <excludes>
+                                <exclude>com/talentflow/vacaciones/infraestructura/**</exclude>
+                                <exclude>com/talentflow/vacaciones/Configuracion*</exclude>
+                                <exclude>com/talentflow/vacaciones/VacacionesApplication*</exclude>
+                            </excludes>
                             <rules>
                                 <rule>
                                     <element>PACKAGE</element>
