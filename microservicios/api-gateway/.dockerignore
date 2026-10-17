@@ -1,4 +1,5 @@
 node_modules
 tests
+reports
 Dockerfile
 .dockerignore

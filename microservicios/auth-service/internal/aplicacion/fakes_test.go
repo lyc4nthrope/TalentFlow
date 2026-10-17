@@ -30,6 +30,20 @@ type repoMemoria struct {
 	transaccion sync.Mutex
 	// fallarEfecto hace fallar el siguiente UPDATE del ciclo de vida (prueba de rollback).
 	fallarEfecto error
+	// fallarEn hace fallar solo la operación con ese nombre (p. ej. "BuscarPorEmail"),
+	// para llegar a un fallo que ocurre después de otras operaciones que sí funcionan.
+	fallarEn map[string]error
+	// competidor, si no es nil, se inserta justo antes del próximo Crear: simula otra
+	// transacción que crea una cuenta que choca y confirma primero (carrera).
+	competidor *dominio.Usuario
+}
+
+// fallo devuelve el error configurado para la operación (nil si debe funcionar).
+func (r *repoMemoria) fallo(op string) error {
+	if r.fallar != nil {
+		return r.fallar
+	}
+	return r.fallarEn[op]
 }
 
 func nuevoRepo() *repoMemoria {
@@ -44,11 +58,11 @@ func (r *repoMemoria) copia(u *dominio.Usuario) *dominio.Usuario {
 	return &c
 }
 
-func (r *repoMemoria) buscar(pred func(*dominio.Usuario) bool) (*dominio.Usuario, error) {
+func (r *repoMemoria) buscar(op string, pred func(*dominio.Usuario) bool) (*dominio.Usuario, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.fallar != nil {
-		return nil, r.fallar
+	if err := r.fallo(op); err != nil {
+		return nil, err
 	}
 	for _, u := range r.usuarios {
 		if pred(u) {
@@ -59,23 +73,29 @@ func (r *repoMemoria) buscar(pred func(*dominio.Usuario) bool) (*dominio.Usuario
 }
 
 func (r *repoMemoria) BuscarPorEmail(_ context.Context, email string) (*dominio.Usuario, error) {
-	return r.buscar(func(u *dominio.Usuario) bool { return u.Email == strings.ToLower(email) })
+	return r.buscar("BuscarPorEmail", func(u *dominio.Usuario) bool { return u.Email == strings.ToLower(email) })
 }
 func (r *repoMemoria) BuscarPorEmpleadoID(_ context.Context, id string) (*dominio.Usuario, error) {
-	return r.buscar(func(u *dominio.Usuario) bool { return u.EmpleadoID != "" && u.EmpleadoID == id })
+	return r.buscar("BuscarPorEmpleadoID", func(u *dominio.Usuario) bool { return u.EmpleadoID != "" && u.EmpleadoID == id })
 }
 func (r *repoMemoria) BuscarPorSujeto(_ context.Context, s string) (*dominio.Usuario, error) {
-	return r.buscar(func(u *dominio.Usuario) bool { return u.Sujeto == s })
+	return r.buscar("BuscarPorSujeto", func(u *dominio.Usuario) bool { return u.Sujeto == s })
 }
 func (r *repoMemoria) BuscarPorTokenHash(_ context.Context, h string) (*dominio.Usuario, error) {
-	return r.buscar(func(u *dominio.Usuario) bool { return u.TokenHash != "" && u.TokenHash == h })
+	return r.buscar("BuscarPorTokenHash", func(u *dominio.Usuario) bool { return u.TokenHash != "" && u.TokenHash == h })
 }
 
 func (r *repoMemoria) Crear(_ context.Context, u *dominio.Usuario) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.fallar != nil {
-		return r.fallar
+	if err := r.fallo("Crear"); err != nil {
+		return err
+	}
+	if c := r.competidor; c != nil {
+		r.competidor = nil
+		r.siguiente++
+		c.ID = fmt.Sprintf("u%d", r.siguiente)
+		r.usuarios[c.ID] = c
 	}
 	for _, e := range r.usuarios {
 		if e.Email == strings.ToLower(u.Email) || e.Sujeto == u.Sujeto || (u.EmpleadoID != "" && e.EmpleadoID == u.EmpleadoID) {
@@ -93,6 +113,9 @@ func (r *repoMemoria) Crear(_ context.Context, u *dominio.Usuario) error {
 func (r *repoMemoria) GuardarToken(_ context.Context, id, hash string, tipo dominio.TipoToken, expira time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.fallo("GuardarToken"); err != nil {
+		return err
+	}
 	u, ok := r.usuarios[id]
 	if !ok {
 		return errors.New("no existe")
@@ -104,6 +127,9 @@ func (r *repoMemoria) GuardarToken(_ context.Context, id, hash string, tipo domi
 func (r *repoMemoria) ConsumirToken(_ context.Context, id, hash, estadoEsperado, pass, estado string) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.fallo("ConsumirToken"); err != nil {
+		return false, err
+	}
 	u, ok := r.usuarios[id]
 	if !ok || u.TokenHash != hash || u.Estado != estadoEsperado || r.consumoGanadoPorOtro {
 		return false, nil
@@ -116,6 +142,9 @@ func (r *repoMemoria) ConsumirToken(_ context.Context, id, hash, estadoEsperado,
 func (r *repoMemoria) ActualizarPassword(_ context.Context, id, pass string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.fallo("ActualizarPassword"); err != nil {
+		return err
+	}
 	u, ok := r.usuarios[id]
 	if !ok {
 		return errors.New("no existe")
@@ -251,6 +280,16 @@ func (p *publicadorEspia) ultimo() eventos.Envelope {
 	defer p.mu.Unlock()
 	return p.sobres[len(p.sobres)-1]
 }
+
+// emisorQueFalla simula un fallo al firmar el token de acceso.
+type emisorQueFalla struct{ emisorFalso }
+
+func (emisorQueFalla) Emitir(string, string, string) (string, error) {
+	return "", errors.New("firma no disponible")
+}
+
+// generadorQueFalla simula que no se pudo generar un token aleatorio.
+func generadorQueFalla() (string, error) { return "", errors.New("sin entropía") }
 
 // emisorFalso emite "token:<sujeto>:<rol>" y solo valida lo que emitió.
 type emisorFalso struct{}

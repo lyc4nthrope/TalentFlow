@@ -56,8 +56,12 @@ final class Fakes {
                     .findFirst();
         }
 
+        /** Se ejecuta al empezar cancelar: simula otra operación que llega justo antes. */
+        Runnable alCancelar = () -> { };
+
         @Override
         public boolean cancelar(String id) {
+            alCancelar.run();
             Vacaciones v = datos.get(id);
             if (v == null || v.estado() != EstadoVacaciones.PROGRAMADA) {
                 return false;

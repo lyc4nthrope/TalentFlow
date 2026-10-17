@@ -234,6 +234,22 @@ func TestTokenExpiradoSeRechaza(t *testing.T) {
 	}
 }
 
+// Reto 6, F5: la prueba anterior mira el instante exacto del vencimiento, donde la regla
+// correcta (ahora antes del vencimiento) y la invertida (ahora después) coinciden en rechazar.
+// Esta mira un token vencido hace rato, el único caso en que la regla invertida lo aceptaría.
+func TestTokenVencidoHaceRatoSeRechaza(t *testing.T) {
+	e := nuevoEntorno(t)
+	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
+	e.reloj.avanzar(48 * time.Hour)
+	if err := e.svc.RestablecerPassword(ctx, "tok-1", passwordValida); !errors.Is(err, ErrTokenInvalido) {
+		t.Fatalf("token vencido hace 24 h: err = %v", err)
+	}
+	u, _ := e.repo.BuscarPorSujeto(ctx, "E001")
+	if u.Estado != dominio.EstadoPendienteActivacion || u.PasswordHash != "" {
+		t.Fatalf("la cuenta cambió con un token vencido: estado = %s", u.Estado)
+	}
+}
+
 func TestTokenVigenteUnSegundoAntesDeVencer(t *testing.T) {
 	e := nuevoEntorno(t)
 	_ = e.svc.CrearCuentaDesdeEmpleado(ctx, nuevoEventoID(), dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"})
