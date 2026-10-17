@@ -1,0 +1,21 @@
+meta {
+  name: Paso 09 - Empleados - retirar con el JWT de USER
+  type: http
+  seq: 18
+}
+
+delete {
+  url: {{baseUrl}}/empleados/{{e1}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{userToken}}
+}
+
+tests {
+  test("403: el rol USER no puede escribir", function () {
+    expect(res.getStatus()).to.equal(403);
+  });
+}

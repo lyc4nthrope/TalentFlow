@@ -1,0 +1,21 @@
+meta {
+  name: Paso 07 - Empleados - listar con el JWT de USER
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{baseUrl}}/empleados
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{userToken}}
+}
+
+tests {
+  test("200: el rol USER puede leer", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

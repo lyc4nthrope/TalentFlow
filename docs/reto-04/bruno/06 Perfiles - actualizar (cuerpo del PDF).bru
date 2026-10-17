@@ -1,0 +1,31 @@
+meta {
+  name: Perfiles - actualizar (cuerpo del PDF)
+  type: http
+  seq: 6
+}
+
+put {
+  url: {{baseUrl}}/perfiles/{{empleadoId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "telefono": "3001234567",
+    "ciudad": "Armenia",
+    "biografia": "Ingeniero de sistemas"
+  }
+}
+
+tests {
+  test("200: actualización parcial", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().telefono).to.equal("3001234567");
+    expect(res.getBody().direccion).to.equal("");
+  });
+}

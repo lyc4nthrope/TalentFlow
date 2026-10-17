@@ -1,0 +1,17 @@
+[project]
+name = "gestion-perfiles"
+version = "1.0.0"
+description = "Servicio de Gestión de Perfiles (Reto 4, TalentFlow)"
+requires-python = ">=3.13"
+
+# Estilo del código (ruff): mismo ancho de línea que el resto del repositorio.
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "DTZ", "BLE", "S"]
+ignore = ["S101"]  # assert es la forma idiomática de verificar en pytest
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

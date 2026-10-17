@@ -1,0 +1,24 @@
+meta {
+  name: Paso 18 - Empleados - auditoría de retirados
+  type: http
+  seq: 41
+}
+
+get {
+  url: {{baseUrl}}/empleados?estado=RETIRADO
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+tests {
+  test("lista a E001 con su fechaRetiro", function () {
+    expect(res.getStatus()).to.equal(200);
+    const e = res.getBody().find((x) => x.id === bru.getVar("e1"));
+    expect(e).to.not.equal(undefined);
+    expect(e.fechaRetiro).to.be.a("string");
+  });
+}

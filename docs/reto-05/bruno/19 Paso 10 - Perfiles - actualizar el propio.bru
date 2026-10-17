@@ -1,0 +1,34 @@
+meta {
+  name: Paso 10 - Perfiles - actualizar el propio
+  type: http
+  seq: 19
+}
+
+put {
+  url: {{baseUrl}}/perfiles/{{e1}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{userToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "telefono": "3001234567",
+    "ciudad": "Armenia",
+    "biografia": "Ingeniero de sistemas"
+  }
+}
+
+tests {
+  test("200: sub del token = empleadoId de la ruta", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().ciudad).to.equal("Armenia");
+  });
+}

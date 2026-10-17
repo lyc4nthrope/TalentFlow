@@ -1,0 +1,21 @@
+meta {
+  name: Notificaciones - bienvenida
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/notificaciones/{{empleadoId}}
+  body: none
+  auth: none
+}
+
+tests {
+  // Desde el Reto 5 la bienvenida llega como SEGURIDAD (usuario.creado del auth-service, con el token de activación).
+  test("se registró la bienvenida (SEGURIDAD con el token de activación)", function () {
+    expect(res.getStatus()).to.equal(200);
+    const bienvenida = res.getBody().find((n) => n.tipo === "SEGURIDAD");
+    expect(bienvenida).to.not.equal(undefined);
+    expect(bienvenida.mensaje).to.include("Para establecer o recuperar su contraseña");
+  });
+}

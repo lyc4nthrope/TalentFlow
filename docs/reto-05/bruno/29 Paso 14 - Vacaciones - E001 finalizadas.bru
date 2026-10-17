@@ -1,0 +1,32 @@
+meta {
+  name: Paso 14 - Vacaciones - E001 finalizadas
+  type: http
+  seq: 29
+}
+
+get {
+  url: {{baseUrl}}/vacaciones/{{vac1}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+script:pre-request {
+  // El scheduler corre cada minuto (VACACIONES_CRON) y el período empieza/termina en un minuto exacto:
+  // se espera hasta ese instante más 8 s para que el evento recorra el broker.
+  const espera = Number(bru.getVar("fin1Ms")) + 8000 - Date.now();
+  if (espera > 0) await bru.sleep(espera);
+}
+
+tests {
+  test("FINALIZADA (el scheduler publicó vacaciones.finalizadas)", function () {
+    expect(res.getBody().estado).to.equal("FINALIZADA");
+  });
+}
+
+docs {
+  En el log de auth-service: `cuenta del empleado <id> reactivada al terminar las vacaciones <vacacionesId>`.
+}

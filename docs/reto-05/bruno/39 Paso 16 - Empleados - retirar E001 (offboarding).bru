@@ -1,0 +1,23 @@
+meta {
+  name: Paso 16 - Empleados - retirar E001 (offboarding)
+  type: http
+  seq: 39
+}
+
+delete {
+  url: {{baseUrl}}/empleados/{{e1}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+tests {
+  test("200 RETIRADO con fechaRetiro (publica empleado.retirado)", function () {
+    expect([200, 204]).to.include(res.getStatus());
+    expect(res.getBody().estado).to.equal("RETIRADO");
+    expect(res.getBody().fechaRetiro).to.be.a("string");
+  });
+}

@@ -1,0 +1,47 @@
+meta {
+  name: Empleados - crear (publica empleado.creado)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/empleados
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "id": "{{empleadoId}}",
+    "nombre": "Juan",
+    "apellido": "Pérez",
+    "email": "{{empleadoId}}@talentflow.test",
+    "numeroEmpleado": "{{empleadoId}}",
+    "cargo": "Desarrollador Senior",
+    "area": "Tecnología",
+    "departamentoId": "IT",
+    "fechaIngreso": "2026-03-01"
+  }
+}
+
+script:pre-request {
+  // Id único por corrida: la colección se puede ejecutar varias veces sobre los mismos datos.
+  bru.setVar("empleadoId", "B" + Date.now().toString().slice(-9));
+  // Vacaciones siempre en el futuro: dentro de 60 a 74 días.
+  const dia = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  bru.setVar("vacInicio", dia(60));
+  bru.setVar("vacFin", dia(74));
+  bru.setVar("vacCruce", dia(70));
+  bru.setVar("vacCruceFin", dia(90));
+}
+
+tests {
+  test("201 con Location", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getHeader("location")).to.equal("/empleados/" + bru.getVar("empleadoId"));
+  });
+}

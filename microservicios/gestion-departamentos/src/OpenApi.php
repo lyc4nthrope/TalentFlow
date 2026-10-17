@@ -41,6 +41,9 @@ function obtenerEspecificacionOpenApi(): array
             'description' => 'Registro, consulta y listado de departamentos. Persiste en MySQL.',
         ],
         'servers' => [['url' => '/']],
+        // D13: el Gateway exige un JWT. Los [] vacíos son listas PHP y json_encode los
+        // emite como [] (no {}), que es lo que pide OpenAPI para un requisito sin scopes.
+        'security' => [['bearerAuth' => []]],
         'paths' => [
             '/departamentos' => [
                 'post' => [
@@ -109,6 +112,9 @@ function obtenerEspecificacionOpenApi(): array
             ],
         ],
         'components' => [
+            'securitySchemes' => [
+                'bearerAuth' => ['type' => 'http', 'scheme' => 'bearer', 'bearerFormat' => 'JWT'],
+            ],
             'schemas' => [
                 'Departamento' => $departamentoSchema,
                 'Error' => $errorSchema,
@@ -132,8 +138,9 @@ function obtenerHtmlSwagger(): string
   <script>
     window.onload = () => {
       window.ui = SwaggerUIBundle({
-        url: '/openapi.json',
-        dom_id: '#swagger-ui'
+        url: '/departamentos/openapi.json',
+        dom_id: '#swagger-ui',
+        persistAuthorization: true
       });
     };
   </script>

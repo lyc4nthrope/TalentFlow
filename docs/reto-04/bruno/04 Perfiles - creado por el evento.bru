@@ -1,0 +1,25 @@
+meta {
+  name: Perfiles - creado por el evento
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/perfiles/{{empleadoId}}
+  body: none
+  auth: none
+}
+
+script:pre-request {
+  // La reacción al evento es asincrónica: se espera a que el consumidor la procese.
+  await bru.sleep(2500);
+}
+
+tests {
+  test("el perfil por defecto existe sin haberlo creado por REST", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().nombre).to.equal("Juan Pérez");
+    expect(res.getBody().telefono).to.equal("");
+    expect(res.getBody().archivado).to.equal(false);
+  });
+}

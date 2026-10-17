@@ -1,0 +1,33 @@
+meta {
+  name: Paso 02 - Departamentos - crear IT
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/departamentos
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "id": "IT",
+    "nombre": "Tecnología",
+    "descripcion": "Departamento de TI"
+  }
+}
+
+tests {
+  test("201, o 400 si IT ya existía de una corrida anterior", function () {
+    expect([201, 400]).to.include(res.getStatus());
+  });
+}

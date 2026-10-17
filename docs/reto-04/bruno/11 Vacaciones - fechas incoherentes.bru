@@ -1,0 +1,27 @@
+meta {
+  name: Vacaciones - fechas incoherentes
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/vacaciones
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "empleadoId": "{{empleadoId}}",
+    "fechaInicio": "{{vacFin}}",
+    "fechaFin": "{{vacInicio}}"
+  }
+}
+
+tests {
+  test("400", function () { expect(res.getStatus()).to.equal(400); });
+}

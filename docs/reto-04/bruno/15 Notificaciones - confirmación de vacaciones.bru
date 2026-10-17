@@ -1,0 +1,22 @@
+meta {
+  name: Notificaciones - confirmación de vacaciones
+  type: http
+  seq: 15
+}
+
+get {
+  url: {{baseUrl}}/notificaciones/{{empleadoId}}
+  body: none
+  auth: none
+}
+
+script:pre-request {
+  // La reacción al evento es asincrónica: se espera a que el consumidor la procese.
+  await bru.sleep(2500);
+}
+
+tests {
+  test("se registró la notificación VACACIONES", function () {
+    expect(res.getBody().map((n) => n.tipo)).to.include("VACACIONES");
+  });
+}

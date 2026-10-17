@@ -1,6 +1,6 @@
 const CircuitBreaker = require("opossum");
 
-function esperar(ms) {
+function esperar(ms){
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -16,31 +16,31 @@ function crearClienteDepartamentos({
   async function intentarUnaVez(departamentoId) {
     const controlador = new AbortController();
     const timer = setTimeout(() => controlador.abort(), timeoutMs);
-    try {
-      const respuesta = await fetchImpl(`${baseUrl}/departamentos/${departamentoId}`, {
+    try{
+      const respuesta = await fetchImpl(`${baseUrl}/departamentos/${departamentoId}`,{
         signal: controlador.signal
       });
 
-      if (respuesta.status === 404) {
+      if(respuesta.status === 404){
         return false;
       }
-      if (!respuesta.ok) {
-        throw new Error(`Respuesta inesperada del servicio departamentos`);
+      if(!respuesta.ok){
+        throw new Error(`Respuesta inesperada del servicio departamnetos`);
       }
       return true;
-    } finally {
+    }finally{
       clearTimeout(timer);
     }
   }
 
   async function realizarPeticionConReintentos(departamentoId) {
     let ultimoError;
-    for (let intento = 0; intento <= maxReintentos; intento += 1) {
-      try {
+    for(let intento = 0; intento <= maxReintentos; intento += 1){
+      try{
         return await intentarUnaVez(departamentoId);
-      } catch (error) {
+      } catch(error){
         ultimoError = error;
-        if (intento < maxReintentos) {
+        if(intento < maxReintentos){
           await esperar(200);
         }
       }
@@ -48,18 +48,25 @@ function crearClienteDepartamentos({
     throw ultimoError;
   }
 
+
+
+    //  breakerOptions||
+    //  La ventana por defecto de opossum es de 10s (rollingCountTimeout), pero cada
+    // llamada completa (timeout de conexión + reintentos) tarda ~9.8s cuando
+    // departamentos está totalmente caído (contenedor detenido, no solo el proceso:
+    // no hay ECONNREFUSED inmediato, hay que esperar el timeout de conexión TCP en
+    // cada intento). Con la ventana por defecto, las estadísticas de una llamada
+    // caducan antes de que la siguiente termine, y el circuito nunca junta el
+    // volumeThreshold necesario para abrir. Se amplía a 60s (10 cubos de 6s) para
+    // que varias llamadas lentas sí caigan dentro de la misma ventana estadística.
+
+  
   const breakerOptions = {
-    timeout: (timeoutMs * (maxReintentos + 1)) + 5000,
+       timeout: (timeoutMs * (maxReintentos + 1)) + 5000,
     errorThresholdPercentage,
     resetTimeout,
     volumeThreshold: 4,
     capacity: 10,
-    // La ventana por defecto de opossum es de 10s (rollingCountTimeout). Cuando
-    // departamentos-service está totalmente caído, cada llamada completa (timeout de
-    // conexión + reintentos) puede tardar ~10s según el entorno de Docker: las
-    // estadísticas de una llamada caducan antes de que termine la siguiente y el
-    // circuito nunca junta el volumeThreshold dentro de la misma ventana (se queda
-    // CLOSED para siempre). Se amplía a 60s (10 cubos de 6s).
     rollingCountTimeout: 60000,
     rollingCountBuckets: 10
   };

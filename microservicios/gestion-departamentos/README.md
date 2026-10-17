@@ -66,7 +66,7 @@ public/index.php                    # Punto de entrada HTTP: enrutamiento y mane
 src/
 ├── Database.php                    # Conexión PDO a MySQL (lee configuración de variables de entorno)
 ├── DepartamentoRepository.php      # Acceso a datos (buscarPorId, guardar, listar)
-└── OpenApi.php                     # Especificación OpenAPI + HTML de Swagger UI (/docs)
+└── OpenApi.php                     # Especificación OpenAPI + HTML de Swagger UI (/departamentos/docs)
 ```
 
 Sin Composer ni autoload: el servicio no tiene dependencias externas, así que se mantuvo deliberadamente simple.
@@ -92,7 +92,7 @@ docker compose up --build
 
 ## Documentación OpenAPI
 
-Desde el Reto 3 este servicio ya no publica puerto al host (`expose`, no `ports`), así que su Swagger UI (`/docs`, `/openapi.json`) no es alcanzable desde fuera de la red de Docker. El Gateway solo enruta `/departamentos/*`, no `/docs` (ver README raíz).
+Swagger UI en `http://localhost:8080/departamentos/docs` y la especificación en `/departamentos/openapi.json`, a través del Gateway. Viven bajo el prefijo `/departamentos` porque el servicio no publica puerto al host y el Gateway solo enruta ese prefijo (hasta el Reto 3 estaban en `/docs` y no eran alcanzables).
 
 ## Pruebas
 

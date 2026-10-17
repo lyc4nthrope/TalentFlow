@@ -1,0 +1,18 @@
+meta {
+  name: Vacaciones - cancelar
+  type: http
+  seq: 17
+}
+
+delete {
+  url: {{baseUrl}}/vacaciones/{{vacacionesId}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("200 CANCELADA (no se borra)", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().estado).to.equal("CANCELADA");
+  });
+}

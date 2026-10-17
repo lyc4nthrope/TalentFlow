@@ -1,0 +1,19 @@
+meta {
+  name: Empleados - retirar (publica empleado.retirado)
+  type: http
+  seq: 18
+}
+
+delete {
+  url: {{baseUrl}}/empleados/{{empleadoId}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("200 RETIRADO con fechaRetiro", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().estado).to.equal("RETIRADO");
+    expect(res.getBody().fechaRetiro).to.match(/Z$/);
+  });
+}

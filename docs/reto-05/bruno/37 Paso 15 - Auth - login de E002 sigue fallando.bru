@@ -1,0 +1,28 @@
+meta {
+  name: Paso 15 - Auth - login de E002 sigue fallando
+  type: http
+  seq: 37
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{email2}}",
+    "password": "{{passInicial}}"
+  }
+}
+
+tests {
+  test("401: vacaciones.finalizadas no reactivó la cuenta retirada", function () {
+    expect(res.getStatus()).to.equal(401);
+  });
+}
