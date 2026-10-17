@@ -1,0 +1,29 @@
+meta {
+  name: Paso 08 - Auth - login con la contraseña recuperada
+  type: http
+  seq: 17
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{email1}}",
+    "password": "{{passRecuperada}}"
+  }
+}
+
+tests {
+  test("200", function () {
+    expect(res.getStatus()).to.equal(200);
+    bru.setVar("userToken", res.getBody().token);
+  });
+}

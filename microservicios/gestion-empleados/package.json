@@ -10,6 +10,7 @@
     "test": "node --test \"tests/*.test.js\""
   },
   "dependencies": {
+    "amqplib": "^0.10.9",
     "express": "^4.19.2",
     "opossum": "^10.0.0",
     "pg": "^8.23.0",

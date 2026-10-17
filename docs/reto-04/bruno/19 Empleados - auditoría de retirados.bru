@@ -1,0 +1,19 @@
+meta {
+  name: Empleados - auditoría de retirados
+  type: http
+  seq: 19
+}
+
+get {
+  url: {{baseUrl}}/empleados?estado=RETIRADO
+  body: none
+  auth: none
+}
+
+tests {
+  test("el retirado aparece con su fechaRetiro", function () {
+    const retirado = res.getBody().find((e) => e.id === bru.getVar("empleadoId"));
+    expect(retirado.estado).to.equal("RETIRADO");
+    expect(retirado.fechaRetiro).to.be.a("string");
+  });
+}

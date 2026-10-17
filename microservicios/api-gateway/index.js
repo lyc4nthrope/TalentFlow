@@ -1,94 +1,32 @@
-const express = require('express')
-const { createProxyMiddleware } = require('http-proxy-middleware');
+// Punto de entrada: lee la configuración del entorno y abre el puerto. La lógica vive en
+// app.js (construible sin red, para las pruebas).
+const { crearApp } = require('./app');
 
-const app = express();
 const PORT = process.env.PORT || 8080;
-
-const EMPLEADOS_URL = process.env.EMPLEADOS_SERVICE_URL || 'http://empleados-service:8081';
-const DEPARTAMENTOS_URL = process.env.DEPARTAMENTOS_SERVICE_URL || 'http://departamentos-service:8082';
-
-const TIMEOUT_HEALTH_MS = 2000;
-
-// Consulta el /health interno de un servicio. Nunca lanza: si no responde a tiempo,
-// o responde algo que no es JSON, lo reporta como DOWN con el motivo.
-async function consultarSalud(url) {
-    try {
-        const respuesta = await fetch(`${url}/health`, { signal: AbortSignal.timeout(TIMEOUT_HEALTH_MS) });
-        const cuerpo = await respuesta.json();
-        return { status: cuerpo.status ?? 'DOWN', ...cuerpo.components };
-    } catch (error) {
-        return { status: 'DOWN', detalle: 'No responde' };
-    }
+// Reto 5, D11/D21: el secreto es obligatorio y no tiene valor por defecto en el código.
+// Lo inyecta Compose (el mismo que recibe auth-service); sin él, el Gateway no arranca.
+const JWT_SECRET = process.env.JWT_SECRET;
+// Un valor de solo espacios cuenta como ausente: firmar con él sería trivialmente adivinable.
+if (!JWT_SECRET || JWT_SECRET.trim() === '') {
+    console.error('API Gateway: falta la variable de entorno JWT_SECRET; no se puede validar ningún token. No se inicia.');
+    process.exit(1);
 }
+// El emisor no es un secreto: tiene valor por defecto.
+const JWT_ISSUER = process.env.JWT_ISSUER || 'auth-service';
 
-// Salud propia del Gateway (siempre 200 mientras el Gateway esté vivo, por eso sirve
-// para su healthcheck de Docker) + el estado de cada servicio y del Circuit Breaker,
-// para ver todo el sistema desde la única URL base. "sistema" es OK solo si todo está
-// UP y el circuito CLOSED; si no, DEGRADADO.
-app.get('/health', async (req, res) => {
-    const [empleados, departamentos] = await Promise.all([
-        consultarSalud(EMPLEADOS_URL),
-        consultarSalud(DEPARTAMENTOS_URL)
-    ]);
+// Tabla única de servicios detrás del Gateway: de aquí salen tanto las rutas como el
+// /health agregado. Agregar un servicio = agregar una fila. Todos usan expose: en Compose
+// (solo son alcanzables a través del Gateway).
+const SERVICIOS = [
+    { nombre: 'auth-service', prefijo: '/auth', url: process.env.AUTH_SERVICE_URL || 'http://auth-service:8086' },
+    { nombre: 'empleados-service', prefijo: '/empleados', url: process.env.EMPLEADOS_SERVICE_URL || 'http://empleados-service:8081' },
+    { nombre: 'departamentos-service', prefijo: '/departamentos', url: process.env.DEPARTAMENTOS_SERVICE_URL || 'http://departamentos-service:8082' },
+    // Reto 4
+    { nombre: 'perfiles-service', prefijo: '/perfiles', url: process.env.PERFILES_SERVICE_URL || 'http://perfiles-service:8083' },
+    { nombre: 'notificaciones-service', prefijo: '/notificaciones', url: process.env.NOTIFICACIONES_SERVICE_URL || 'http://notificaciones-service:8084' },
+    { nombre: 'vacaciones-service', prefijo: '/vacaciones', url: process.env.VACACIONES_SERVICE_URL || 'http://vacaciones-service:8085' }
+];
 
-    const todoOk =
-        empleados.status === 'UP' &&
-        departamentos.status === 'UP' &&
-        empleados.circuitoDepartamentos === 'CLOSED';
-
-    res.status(200).json({
-        status: 'UP',
-        service: 'api-gateway',
-        timestamp: new Date().toISOString(),
-        sistema: todoOk ? 'OK' : 'DEGRADADO',
-        servicios: {
-            'empleados-service': empleados,
-            'departamentos-service': departamentos
-        }
-    });
-});
-
-const handleProxyError = (err, req, res) => {
-    console.error(`[Gateway Error] ${err.message}`);
-    res.status(503).json({
-        error: 'Service Unavailable',
-        message: 'El servicio solicitado no está disponible temporalmente',
-        path: req.originalUrl
-    });
-};
-
-// Nota: se monta en '/' (sin prefijo) y se usa pathFilter en vez de mount-path,
-// porque Express recorta el prefijo del mount antes de invocar el proxy y
-// pathRewrite solo puede reponer un string fijo, rompiendo rutas con parámetros
-// como /empleados/:id (verificado: producía /empleadosE001 en vez de /empleados/E001).
-app.use(
-    createProxyMiddleware({
-        target: EMPLEADOS_URL,
-        changeOrigin: true,
-        pathFilter: ['/empleados'],
-        on: { error: handleProxyError }
-    })
-);
-
-app.use(
-    createProxyMiddleware({
-        target: DEPARTAMENTOS_URL,
-        changeOrigin: true,
-        pathFilter: ['/departamentos'],
-        on: { error: handleProxyError }
-    })
-);
-
-// Cualquier ruta fuera de /health, /empleados/* y /departamentos/*: 404 en JSON con el
-// mismo formato que el 503, en vez de la página HTML por defecto de Express.
-app.use((req, res) => {
-    res.status(404).json({
-        error: 'Not Found',
-        message: 'Ruta no enrutada por el API Gateway',
-        path: req.originalUrl
-    });
-});
-
-app.listen(PORT, () => {
+crearApp({ jwtSecret: JWT_SECRET, jwtIssuer: JWT_ISSUER, servicios: SERVICIOS }).listen(PORT, () => {
     console.log(`API Gateway ejecutandose en el puerto ${PORT}`);
 });

@@ -1,0 +1,20 @@
+meta {
+  name: Sistema - health
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/health
+  body: none
+  auth: none
+}
+
+tests {
+  test("200 y todo el sistema OK (5 servicios, sin problemas)", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().sistema).to.equal("OK");
+    expect(res.getBody().problemas).to.eql([]);
+    expect(Object.keys(res.getBody().servicios)).to.have.length(5);
+  });
+}

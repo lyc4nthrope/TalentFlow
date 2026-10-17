@@ -1,0 +1,22 @@
+meta {
+  name: Paso 13 - Notificaciones - cuenta desactivada por vacaciones
+  type: http
+  seq: 28
+}
+
+get {
+  url: {{baseUrl}}/notificaciones/{{e1}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+tests {
+  test("CUENTA: desactivada temporalmente (motivo VACACIONES)", function () {
+    const n = res.getBody().find((x) => x.tipo === "CUENTA" && x.mensaje.includes("temporalmente por vacaciones"));
+    expect(n).to.not.equal(undefined);
+  });
+}

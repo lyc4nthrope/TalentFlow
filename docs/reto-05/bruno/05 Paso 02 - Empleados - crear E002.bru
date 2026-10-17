@@ -1,0 +1,40 @@
+meta {
+  name: Paso 02 - Empleados - crear E002
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/empleados
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "id": "{{e2}}",
+    "nombre": "Ana",
+    "apellido": "Muñoz",
+    "email": "{{email2}}",
+    "numeroEmpleado": "{{numero2}}",
+    "cargo": "Desarrollador",
+    "area": "Tecnología",
+    "departamentoId": "IT",
+    "fechaIngreso": "2026-03-01"
+  }
+}
+
+tests {
+  test("201 con Location (publica empleado.creado)", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getHeader("location")).to.equal("/empleados/" + bru.getVar("e2"));
+  });
+}

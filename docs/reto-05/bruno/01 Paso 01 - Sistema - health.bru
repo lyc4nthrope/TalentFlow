@@ -1,0 +1,22 @@
+meta {
+  name: Paso 01 - Sistema - health
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/health
+  body: none
+  auth: none
+}
+
+tests {
+  test("200 y sistema OK (docker compose up --build -d)", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().sistema).to.equal("OK");
+  });
+}
+
+docs {
+  Paso 1 del PDF: antes de correr la colección, levantar el sistema con `docker compose up --build -d`.
+}

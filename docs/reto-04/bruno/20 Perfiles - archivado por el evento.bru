@@ -1,0 +1,23 @@
+meta {
+  name: Perfiles - archivado por el evento
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{baseUrl}}/perfiles/{{empleadoId}}
+  body: none
+  auth: none
+}
+
+script:pre-request {
+  // La reacción al evento es asincrónica: se espera a que el consumidor la procese.
+  await bru.sleep(2500);
+}
+
+tests {
+  test("perfil archivado, no borrado", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().archivado).to.equal(true);
+  });
+}
