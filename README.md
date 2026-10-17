@@ -2,7 +2,19 @@
 
 Sistema de onboarding y offboarding de empleados basado en una arquitectura orientada a microservicios.
 
-## Arquitectura (Reto 5 — seguridad e identidad sobre eventos)
+**Estado: Retos 1 a 6 completados.** Índice por reto:
+
+| Reto | Tema | Sección | Manual |
+|---|---|---|---|
+| 1 y 2 | Microservicios con persistencia y comunicación REST | [Cómo levantar todo](#cómo-levantar-todo-desde-cero) · [Decisiones técnicas](#decisiones-técnicas-reto-2) | — |
+| 3 | API Gateway y Circuit Breaker | [Circuit Breaker](#circuit-breaker-reto-3--empleados-service--departamentos-service) | [`docs/reto-03`](docs/reto-03/README.md) |
+| 4 | Comunicación asincrónica por eventos | [Comunicación asincrónica](#comunicación-asincrónica-reto-4) | [`docs/reto-04`](docs/reto-04/README.md) |
+| 5 | Seguridad e identidad (JWT, roles, ciclo de vida de la cuenta) | [Seguridad e identidad](#seguridad-e-identidad-reto-5) | [`docs/reto-05`](docs/reto-05/README.md) |
+| 6 | Automatización de pruebas (unitarias, integración y BDD) | [Automatización de pruebas](#automatización-de-pruebas-reto-6) | [`docs/reto-06`](docs/reto-06/README.md) |
+
+Resumen de todos los retos: [Mapa de retos](#mapa-de-retos).
+
+## Arquitectura (seguridad e identidad sobre eventos)
 
 El sistema tiene un **único punto de entrada** (el API Gateway, Reto 3), **comunicación asincrónica** por eventos a través de un **message broker (RabbitMQ)** desde el Reto 4 y, desde el Reto 5, **autenticación y autorización**: el `auth-service` emite un JWT y el Gateway lo valida en cada petición antes de enrutarla (ver [Seguridad e identidad](#seguridad-e-identidad-reto-5)). Un solo evento — por ejemplo `empleado.creado` — dispara reacciones automáticas e independientes en varios servicios (*fan-out*), entre ellas la creación de la cuenta del empleado. Ningún microservicio ni base de datos publica puerto al host: solo el Gateway (`8080`) y dos UIs de herramientas: la de administración del broker (`15672`) y la de Mailhog (`8025`, correos), ver [por qué](#puertos-publicados-además-del-gateway).
 
