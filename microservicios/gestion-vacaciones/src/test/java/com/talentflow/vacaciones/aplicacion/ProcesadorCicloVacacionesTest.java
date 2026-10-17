@@ -169,4 +169,39 @@ class ProcesadorCicloVacacionesTest {
         assertThat(estado("V-2")).isEqualTo(EstadoVacaciones.EN_CURSO);
         assertThat(publicador.publicados).hasSize(2);
     }
+
+    @Test
+    void unaFinalizacionQueFallaSeCuentaYSeReintentaEnLaSiguientePasada() {
+        vacaciones.agregar("V-1", "E001", AHORA.minusDays(3), AHORA.minusMinutes(1), EstadoVacaciones.EN_CURSO);
+        vacaciones.fallarCambioDe.add("V-1");
+
+        assertThat(ciclo.ejecutar()).isEqualTo(new ProcesadorCicloVacaciones.Resumen(0, 0, 1));
+        assertThat(estado("V-1")).isEqualTo(EstadoVacaciones.EN_CURSO);
+        assertThat(publicador.publicados).isEmpty();
+
+        vacaciones.fallarCambioDe.clear();
+        assertThat(ciclo.ejecutar()).isEqualTo(new ProcesadorCicloVacaciones.Resumen(0, 1, 0));
+        assertThat(estado("V-1")).isEqualTo(EstadoVacaciones.FINALIZADA);
+    }
+
+    @Test
+    void siOtraInstanciaYaLoFinalizoNoSePublicaDosVeces() {
+        vacaciones.agregar("V-1", "E001", AHORA.minusDays(3), AHORA.minusMinutes(1), EstadoVacaciones.EN_CURSO);
+        // Otra instancia del servicio gana la carrera (limitación documentada hasta el Reto 31).
+        vacaciones.alCambiarEstado = () -> vacaciones.datos.computeIfPresent("V-1",
+                (id, v) -> v.conEstado(EstadoVacaciones.FINALIZADA));
+
+        assertThat(ciclo.ejecutar()).isEqualTo(new ProcesadorCicloVacaciones.Resumen(0, 0, 0));
+        assertThat(publicador.publicados).isEmpty();
+    }
+
+    @Test
+    void unEmpleadoQueNoEstaEnLaReplicaNoDetieneLaTransicionYElEventoSaleSinEmail() {
+        vacaciones.agregar("V-1", "E999", AHORA.minusMinutes(1), AHORA.plusDays(3), EstadoVacaciones.PROGRAMADA);
+
+        assertThat(ciclo.ejecutar()).isEqualTo(new ProcesadorCicloVacaciones.Resumen(1, 0, 0));
+        assertThat(estado("V-1")).isEqualTo(EstadoVacaciones.EN_CURSO);
+        assertThat(publicador.publicados).containsExactly(new Fakes.PublicadorEspia.Publicado("vacaciones.iniciadas",
+                new VacacionesIniciadas("V-1", "E999", null, "2026-10-15T09:59:00-05:00", "2026-10-18T10:00:00-05:00")));
+    }
 }

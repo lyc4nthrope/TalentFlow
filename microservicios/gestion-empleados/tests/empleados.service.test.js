@@ -387,6 +387,56 @@ describe("Servicio de empleados — Reto 4", () => {
       assert.equal(consultas, 1);
     });
 
+    it("si el departamento cambió a uno que existe, lo valida de nuevo y queda ACEPTADO", async () => {
+      const repo = crearRepositorioEmpleadosEnMemoria();
+      repo.guardar({ ...EMPLEADO_VALIDO, estado: "ACTIVO", validacionDepartamento: "PENDIENTE" });
+      const servicioDepto = crearServicioEmpleados(repo, clienteDepartamentosFalso({ resultado: "EXISTE" }));
+
+      const actualizado = await servicioDepto.actualizar("E001", { ...CAMBIOS_VALIDOS, departamentoId: "RRHH" });
+
+      assert.equal(actualizado.departamentoId, "RRHH");
+      assert.equal(actualizado.validacionDepartamento, "ACEPTADO");
+      assert.equal((await repo.buscarPorId("E001")).validacionDepartamento, "ACEPTADO");
+    });
+
+    it("si el departamento cambió y departamentos no responde, acepta el cambio como PENDIENTE", async () => {
+      const repo = crearRepositorioEmpleadosEnMemoria();
+      repo.guardar({ ...EMPLEADO_VALIDO, estado: "ACTIVO", validacionDepartamento: "ACEPTADO" });
+      const servicioDepto = crearServicioEmpleados(repo, clienteDepartamentosFalso({ resultado: "PENDIENTE" }));
+
+      const actualizado = await servicioDepto.actualizar("E001", { ...CAMBIOS_VALIDOS, departamentoId: "RRHH" });
+
+      assert.equal(actualizado.validacionDepartamento, "PENDIENTE");
+      assert.deepEqual(
+        (await repo.listarPendientes()).map((e) => e.id),
+        ["E001"],
+        "queda para la reconciliación"
+      );
+    });
+
+    it("rechaza un cuerpo que no es un objeto JSON", async () => {
+      for (const cuerpo of [null, "texto", 42, [CAMBIOS_VALIDOS]]) {
+        await rechazaCon(servicio.actualizar("E001", cuerpo), 400);
+      }
+      assert.equal(publicador.eventos.length, 0);
+    });
+
+    it("409 sin publicar si lo retiran entre la lectura y la escritura (DELETE concurrente)", async () => {
+      // El DELETE concurrente se cuela justo antes de la escritura del PUT: la lectura vio
+      // ACTIVO, pero la actualización condicional del repositorio ya no aplica.
+      const actualizarOriginal = repositorio.actualizar;
+      repositorio.actualizar = async (id, cambios) => {
+        await repositorio.retirar(id, { fechaRetiro: "2026-11-30T16:45:00Z", motivo: "RENUNCIA" });
+        return actualizarOriginal(id, cambios);
+      };
+
+      await rechazaCon(servicio.actualizar("E001", CAMBIOS_VALIDOS), 409);
+      const persistido = await repositorio.buscarPorId("E001");
+      assert.equal(persistido.estado, "RETIRADO");
+      assert.equal(persistido.cargo, EMPLEADO_VALIDO.cargo, "el PUT no se aplicó");
+      assert.equal(publicador.eventos.length, 0);
+    });
+
     it("404 si el empleado no existe", async () => {
       await rechazaCon(servicio.actualizar("E999", CAMBIOS_VALIDOS), 404);
     });
@@ -445,6 +495,20 @@ describe("Servicio de empleados — Reto 4", () => {
 
     it("404 si el empleado no existe", async () => {
       await rechazaCon(servicio.retirar("E999"), 404);
+    });
+
+    it("409 sin publicar si otro DELETE simultáneo ganó la carrera", async () => {
+      // Ambos DELETE leen ACTIVO; el otro escribe primero y publica su propio evento.
+      const retirarOriginal = repositorio.retirar;
+      repositorio.retirar = async (id, datos) => {
+        await retirarOriginal(id, { fechaRetiro: "2026-11-30T16:00:00Z", motivo: "DESPIDO" });
+        return retirarOriginal(id, datos);
+      };
+
+      await rechazaCon(servicio.retirar("E001", { motivo: "JUBILACION" }), 409);
+      const persistido = await repositorio.buscarPorId("E001");
+      assert.equal(persistido.motivoRetiro, "DESPIDO", "se conserva el retiro que ganó");
+      assert.equal(publicador.eventos.length, 0);
     });
   });
 

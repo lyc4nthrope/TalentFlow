@@ -39,10 +39,11 @@ public final class FechaHoraEntrada {
      * Inicio con el que se valida y se guarda el período. Con la fecha sola, "hoy es válido" (como
      * en el Reto 4): si es hoy, empieza ahora (el máximo entre el comienzo del día y ahora). Con
      * fecha y hora explícitas se respeta lo pedido, y si ya pasó la validación lo rechaza.
+     * (Con la fecha sola de hoy, el valor es las 00:00 de hoy, que nunca es posterior a ahora:
+     * el máximo siempre es ahora.)
      */
     public static LocalDateTime inicioEfectivo(FechaSolicitada inicio, LocalDateTime ahora) {
-        if (inicio.soloFecha() && inicio.valor().toLocalDate().equals(ahora.toLocalDate())
-                && inicio.valor().isBefore(ahora)) {
+        if (inicio.soloFecha() && inicio.valor().toLocalDate().equals(ahora.toLocalDate())) {
             return ahora;
         }
         return inicio.valor();

@@ -24,6 +24,11 @@ describe('consultarSalud', () => {
         const estado = await consultarSalud('http://caido', { fetchImpl: fetchFalso({}) });
         assert.deepEqual(estado, { status: 'DOWN', detalle: 'No responde' });
     });
+
+    it('un /health sin status cuenta como DOWN (no se asume sano)', async () => {
+        const estado = await consultarSalud('http://s', { fetchImpl: fetchFalso({ 'http://s': { components: { db: 'UP' } } }) });
+        assert.deepEqual(estado, { status: 'DOWN', db: 'UP' });
+    });
 });
 
 describe('detectarProblemas', () => {
@@ -48,6 +53,11 @@ describe('detectarProblemas', () => {
             'perfiles-service: su base de datos no responde',
             'vacaciones-service: sin conexión al broker de mensajería'
         ]);
+    });
+
+    it('un servicio DOWN sin detalle ni BD caída se reporta como DOWN', () => {
+        const problemas = detectarProblemas({ 'auth-service': { status: 'DOWN', db: 'UP' } });
+        assert.deepEqual(problemas, ['auth-service: DOWN']);
     });
 });
 

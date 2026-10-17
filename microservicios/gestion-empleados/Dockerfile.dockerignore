@@ -1,0 +1,10 @@
+# El contexto de esta imagen es la raíz del repo (necesita el package-lock.json de los
+# workspaces), así que el .dockerignore de esta carpeta no se aplica: Docker usa este
+# archivo, junto al Dockerfile. Las rutas son relativas a la raíz.
+**/node_modules
+**/.git
+**/*.log
+**/.DS_Store
+**/.env
+microservicios/gestion-empleados/tests
+microservicios/gestion-empleados/reports

@@ -1,0 +1,7 @@
+*_test.go
+Dockerfile
+.dockerignore
+Makefile
+reports
+README.md
+schema.sql

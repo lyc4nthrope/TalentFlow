@@ -260,7 +260,7 @@ func (s *AuthService) RestablecerPassword(ctx context.Context, token, nueva stri
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(nueva), s.opciones.CostoBcrypt)
-	if err != nil {
+	if err != nil { // cobertura: inalcanzable (costo validado en NuevoAuthService; ≤ 72 bytes por ValidarPassword)
 		return fmt.Errorf("generar hash: %w", err)
 	}
 	activar := usuario.Estado == dominio.EstadoPendienteActivacion
@@ -318,7 +318,7 @@ func (s *AuthService) CambiarPassword(ctx context.Context, tokenAcceso, actual, 
 		return ErrPasswordRepetida
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(nueva), s.opciones.CostoBcrypt)
-	if err != nil {
+	if err != nil { // cobertura: inalcanzable (costo validado en NuevoAuthService; ≤ 72 bytes por ValidarPassword)
 		return fmt.Errorf("generar hash: %w", err)
 	}
 	if err := s.repo.ActualizarPassword(ctx, usuario.ID, string(hash)); err != nil {
@@ -357,7 +357,7 @@ func (s *AuthService) SembrarAdmin(ctx context.Context, email, password string) 
 		return nil
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), s.opciones.CostoBcrypt)
-	if err != nil {
+	if err != nil { // cobertura: inalcanzable (costo validado en NuevoAuthService; ≤ 72 bytes por ValidarPassword)
 		return fmt.Errorf("generar hash del administrador: %w", err)
 	}
 	err = s.repo.Crear(ctx, &dominio.Usuario{

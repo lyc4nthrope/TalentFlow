@@ -142,3 +142,33 @@ func TestNoSeCreaConSecretoVacio(t *testing.T) {
 		t.Fatal("se creó un proveedor con secreto vacío")
 	}
 }
+
+func TestNoSeCreaConDuracionCeroONegativa(t *testing.T) {
+	for _, d := range []time.Duration{0, -time.Second} {
+		if p, err := NuevoTokenProvider("secreto", "auth-service", d, time.Now); err == nil || p != nil {
+			t.Fatalf("duración %v: se creó un proveedor que emitiría tokens ya vencidos", d)
+		}
+	}
+}
+
+// Un token bien firmado por este emisor pero sin sub o sin role no identifica a nadie
+// (o no permite autorizar): se rechaza aunque la firma sea válida.
+func TestRechazaTokenSinSujetoOSinRol(t *testing.T) {
+	casos := map[string]Claims{
+		"sin sub":  {Role: "USER"},
+		"sin role": {RegisteredClaims: jwt.RegisteredClaims{Subject: "E001"}},
+	}
+	for nombre, claims := range casos {
+		t.Run(nombre, func(t *testing.T) {
+			claims.Issuer = "auth-service"
+			claims.ExpiresAt = jwt.NewNumericDate(instante.Add(time.Hour))
+			token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("secreto"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if id, err := proveedor(t, "secreto", instante).Validar(token); err == nil || id != nil {
+				t.Fatalf("aceptó un token %s: %+v", nombre, id)
+			}
+		})
+	}
+}

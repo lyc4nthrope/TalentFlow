@@ -317,3 +317,17 @@ func TestLaTopologiaLigaExactamenteLosEventosConsumidos(t *testing.T) {
 		}
 	}
 }
+
+// Un campo con el tipo JSON equivocado (p. ej. un email numérico) no puede
+// decodificarse: cada evento consumido lo rechaza como datos inválidos, en vez de
+// registrar una notificación con campos vacíos.
+func TestCampoConTipoIncorrectoSeRechazaEnCadaEventoConsumido(t *testing.T) {
+	for _, tipo := range EventosConsumidos {
+		t.Run(tipo, func(t *testing.T) {
+			_, err := NotificacionDesdeEvento(tipo, json.RawMessage(`{"email":123}`), ahora)
+			if !errors.Is(err, ErrDatosInvalidos) {
+				t.Fatalf("se esperaba ErrDatosInvalidos, se obtuvo %v", err)
+			}
+		})
+	}
+}

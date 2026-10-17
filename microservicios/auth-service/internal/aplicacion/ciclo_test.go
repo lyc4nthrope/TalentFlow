@@ -349,6 +349,7 @@ func TestDatosInvalidosDelCicloSonSolicitudInvalida(t *testing.T) {
 		"empleadoId largo":   e.svc.SuspenderPorVacaciones(ctx, "i1", dominio.VacacionesIniciadas{VacacionesID: "V-1", EmpleadoID: strings.Repeat("E", 37)}),
 		"sin vacacionesId":   e.svc.SuspenderPorVacaciones(ctx, "i1", dominio.VacacionesIniciadas{EmpleadoID: "E001"}),
 		"vacacionesId largo": e.svc.ReactivarPorFinDeVacaciones(ctx, "f1", dominio.VacacionesFinalizadas{VacacionesID: strings.Repeat("V", 21), EmpleadoID: "E001"}),
+		"fin sin empleadoId": e.svc.ReactivarPorFinDeVacaciones(ctx, "f1", dominio.VacacionesFinalizadas{VacacionesID: "V-1"}),
 		"creado sin id":      e.svc.CrearCuentaDesdeEmpleado(ctx, "", dominio.EmpleadoCreado{EmpleadoID: "E001", Email: "a@b.com"}),
 	}
 	for nombre, err := range casos {

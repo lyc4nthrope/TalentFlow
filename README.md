@@ -91,9 +91,13 @@ TalentFlow/
 │   ├── gestion-perfiles/              # Reto 4 (Python + FastAPI + Postgres) — consume eventos + REST
 │   ├── notificaciones/                # Reto 4 (Go + Postgres) — solo consume eventos
 │   └── gestion-vacaciones/            # Reto 4 (Java + Spring Boot + Postgres) — REST + productor de eventos
+├── e2e-tests/                         # Reto 6: suite BDD (Cucumber.js, Gherkin en español) contra el sistema desplegado
 ├── infra/rabbitmq/                    # Reto 4: topología de eventos (exchange, colas, bindings) + su importación
-├── docs/                              # Manuales, evidencia y decisiones por reto (reto-03/, reto-04/, reto-05/, eventos.md…)
+├── scripts/cobertura-go.awk           # Reto 6: filtro y umbral de cobertura de la lógica de negocio en Go
+├── docs/                              # Manuales, evidencia y decisiones por reto (reto-03/ … reto-06/, eventos.md…)
 ├── docker-compose.yml                 # Orquesta todo el sistema (un solo comando)
+├── docker-compose.e2e.yml             # Reto 6: override solo para la suite BDD (scheduler cada 5 s + contenedor bdd-tests)
+├── Makefile                           # Reto 6: comandos únicos de las pruebas (make pruebas, make e2e)
 └── package.json                       # npm workspaces de los servicios Node (solo tooling de desarrollo)
 ```
 
@@ -115,7 +119,7 @@ Flujo:
 1. Cada integrante trabaja en su propia rama (la que lleva su usuario de GitHub) — nunca directo en `dev` ni en `main`.
 2. Al terminar una funcionalidad, se abre un Pull Request de la rama personal hacia `dev`.
 3. `dev` es donde se integra y se prueba el trabajo de todos junto.
-4. Cuando `dev` está estable (`docker compose up --build` y `npm test` pasando), se hace un Pull Request de `dev` hacia `main`.
+4. Cuando `dev` está estable (`docker compose up --build`, `make pruebas` y `make e2e` pasando), se hace un Pull Request de `dev` hacia `main`.
 
 Antes de empezar a trabajar cada día, actualizar la rama personal desde `dev`:
 
@@ -608,6 +612,163 @@ cd docs/reto-05/bruno && npx @usebruno/cli run --env Local    # 41 peticiones co
 
 `demo.sh` tarda unos 5 minutos (medido: 4 min 40 s y 5 min 16 s) porque espera los minutos reales del scheduler en los pasos 13 a 15; termina con código 0 solo si pasan todas las verificaciones y se puede repetir sobre una base con datos. Las desviaciones respecto al PDF (paso 2 con el administrador semilla, fechas con hora en el paso 12…) están en [`pruebas.md`](docs/reto-05/pruebas.md#desviaciones-respecto-al-pdf).
 
+## Automatización de pruebas (Reto 6)
+
+> Manual paso a paso, mapa de criterios y preguntas de la sustentación: [`docs/reto-06/README.md`](docs/reto-06/README.md). Evidencia (reglas rotas a propósito, tres corridas seguidas, fallo simulado): [`docs/reto-06/pruebas.md`](docs/reto-06/pruebas.md). Decisiones (D1-D14) y aprendizajes por fase: [`docs/reto-06/PLAN.md`](docs/reto-06/PLAN.md).
+
+Dos comandos desde la raíz, los dos con código de salida ≠ 0 si algo falla (es lo que hará fallar el pipeline del Reto 7):
+
+```bash
+make pruebas   # unitarias + integración de cada microservicio, en orden (~30 s; vacaciones necesita Docker)
+make e2e       # levanta el sistema con el override de pruebas y corre la suite BDD en un contenedor (~80 s)
+```
+
+### Pirámide de pruebas
+
+La pirámide reparte las pruebas por costo y alcance: **muchas unitarias** (milisegundos, sin infraestructura, señalan la regla exacta que se rompió), **menos de integración** (un adaptador contra la dependencia real, aquí PostgreSQL) y **pocas de punta a punta** (el sistema desplegado completo, lentas pero las únicas que prueban que los servicios funcionan juntos por HTTP y eventos). Cada regla de negocio se prueba abajo; arriba solo se recorren los flujos que cruzan servicios.
+
+Conteo de la última corrida (`<testcase>` de cada `junit.xml`; Go cuenta las subpruebas):
+
+| Nivel | Suite | Pruebas | Dónde viven |
+|---|---|---|---|
+| Unitarias (sin Docker) | gestion-empleados (Node) | 86 | `microservicios/gestion-empleados/tests/` |
+| | api-gateway (Node) | 142 | `microservicios/api-gateway/tests/` |
+| | auth-service (Go) | 159 | `*_test.go` junto a cada paquete |
+| | notificaciones (Go) | 80 | `*_test.go` junto a cada paquete |
+| | gestion-perfiles (Python) | 29 | `microservicios/gestion-perfiles/tests/` |
+| | gestion-vacaciones (Java) | 129 | `src/test/java/**/*Test.java` |
+| | soporte de la suite BDD (Node) | 56 | `e2e-tests/tests/` (polling, fechas, tokens, ventana de ausencia) |
+| Integración (BD real) | gestion-vacaciones, Testcontainers + PostgreSQL 16 | 59 | `src/test/java/**/*IT.java` |
+| | auth-service y notificaciones, PostgreSQL | 13 + 4 | Se omiten (`skipped` en el `junit.xml`) si no hay `AUTH_TEST_DATABASE_URL` / `NOTIF_TEST_DATABASE_URL` |
+| Punta a punta (BDD) | `e2e-tests/` (Cucumber.js) | 61 escenarios, 313 pasos | 8 archivos `.feature` |
+
+Total: 681 unitarias, 59 de integración que corren siempre (17 más a pedido) y 61 escenarios. Las pruebas de cada microservicio viven junto a su código; `e2e-tests/` es un proyecto aparte que solo habla HTTP con el Gateway y con Mailhog.
+
+### Qué es BDD y por qué se eligió
+
+*Behavior-Driven Development* describe el comportamiento esperado como ejemplos concretos en lenguaje de negocio (`Dado` un contexto, `Cuando` una acción, `Entonces` un resultado observable) y los ejecuta contra el sistema. Los `.feature` están en español (`# language: es`), así que alguien que no conoce el código entiende qué hace el sistema y cuándo falla: son **documentación viva**, que no puede quedar desactualizada porque se ejecuta en cada corrida.
+
+Se eligió **Cucumber.js** (D1) porque el repo ya usa Node 24 (no hay que instalar otra herramienta), trae de serie los tres formatos de reporte (JUnit XML, Cucumber JSON y HTML) y los flujos de `docs/reto-05/demo.sh` se tradujeron casi uno a uno. Las peticiones usan el `fetch` nativo de Node, sin librería HTTP extra.
+
+### Prerrequisitos
+
+Versiones con las que se ejecutó todo:
+
+| Herramienta | Versión | Para qué |
+|---|---|---|
+| Docker + Docker Compose v2 | 26.1 / Compose 5.6 | El sistema, `make e2e` (la suite corre en el contenedor `bdd-tests`) y Testcontainers (`mvn verify`) |
+| GNU Make | 4.4 | `make pruebas`, `make e2e` y el `make test` de Go y Python |
+| Node.js | 24.14.0 | empleados, api-gateway y `make e2e-local`; antes, `npm ci` en la raíz (workspaces). `make e2e` no lo necesita |
+| Go | 1.24 o superior con `GOTOOLCHAIN=auto` (el valor por defecto) | auth-service pide `go 1.27.1` y notificaciones fija `GOTOOLCHAIN ?= go1.25.14` en su `Makefile` (go1.25.0 no trae `covdata`); Go descarga esos toolchains solo. `gotestsum` y `gocover-cobertura` se ejecutan con `go run` a versión fija: no se instalan |
+| Java + Maven | 17 / 3.9 | gestion-vacaciones |
+| Python | 3.13 | gestion-perfiles, con un `.venv` local: `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt` (en `microservicios/gestion-perfiles`) |
+
+Las primeras ejecuciones descargan dependencias (npm, módulos de Go, Maven, la imagen `postgres:16-alpine`): necesitan internet.
+
+### Ejecución paso a paso
+
+**1. Levantar el sistema.** `make e2e` lo hace solo: `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build` y espera con polling a que `GET /health` responda `"sistema":"OK"`. El override [`docker-compose.e2e.yml`](docker-compose.e2e.yml) cambia una sola cosa del sistema, el scheduler de vacaciones cada 5 s en vez de cada minuto (D6), y agrega el contenedor `bdd-tests` en el perfil `e2e` (un `docker compose up` no lo levanta). Con el `docker compose up --build -d` normal la suite también corre si se le pasa `E2E_SCHEDULER_SEGUNDOS=60` (el ciclo de vacaciones tarda ~2 min). `make e2e-restaurar` devuelve vacaciones al cron por defecto. Ningún objetivo borra volúmenes.
+
+**2. Variables de entorno de la suite** ([`e2e-tests/support/config.js`](e2e-tests/support/config.js); se validan al cargar, así que un valor mal escrito detiene la suite antes del primer escenario). Los valores por defecto sirven para el Compose local; `bdd-tests` fija `BASE_URL`, `MAILHOG_URL` y `E2E_SCHEDULER_SEGUNDOS` para la red de Docker.
+
+| Variable | Por defecto | Qué controla |
+|---|---|---|
+| `BASE_URL` | `http://localhost:8080` (`http://api-gateway:8080` en `bdd-tests`) | URL del Gateway; toda petición de negocio pasa por ahí |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `admin@empresa.com` / `Admin123*` | Administrador semilla de auth-service (los mismos del Compose) |
+| `MAILHOG_URL` | `http://localhost:8025` (`http://mailhog:8025` en `bdd-tests`) | API de Mailhog, de donde se lee el token de activación y de recuperación |
+| `E2E_POLL_INTENTOS` | `15` | Intentos del polling de los pasos "eventualmente" |
+| `E2E_POLL_INTERVALO_MS` | `1000` | Espera entre intentos (tope ≈ 14 s) |
+| `E2E_SCHEDULER_SEGUNDOS` | `5` | Cada cuánto corre el scheduler de vacaciones (5 con el override, **60** con el cron por defecto); fija la duración del período y el tope de sus esperas |
+| `E2E_ZONA_HORARIA` | `America/Bogota` | Zona de las fechas con hora de `POST /vacaciones`; debe coincidir con `ZONA_HORARIA` de vacaciones-service |
+| `E2E_VENTANA_AUSENCIA_MS` | `3000` | Tiempo mínimo que se vigila que algo **no** pase (token a un retirado, reactivación) |
+| `E2E_ESPERA_INTENTOS` / `E2E_ESPERA_INTERVALO_MS` | `60` / `2000` | Solo `npm run esperar-sistema` (lo usa `make e2e`): cuánto se espera a que `GET /health` diga `"sistema":"OK"` antes de la suite |
+
+`make e2e` además exporta `E2E_UID`/`E2E_GID` (el usuario de quien lo ejecuta) para que los reportes montados no queden de root.
+
+**3. Comando de cada suite.** Los de la [tabla de reportes](#tabla-de-reportes); `make pruebas` los encadena y se detiene en la primera que falla. Para la suite BDD con el Node local: `make e2e-local`, o `cd e2e-tests && npm ci && npm test` con el sistema arriba.
+
+**4. Interpretar los resultados.** El código de salida manda: 0 es que todo pasó. En consola, Node y Go listan cada prueba; Maven corre en silencio (`-q`) salvo cuando algo falla; Cucumber imprime cada paso con ✔/✘ y, en el que falla, el esperado, lo obtenido, el método, la ruta y el cuerpo, más el resumen `61 scenarios (61 passed)`. Un umbral de cobertura que no se cumple también es un fallo: Node imprime el porcentaje faltante, Go el `archivo:línea` de cada bloque sin cubrir, pytest `FAIL Required test coverage of 100%` y JaCoCo el paquete por debajo del umbral. Para el detalle se abren los reportes:
+
+- `e2e-tests/reports/cucumber.html` en el navegador: cada característica, escenario y paso, con su duración; los fallidos en rojo con el mensaje.
+- `microservicios/gestion-vacaciones/reports/coverage/index.html`: cobertura de JaCoCo navegable, línea por línea.
+- Los `junit.xml` y los `coverage.xml` son para Jenkins y SonarQube (Reto 7); se leen igual con cualquier editor.
+
+### Tabla de reportes
+
+**Este es el contrato con el Reto 7**: el pipeline va a leer exactamente estas rutas (relativas a la raíz del repositorio). Todas quedan bajo `<suite>/reports/` (D9), se vacían al empezar cada corrida para que nunca se publique un resultado viejo y están en `.gitignore`.
+
+| Suite | Comando | Reporte de resultados | Reporte de cobertura |
+|---|---|---|---|
+| gestion-empleados (unit) | `cd microservicios/gestion-empleados && npm test` | `microservicios/gestion-empleados/reports/junit.xml` | `microservicios/gestion-empleados/reports/lcov.info` (LCOV) |
+| api-gateway (unit) | `cd microservicios/api-gateway && npm test` | `microservicios/api-gateway/reports/junit.xml` | `microservicios/api-gateway/reports/lcov.info` (LCOV) |
+| auth-service (unit; integración Postgres con `AUTH_TEST_DATABASE_URL`) | `make -C microservicios/auth-service test` | `microservicios/auth-service/reports/junit.xml` | `microservicios/auth-service/reports/coverage.xml` (Cobertura, lógica de negocio); perfil completo en `reports/coverage.out` |
+| notificaciones (unit; integración Postgres con `NOTIF_TEST_DATABASE_URL`) | `make -C microservicios/notificaciones test` | `microservicios/notificaciones/reports/junit.xml` | `microservicios/notificaciones/reports/coverage.xml` (Cobertura, lógica de negocio); perfil completo en `reports/coverage.out` |
+| gestion-perfiles (unit) | `make -C microservicios/gestion-perfiles test` | `microservicios/gestion-perfiles/reports/junit.xml` | `microservicios/gestion-perfiles/reports/coverage.xml` (Cobertura) |
+| gestion-vacaciones (unit) | `cd microservicios/gestion-vacaciones && mvn verify` | `microservicios/gestion-vacaciones/reports/junit/TEST-*Test.xml` (uno por clase, Surefire) | `microservicios/gestion-vacaciones/reports/coverage/jacoco.xml` (HTML: `index.html` en la misma carpeta) |
+| gestion-vacaciones (integración, Testcontainers) | el mismo `mvn verify` | `microservicios/gestion-vacaciones/reports/junit/TEST-*IT.xml` (Failsafe) | `microservicios/gestion-vacaciones/reports/coverage-integracion/jacoco.xml` (informativa, sin umbral) |
+| e2e-tests (BDD) | `make e2e` (o `cd e2e-tests && npm test`) | `e2e-tests/reports/junit.xml` · `e2e-tests/reports/cucumber.json` · `e2e-tests/reports/cucumber.html` | — (prueba de caja negra contra el sistema desplegado) |
+| e2e-tests (soporte, unit) | `cd e2e-tests && npm run test:unidad` | `e2e-tests/reports-unidad/junit.xml` | — |
+
+Para tomar todos los resultados de vacaciones basta el patrón `microservicios/gestion-vacaciones/reports/junit/*.xml`. `mvn test` corre solo las unitarias y no genera la cobertura: el reporte de JaCoCo y su umbral están en la fase `verify`.
+
+### Escenarios implementados
+
+Cada escenario crea sus propios datos en `Antecedentes` y pasa también ejecutado solo (`--name`).
+
+| Archivo | Escenarios | Qué flujos cubre |
+|---|---|---|
+| `features/sistema.feature` | 1 | Humo: `GET /health` responde 200 |
+| `features/seguridad/autenticacion.feature` | 9 | El escenario del PDF (sin token → 401); 5 credenciales inválidas (texto que no es un JWT, firma alterada, token sin firma, otro esquema en vez de `Bearer`, `Bearer` vacío) → 401 con su mensaje y sin detalles internos; las rutas públicas (`/health`, `/empleados/openapi.json`, `/vacaciones/docs`) no exigen token |
+| `features/seguridad/autorizacion.feature` | 17 | USER puede consultar (5 recursos) y no puede escribir (5 operaciones → 403); ADMIN puede las 6 operaciones; USER edita su propio perfil (200) pero no el de otro (403) |
+| `features/onboarding/registro.feature` | 15 | El alta crea las credenciales (vía `usuario.creado`), envía la bienvenida con el token por correo y crea el perfil, todo *eventualmente*; departamento inexistente, cada uno de los 9 campos obligatorios y email o número de empleado duplicado → 400 sin dejar nada a medias |
+| `features/onboarding/activacion.feature` | 8 | Sin activar no hay login; activación con el token + login con JWT `role=USER`; el token sirve una sola vez; un token inventado no activa; 4 contraseñas fuera de la política → 400 sin consumir el token |
+| `features/vacaciones/programacion.feature` | 5 | Programación exitosa con la confirmación al empleado; fechas incoherentes (fin anterior, fin igual al inicio, inicio en el pasado) → 400; solapamiento con un período programado → 400 con el período en conflicto |
+| `features/vacaciones/suspension.feature` | 1 | El escenario del PDF: la cuenta se suspende al iniciar el período (login 401 + aviso) y se reactiva al terminar (login 200 + "Bienvenido de regreso") |
+| `features/offboarding/retiro.feature` | 5 | Desvinculación con aviso; login bloqueado; la recuperación de contraseña no le sirve a un retirado (prueba de ausencia); auditoría `?estado=RETIRADO`; un retirado durante sus vacaciones no recupera la cuenta al terminar |
+
+### Herramientas y frameworks
+
+Se usó la herramienta estándar de cada lenguaje, la que Jenkins y SonarQube ya saben leer (D10):
+
+| Lenguaje | Herramientas | Por qué |
+|---|---|---|
+| Java (vacaciones) | JUnit 5 + Mockito + AssertJ; Surefire (unitarias) y Failsafe (`*IT`); JaCoCo 0.8.14 con `check` al 100 %; Testcontainers 1.21 | El stack de Spring Boot 3.5: `@ParameterizedTest` para las tablas de casos, Failsafe separa lo que necesita Docker y JaCoCo hace fallar el build |
+| Node (empleados, gateway, soporte BDD) | `node:test` con los *reporters* nativos `junit` y `lcov` y `--experimental-test-coverage` con umbral 100 % | Viene con Node 24: no se instala nada |
+| Go (auth, notificaciones) | `go test -coverprofile`; `gotestsum` v1.13.0 (JUnit); `scripts/cobertura-go.awk` (filtra la lógica de negocio y exige el 100 % de sentencias); `gocover-cobertura` v1.4.0 (Cobertura XML) | Go no genera JUnit ni filtra por paquete; el umbral se calcula con sentencias exactas, no con el porcentaje redondeado de `go tool cover` |
+| Python (perfiles) | `pytest --junitxml` + `pytest-cov` 7.1.0 (`--cov-fail-under=100`, ramas) | Las opciones viven en `pyproject.toml`: un `pytest` solo genera lo mismo |
+| BDD | Cucumber.js 13.3.0 + `fetch` nativo; contenedor `node:24.14.0-alpine` (D13) | Ver [por qué BDD y Cucumber.js](#qué-es-bdd-y-por-qué-se-eligió) |
+
+### Decisiones técnicas
+
+**Qué no se prueba unitariamente (D11).** Arranque, configuración, cableado de dependencias, DTO sin lógica y adaptadores de infraestructura quedan **fuera de la medición**, configurado en cada herramienta; la lógica de negocio (dominio y casos de uso) se mide al **100 %** de líneas y ramas (sentencias en Go) y el build falla si baja (D14). Los adaptadores se prueban igual donde aporta (rutas HTTP, publicadores), pero sin umbral.
+
+| Servicio | Medido | Excluido (y dónde se configura) |
+|---|---|---|
+| gestion-empleados | `src/dominio/**`, `src/services/**`, `src/eventos/{envelope,eventos-empleado}.js`, `src/errores.js` | `server.js`, `db/pool.js`, `app.js`, `routes/`, `openapi.js`, `repository/**`, `eventos/publicador.js`, `clients/departamentos.client.js` (`--test-coverage-include` en `package.json`) |
+| api-gateway | `autenticacion.js`, `autorizacion.js`, `salud.js` | `index.js` y `app.js` (solo compone los tres módulos; lo recorre `gateway.test.js`) |
+| auth-service | `internal/dominio`, `internal/aplicacion`, `internal/eventos`, `internal/infra/jwt` (las reglas del token) | `cmd/`, `config/`, `internal/api`, `internal/infra/amqp`, `internal/infra/postgres` (`NEGOCIO` del `Makefile`) |
+| notificaciones | `internal/dominio`, `internal/aplicacion`, `internal/eventos` | `cmd/`, `internal/api`, `internal/amqp`, `internal/smtp`, `internal/postgres` |
+| gestion-perfiles | `app/dominio.py`, `app/aplicacion.py`, `app/eventos.py` | `main.py`, `config.py`, `api.py`, `consumidor.py`, `repositorio.py` (`omit` en `pyproject.toml`) |
+| gestion-vacaciones | `dominio` y `aplicacion` | `infraestructura/**`, `Configuracion`, `VacacionesApplication` (`report` y `check` de JaCoCo en `pom.xml`); la persistencia se cubre con las `*IT` |
+
+Solo hay tres exclusiones de líneas, en `auth-service/internal/aplicacion/servicio.go` (`RestablecerPassword`, `CambiarPassword`, `SembrarAdmin`): el `if err != nil` de `bcrypt.GenerateFromPassword`, marcado `// cobertura: inalcanzable (...)`. bcrypt solo falla con un costo inválido (rechazado al construir el servicio), con más de 72 bytes (rechazado por la política de contraseñas) o si falla `crypto/rand`, que desde Go 1.24 nunca devuelve error. El awk las informa en cada corrida. Ningún `node:coverage ignore` ni `# pragma: no cover`.
+
+**Estrategia de integración (D8): Testcontainers.** Las 59 `*IT` de vacaciones corren contra un PostgreSQL 16 real, con el **mismo `init.sql`** del Compose, levantado y destruido por `mvn verify`. Es la opción más fiel: la consulta de solapamiento y la restricción `EXCLUDE` son justo lo que una base embebida (H2) podría aceptar y PostgreSQL rechazar, y las carreras con `FOR UPDATE` solo existen en el motor real. El costo es la velocidad y la dependencia de Docker: `mvn test` (solo unitarias, sin Docker) ~9 s frente a `mvn verify` ~19 s; por eso las `*IT` están en `verify` y no en `test`. Se descartó una instancia dedicada porque comparte estado entre corridas y desarrolladores.
+
+**La trampa del 70 % (D12).** La meta del equipo no es un porcentaje sino que **cada regla tenga una prueba que falle si la regla cambia**: el 100 % solo se mide sobre la lógica de negocio y cada prueba verifica un resultado observable (valor devuelto, evento publicado, estado guardado), no que una línea se ejecutó. Se comprobó rompiendo reglas a propósito ([evidencia](docs/reto-06/pruebas.md#1-las-pruebas-fallan-cuando-deben-punto-1-paso-6)): invertir la comparación de fechas de vacaciones hace fallar cada caso de la tabla por su nombre; invertir el vencimiento del token de auth reveló que `TestTokenExpiradoSeRechaza` **seguía pasando** con la línea cubierta al 100 %, porque miraba el instante exacto del vencimiento, donde la regla correcta y la invertida coinciden. Se agregó `TestTokenVencidoHaceRatoSeRechaza`. Ese es el caso que el porcentaje no ve.
+
+**Contexto compartido (D2).** (1) El token vive en el *World* de Cucumber (`this.sesion`): `Dado que estoy autenticado como "ADMIN"` lo guarda y las peticiones de los `Cuando` siguientes lo usan por defecto. (2) Hay **una instancia nueva por escenario**: token, última respuesta e ids creados nunca pasan de un escenario a otro. (3) Los `Antecedentes` se repiten antes de cada escenario y hacen un login real cada vez.
+
+**Aislamiento de datos y calibración del polling (D3, D5).** Cada escenario crea lo que necesita con ids y emails únicos (`E-<ms en base 36>-<6 hex>`, 17 caracteres porque los ids son `VARCHAR(20)`) y no limpia nada: la baja es lógica y con ids únicos la suite corre sobre una base con datos y en cualquier orden. El polling es `eventualmente(condición)`, **15 intentos × 1 s** (tope ≈ 14 s), sin `sleep` fijos. Se calibró midiendo 30 altas: el perfil aparece en 5–11 ms, la notificación en 5–26 ms y el correo en 12–16 ms. El tope es unas 500 veces el peor caso medido, margen para una máquina cargada o Jenkins; bajar el intervalo de 2 s a 1 s acortó la suite porque la primera consulta casi siempre llega antes que el evento y paga un intervalo completo. Al agotarse, el error dice qué se esperaba, cuántos intentos, cuánto tiempo y el último valor observado.
+
+**Control del tiempo en vacaciones (D6).** Las fechas llevan hora: el período empieza 3 s después de ahora y dura un período del scheduler más 5 s, y solo para la suite el scheduler corre cada 5 s (override). No se agregó un endpoint de disparo manual, porque sería una puerta nueva en producción. La prueba no queda acoplada a la frecuencia: los pasos esperan el **estado observable** (período `EN_CURSO`, login 401) y `E2E_SCHEDULER_SEGUNDOS` solo fija el tope de la espera; con el cron por defecto y `E2E_SCHEDULER_SEGUNDOS=60` el mismo escenario pasa en ~2 min.
+
+**Polling sobre una condición negativa (D7).** Primero se confirma la precondición (el login funciona) y solo cuenta un 401 con el período `EN_CURSO` (o, en el retiro, con el empleado `RETIRADO`). Si se agota la espera, el mensaje distingue "el período nunca empezó: sigue PROGRAMADA… ¿corre el scheduler?" (todavía no se procesó, o nunca se va a procesar) de "el período empezó pero la cuenta sigue activa… falla de auth-service".
+
+**Prueba de ausencia: la recuperación que "falla".** `POST /auth/recover-password` responde 202 a cualquier email (para no revelar qué cuentas existen), así que el fallo se ve en lo que **no** pasa. En el mismo escenario hay un **control positivo**: antes del retiro el empleado pide la recuperación y el token llega. Después del retiro se comprueba que la respuesta es idéntica a la de un email no registrado, que durante al menos 3 s (y nunca menos que el triple de lo que tardó el control) no llega ningún token nuevo ni al historial ni a Mailhog, y que el token pedido antes del retiro ya no sirve. Sin el control, "no llegó nada" podría significar que el camino estaba roto.
+
+**Reutilización de pasos.** Se reutilizan sin cambios `Dado que existe un empleado activo con credenciales establecidas` (alta → token por correo → contraseña → login), `Dado que estoy autenticado como {string}`, `la respuesta debe tener código {int}`, `el error debe señalar el campo {string}` y, en offboarding, los pasos del ciclo de vacaciones. Se parametrizaron las operaciones (`{operación}`: la misma frase prueba el 403 de USER y el 200/201 de ADMIN), las fechas incoherentes, los avisos (`el empleado debe recibir el aviso {string}`) y el estado (`el empleado debe quedar en estado {string}`).
+
 ## Circuit Breaker (Reto 3) — `empleados-service → departamentos-service`
 
 ### Por qué
@@ -771,6 +932,7 @@ Tras la clase "Introducción a APIs RESTful" se auditó el proyecto contra sus d
 | 3 | api-gateway + gestion-empleados + gestion-departamentos | ✅ Completado | API Gateway como único punto de entrada (`:8080`), microservicios y bases de datos sin puertos al host, Circuit Breaker (`opossum`) en `empleados → departamentos` con fallback de registro `PENDIENTE` + reconciliación automática al recuperarse | `docker compose up --build` (base: `http://localhost:8080`) |
 | 4 | + message-broker + gestion-perfiles + notificaciones + gestion-vacaciones | ✅ Completado | RabbitMQ (fan-out por exchange topic), empleados publica `empleado.creado/actualizado/retirado` (+ `PUT`, baja lógica `DELETE` y auditoría), perfiles (Python), notificaciones (Go) y vacaciones (Java, publica `vacaciones.programadas`), deduplicación por id de mensaje en todos los consumidores, 5 lenguajes, Swagger de todos los servicios por el Gateway. Bonus: correo real por SMTP (Mailhog) | `docker compose up --build` + `bash docs/reto-04/demo.sh` |
 | 5 | + auth-service + api-gateway + gestion-vacaciones + notificaciones | ✅ Completado | `auth-service` (Go): JWT HS256, activación y recuperación con token de un solo uso, ciclo de vida de la cuenta por eventos (`usuario.creado`, `usuario.recuperacion`, `cuenta.activada`, `cuenta.desactivada`); Gateway valida el JWT y aplica ADMIN / USER / propiedad; scheduler de vacaciones (`vacaciones.iniciadas` / `vacaciones.finalizadas`) con fechas y hora reales; caso borde del retiro durante las vacaciones; `bearerAuth` en el Swagger de los 6 servicios | `docker compose up --build` + `bash docs/reto-05/demo.sh` |
+| 6 | todos (+ `e2e-tests/`) | ✅ Completado | Reportes JUnit XML y de cobertura en `reports/` de cada servicio con la lógica de negocio al 100 % (el build falla si baja); integración contra PostgreSQL con Testcontainers; suite BDD en español (61 escenarios: seguridad, onboarding, vacaciones, offboarding) con JUnit XML + Cucumber JSON + HTML; comandos únicos y contenedor `bdd-tests` — ver [Automatización de pruebas](#automatización-de-pruebas-reto-6) | `make pruebas` + `make e2e` |
 
 Cada microservicio tiene su propio README con sus endpoints y configuración: [`auth-service`](microservicios/auth-service/README.md), [`api-gateway`](microservicios/api-gateway/README.md), [`gestion-empleados`](microservicios/gestion-empleados/README.md), [`gestion-departamentos`](microservicios/gestion-departamentos/README.md), [`gestion-perfiles`](microservicios/gestion-perfiles/README.md), [`notificaciones`](microservicios/notificaciones/README.md), [`gestion-vacaciones`](microservicios/gestion-vacaciones/README.md).
 
@@ -782,15 +944,11 @@ Instalar dependencias (una sola vez, desde la raíz):
 npm install
 ```
 
-Ejecutar las pruebas automatizadas (sin necesidad de Docker; conteo verificado al cierre del Reto 5):
+Ejecutar las pruebas automatizadas (comando de cada suite, reportes y prerrequisitos en [Automatización de pruebas](#automatización-de-pruebas-reto-6)):
 
 ```bash
-npm test                                                   # empleados (81) + api-gateway (134) — Node.js
-(cd microservicios/notificaciones && go test ./...)       # notificaciones (33) — Go
-(cd microservicios/gestion-perfiles && python -m venv .venv && . .venv/bin/activate \
-  && pip install -r requirements-dev.txt && pytest)       # perfiles (29) — Python
-(cd microservicios/gestion-vacaciones && mvn test)         # vacaciones (62) — Java
-(cd microservicios/auth-service && go test ./...)         # auth-service (116) — Go
+make pruebas    # unitarias + integración de los 6 servicios con pruebas (~30 s; vacaciones usa Docker por Testcontainers)
+make e2e        # sistema con docker-compose.e2e.yml + suite BDD en un contenedor (~80 s)
 ```
 
 Correr todos los servicios (Docker):
@@ -801,7 +959,7 @@ docker compose up --build
 
 ## Stack del semestre
 
-Implementado hasta el Reto 5 (5 lenguajes; el proyecto final exige al menos 4):
+Implementado hasta el Reto 6 (5 lenguajes; el proyecto final exige al menos 4):
 
 - **Node.js + Express** — `empleados-service` y `api-gateway`
 - **PHP** — `departamentos-service` (diversidad tecnológica desde el Reto 2)
@@ -809,4 +967,5 @@ Implementado hasta el Reto 5 (5 lenguajes; el proyecto final exige al menos 4):
 - **Go** — `notificaciones-service` y `auth-service`
 - **Java + Spring Boot** — `vacaciones-service`
 - **RabbitMQ** (mensajería), **PostgreSQL** y **MySQL** (bases de datos por servicio), **Mailhog** (servidor SMTP de pruebas)
+- **Pruebas (Reto 6)**: JUnit 5 + JaCoCo + Testcontainers (Java), `node:test` (Node), `gotestsum` + `gocover-cobertura` (Go), `pytest-cov` (Python) y **Cucumber.js** para la suite BDD — ver [herramientas](#herramientas-y-frameworks)
 - Previsto: **TypeScript + React** para el frontend del proyecto final

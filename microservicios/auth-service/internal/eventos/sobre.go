@@ -28,12 +28,10 @@ func NuevoSobre(tipo string, datos any, ahora time.Time) (Envelope, error) {
 	if err != nil {
 		return Envelope{}, fmt.Errorf("serializar data de %s: %w", tipo, err)
 	}
-	id, err := uuid.NewRandom()
-	if err != nil {
-		return Envelope{}, fmt.Errorf("generar id del evento: %w", err)
-	}
 	return Envelope{
-		ID:         id.String(),
+		// uuid.New y no NewRandom: su error es inalcanzable, porque crypto/rand.Reader
+		// nunca devuelve error desde Go 1.24 (si el sistema falla, el programa termina).
+		ID:         uuid.New().String(),
 		Type:       tipo,
 		Version:    1,
 		OccurredAt: ahora.UTC().Format(time.RFC3339),

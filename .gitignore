@@ -20,3 +20,7 @@ __pycache__/
 
 # Java/Maven (Reto 4: gestion-vacaciones)
 target/
+
+# Reportes de pruebas (Reto 6): se generan en cada ejecución, no se versionan
+reports/
+reports-unidad/

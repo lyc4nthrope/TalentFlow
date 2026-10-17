@@ -38,3 +38,12 @@ func TestNuevoSobreTieneElEnvelopeDelCatalogo(t *testing.T) {
 		t.Fatal("dos eventos con el mismo id")
 	}
 }
+
+// Un dato que no se puede serializar no produce un envelope a medias: se informa el
+// error con el tipo del evento.
+func TestNuevoSobreConDatosNoSerializablesFalla(t *testing.T) {
+	_, err := NuevoSobre("usuario.creado", map[string]any{"canal": make(chan int)}, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "usuario.creado") {
+		t.Fatalf("err = %v", err)
+	}
+}
