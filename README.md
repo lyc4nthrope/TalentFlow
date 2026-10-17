@@ -107,8 +107,6 @@ TalentFlow/
 |---|---|
 | `main` | Producción. Siempre debe reflejar el sistema funcionando y evaluado. Nadie trabaja directo aquí: solo recibe merges desde `dev`. |
 | `dev` | Integración. Rama base donde se junta el trabajo de todo el equipo antes de llegar a producción. |
-| `davidcr08` | Rama personal de David. |
-| `DillanSnayderBuitrago` | Rama personal de Dillan. |
 | `Vale292005` | Rama personal de Vale. |
 | `lyc4nthrope` | Rama personal de Cristhian. |
 
@@ -790,7 +788,7 @@ Ejecutar las pruebas automatizadas (sin necesidad de Docker; conteo verificado a
 npm test                                                   # empleados (81) + api-gateway (134) — Node.js
 (cd microservicios/notificaciones && go test ./...)       # notificaciones (33) — Go
 (cd microservicios/gestion-perfiles && python -m venv .venv && . .venv/bin/activate \
-  && pip install -r requirements-dev.txt && pytest)       # perfiles — Python
+  && pip install -r requirements-dev.txt && pytest)       # perfiles (29) — Python
 (cd microservicios/gestion-vacaciones && mvn test)         # vacaciones (62) — Java
 (cd microservicios/auth-service && go test ./...)         # auth-service (116) — Go
 ```

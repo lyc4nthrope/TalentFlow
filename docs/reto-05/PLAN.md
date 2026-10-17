@@ -57,7 +57,7 @@ Cada fase termina **verificada** (pruebas + comprobación real en Docker cuando 
 | **F7** Swagger | D13 en los 7 servicios | Probar desde Swagger con el botón *Authorize* | ✅ |
 | **F8** Pruebas E2E | `docs/reto-05/demo.sh` con los 18 pasos del PDF; colección Bruno; evidencia del caso borde | Desde cero, todos los pasos | ✅ |
 | **F9** Documentación | README: cómo obtener un token, estrategia Gateway vs. interceptores, secreto, diagrama de secuencia, scheduler y su limitación (ShedLock); manual `docs/reto-05/` | Cada entregable del PDF presente | ✅ |
-| **F10** Cierre | Pruebas completas, revisión, `dev` a la par de `lyc4nthrope`, push | Ramas sincronizadas | ⬜ |
+| **F10** Cierre | Pruebas completas, revisión, `dev` a la par de `lyc4nthrope`, push | Ramas sincronizadas | ✅ |
 
 ## Fuera de alcance (anotado para después)
 

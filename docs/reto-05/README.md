@@ -9,6 +9,7 @@ Cómo levantar el sistema, dónde ver el estado de cada componente y cómo demos
 | [`pruebas.md`](pruebas.md) | Evidencia: resultado de cada paso, desviaciones respecto al PDF, log del caso borde y salida completa de `demo.sh` |
 | [`bruno/`](bruno/) | Colección Bruno del Reto 5 (41 peticiones con tests, entorno `Local`) |
 | [`PLAN.md`](PLAN.md) | Diagnóstico de partida, decisiones de diseño (D1-D23) y aprendizajes de cada fase |
+| [`INTEGRACION.md`](INTEGRACION.md) | Cómo se integró el trabajo del equipo: qué aportó cada rama, qué se cambió y por qué, y cómo poner al día una rama personal con `dev` |
 | [README raíz](../../README.md#seguridad-e-identidad-reto-5) | Documento de entrega: justificaciones completas y diagramas |
 
 ## 0. Entregables del PDF → dónde se demuestran
