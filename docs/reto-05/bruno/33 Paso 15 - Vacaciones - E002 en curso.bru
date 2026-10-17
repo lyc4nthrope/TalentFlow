@@ -1,0 +1,28 @@
+meta {
+  name: Paso 15 - Vacaciones - E002 en curso
+  type: http
+  seq: 33
+}
+
+get {
+  url: {{baseUrl}}/vacaciones/{{vac2}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+script:pre-request {
+  // El scheduler corre cada minuto (VACACIONES_CRON) y el período empieza/termina en un minuto exacto:
+  // se espera hasta ese instante más 8 s para que el evento recorra el broker.
+  const espera = Number(bru.getVar("inicio2Ms")) + 8000 - Date.now();
+  if (espera > 0) await bru.sleep(espera);
+}
+
+tests {
+  test("EN_CURSO", function () {
+    expect(res.getBody().estado).to.equal("EN_CURSO");
+  });
+}

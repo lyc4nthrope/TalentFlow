@@ -11,45 +11,80 @@ import (
 	"time"
 )
 
-// Tipo de notificación (reto4.pdf, "Estructura de una notificación").
+// Tipo de notificación. SEGURIDAD y CUENTA son los que muestra el reto5.pdf en el
+// formato del log; VACACIONES viene del Reto 4.
 type Tipo string
 
 const (
-	TipoBienvenida     Tipo = "BIENVENIDA"
-	TipoDesvinculacion Tipo = "DESVINCULACION"
-	TipoVacaciones     Tipo = "VACACIONES"
-
-	// Nuevos tipos para Reto 5
-	TipoRecuperacionClave Tipo = "RECUPERACION_CLAVE"
-	TipoClaveCambiada     Tipo = "CLAVE_CAMBIADA"
-
-	TipoSeguridad Tipo = "SEGURIDAD"
-	TipoCuenta    Tipo = "CUENTA"
+	TipoSeguridad  Tipo = "SEGURIDAD"
+	TipoCuenta     Tipo = "CUENTA"
+	TipoVacaciones Tipo = "VACACIONES"
 )
 
 // Tipos de evento que consume este servicio (Catálogo de Eventos, sección 3).
+//
+// Desde el Reto 5 la bienvenida sale de usuario.creado (trae el token de activación)
+// y la despedida de cuenta.desactivada con motivo RETIRO: empleado.creado y
+// empleado.retirado ya no generan notificaciones. vacaciones.finalizadas tampoco se
+// consume: la "bienvenida de regreso" sale de cuenta.activada (FIN_VACACIONES), así un
+// empleado retirado durante sus vacaciones no la recibe.
 const (
-	EventoEmpleadoCreado        = "empleado.creado"
-	EventoEmpleadoRetirado      = "empleado.retirado"
+	EventoUsuarioCreado         = "usuario.creado"
+	EventoUsuarioRecuperacion   = "usuario.recuperacion"
+	EventoCuentaActivada        = "cuenta.activada"
+	EventoCuentaDesactivada     = "cuenta.desactivada"
 	EventoVacacionesProgramadas = "vacaciones.programadas"
+	EventoVacacionesIniciadas   = "vacaciones.iniciadas"
+)
 
-	// Eventos del Reto 5 (Auth Service)
-	EventoUsuarioCreado          = "usuario.creado"
-	EventoUsuarioRecuperacion    = "usuario.recuperacion"
-	EventoCuentaActivada         = "cuenta.activada"
-	EventoCuentaDesactivada      = "cuenta.desactivada"
-	EventoPasswordResetRequested = "auth.password_reset_requested"
-	EventoPasswordChanged        = "auth.password_changed"
+// EventosConsumidos son las routing keys que la cola notificaciones.eventos debe
+// tener ligadas en infra/rabbitmq/definitions.json (una prueba lo verifica).
+var EventosConsumidos = []string{
+	EventoUsuarioCreado,
+	EventoUsuarioRecuperacion,
+	EventoCuentaActivada,
+	EventoCuentaDesactivada,
+	EventoVacacionesProgramadas,
+	EventoVacacionesIniciadas,
+}
+
+// Motivos de los eventos de cuenta (Catálogo de Eventos, 3.6 y 3.7).
+const (
+	MotivoActivacionInicial = "ACTIVACION_INICIAL"
+	MotivoFinVacaciones     = "FIN_VACACIONES"
+	MotivoVacaciones        = "VACACIONES"
+	MotivoRetiro            = "RETIRO"
 )
 
 // Notificacion es una notificación registrada (y "enviada" mediante el log).
+//
+// Mensaje es lo que se guarda en el historial y devuelve la API: los tokens de
+// activación y recuperación van enmascarados, porque el historial lo puede leer
+// cualquier usuario autenticado y un token vigente permite tomar la cuenta.
+// MensajeEntrega es el texto completo (con el token) que solo usan los canales de
+// envío (la línea [NOTIFICACIÓN] del log y el cuerpo del correo, como pide el PDF);
+// nunca se persiste ni se serializa. Si está vacío, se entrega Mensaje.
+//
+// EmpleadoID queda vacío cuando el evento no lo trae (usuario.recuperacion solo trae
+// el email, D20): se guarda como NULL y se omite en el JSON. Asunto es el asunto del
+// correo (canal SMTP); no se persiste.
 type Notificacion struct {
-	ID           string    `json:"id"`
-	Tipo         Tipo      `json:"tipo"`
-	Destinatario string    `json:"destinatario"`
-	Mensaje      string    `json:"mensaje"`
-	FechaEnvio   time.Time `json:"fechaEnvio"`
-	EmpleadoID   string    `json:"empleadoId"`
+	ID             string    `json:"id"`
+	Tipo           Tipo      `json:"tipo"`
+	Destinatario   string    `json:"destinatario"`
+	Mensaje        string    `json:"mensaje"`
+	FechaEnvio     time.Time `json:"fechaEnvio"`
+	EmpleadoID     string    `json:"empleadoId,omitempty"`
+	Asunto         string    `json:"-"`
+	MensajeEntrega string    `json:"-"`
+}
+
+// TextoAEntregar es el texto que reciben los canales de envío.
+func (n Notificacion) TextoAEntregar() string {
+	if n.MensajeEntrega != "" {
+		return n.MensajeEntrega
+	}
+	return n.Mensaje
 }
 
 var (
@@ -61,18 +96,30 @@ var (
 
 // Cargas útiles, campo por campo según el Catálogo de Eventos. Solo se declaran los
 // campos que este servicio usa; el resto se ignora al decodificar.
-type empleadoCreado struct { // 3.1
-	EmpleadoID string `json:"empleadoId"`
-	Nombre     string `json:"nombre"`
-	Apellido   string `json:"apellido"`
-	Email      string `json:"email"`
+type usuarioCreado struct { // 3.4
+	EmpleadoID      string `json:"empleadoId"`
+	Email           string `json:"email"`
+	TokenActivacion string `json:"tokenActivacion"`
+	ExpiraEn        string `json:"expiraEn"`
 }
 
-type empleadoRetirado struct { // 3.3
-	EmpleadoID  string `json:"empleadoId"`
-	Email       string `json:"email"`
-	FechaRetiro string `json:"fechaRetiro"`
-	Motivo      string `json:"motivo"`
+type usuarioRecuperacion struct { // 3.5
+	Email             string `json:"email"`
+	TokenRecuperacion string `json:"tokenRecuperacion"`
+	ExpiraEn          string `json:"expiraEn"`
+}
+
+type cuentaActivada struct { // 3.6
+	EmpleadoID string `json:"empleadoId"`
+	Email      string `json:"email"`
+	Motivo     string `json:"motivo"`
+}
+
+type cuentaDesactivada struct { // 3.7
+	EmpleadoID string `json:"empleadoId"`
+	Email      string `json:"email"`
+	Motivo     string `json:"motivo"`
+	Permanente *bool  `json:"permanente"`
 }
 
 type vacacionesProgramadas struct { // 3.8
@@ -84,78 +131,95 @@ type vacacionesProgramadas struct { // 3.8
 	DiasHabiles  int    `json:"diasHabiles"`
 }
 
-type usuarioCreado struct {
-	UsuarioID  string `json:"usuarioId"`
-	EmpleadoID string `json:"empleadoId,omitempty"`
-	Email      string `json:"email"`
-	Token      string `json:"token"`
-	Nombre     string `json:"nombre,omitempty"`
-	Apellido   string `json:"apellido,omitempty"`
+type vacacionesIniciadas struct { // 3.9
+	VacacionesID string `json:"vacacionesId"`
+	EmpleadoID   string `json:"empleadoId"`
+	Email        string `json:"email"`
+	FechaInicio  string `json:"fechaInicio"`
+	FechaFin     string `json:"fechaFin"`
 }
 
-type usuarioRecuperacion struct {
-	UsuarioID string `json:"usuarioId"`
-	Email     string `json:"email"`
-	Token     string `json:"token"`
-}
-
-type cuentaActivada struct {
-	UsuarioID string `json:"usuarioId"`
-	Email     string `json:"email"`
-	Motivo    string `json:"motivo,omitempty"`
-}
-
-type cuentaDesactivada struct {
-	UsuarioID  string `json:"usuarioId"`
-	Email      string `json:"email"`
-	Motivo     string `json:"motivo"`
-	Permanente bool   `json:"permanente"`
-}
+// Comienzo de los mensajes del reto5.pdf (el propio PDF los corta en el ejemplo).
+const (
+	prefijoToken = "Para establecer o recuperar su contraseña use el token"
+)
 
 // NotificacionDesdeEvento traduce un evento en la notificación que le corresponde.
-//
-// Nota: el Catálogo de Eventos y el Reto 5 mueven la bienvenida a usuario.creado y la
-// despedida a cuenta.desactivada (que traen el token / el motivo). En el Reto 4 esos
-// eventos no existen todavía, así que se aplica lo que pide el reto4.pdf: bienvenida con
-// empleado.creado y desvinculación con empleado.retirado. Cambiarlo en el Reto 5 es
-// agregar/quitar casos en este switch.
-
-type passwordResetRequested struct {
-	UsuarioID string `json:"usuarioId"`
-	Email     string `json:"email"`
-	Token     string `json:"token"`
-}
-
-type passwordChanged struct {
-	UsuarioID string `json:"usuarioId"`
-	Email     string `json:"email"`
-}
-
 func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time.Time) (Notificacion, error) {
 	switch tipoEvento {
-
-	case EventoEmpleadoCreado:
-		var d empleadoCreado
+	case EventoUsuarioCreado:
+		var d usuarioCreado
 		if err := decodificar(data, &d); err != nil {
 			return Notificacion{}, err
 		}
-		if err := exigir(map[string]string{"empleadoId": d.EmpleadoID, "email": d.Email, "nombre": d.Nombre}); err != nil {
+		if err := exigir(map[string]string{
+			"empleadoId": d.EmpleadoID, "email": d.Email, "tokenActivacion": d.TokenActivacion, "expiraEn": d.ExpiraEn,
+		}); err != nil {
 			return Notificacion{}, err
 		}
-		nombreCompleto := strings.TrimSpace(d.Nombre + " " + d.Apellido)
-		return nueva(TipoBienvenida, d.Email, d.EmpleadoID, ahora,
-			fmt.Sprintf("Bienvenido %s a la empresa. Tu registro como empleado quedó completo.", nombreCompleto)), nil
+		n := nueva(TipoSeguridad, d.Email, d.EmpleadoID, ahora,
+			"Bienvenido a TalentFlow: active su cuenta",
+			mensajeToken(enmascarar(d.TokenActivacion), d.ExpiraEn)+" Bienvenido a TalentFlow.")
+		n.MensajeEntrega = mensajeToken(d.TokenActivacion, d.ExpiraEn) + " Bienvenido a TalentFlow."
+		return n, nil
 
-	case EventoEmpleadoRetirado:
-		var d empleadoRetirado
+	case EventoUsuarioRecuperacion:
+		var d usuarioRecuperacion
 		if err := decodificar(data, &d); err != nil {
 			return Notificacion{}, err
 		}
-		if err := exigir(map[string]string{"empleadoId": d.EmpleadoID, "email": d.Email}); err != nil {
+		if err := exigir(map[string]string{
+			"email": d.Email, "tokenRecuperacion": d.TokenRecuperacion, "expiraEn": d.ExpiraEn,
+		}); err != nil {
 			return Notificacion{}, err
 		}
-		return nueva(TipoDesvinculacion, d.Email, d.EmpleadoID, ahora,
-			"Su cuenta ha sido desactivada por desvinculación de la empresa. Gracias por su trabajo."), nil
+		// Sin empleadoId: el catálogo no lo incluye en este evento (D20).
+		n := nueva(TipoSeguridad, d.Email, "", ahora,
+			"Recuperación de contraseña", mensajeToken(enmascarar(d.TokenRecuperacion), d.ExpiraEn))
+		n.MensajeEntrega = mensajeToken(d.TokenRecuperacion, d.ExpiraEn)
+		return n, nil
+
+	case EventoCuentaActivada:
+		var d cuentaActivada
+		if err := decodificar(data, &d); err != nil {
+			return Notificacion{}, err
+		}
+		if err := exigir(map[string]string{"empleadoId": d.EmpleadoID, "email": d.Email, "motivo": d.Motivo}); err != nil {
+			return Notificacion{}, err
+		}
+		var mensaje string
+		switch d.Motivo {
+		case MotivoFinVacaciones:
+			mensaje = "Bienvenido de regreso. Su cuenta fue reactivada."
+		case MotivoActivacionInicial:
+			mensaje = "Su cuenta fue activada. Ya puede iniciar sesión."
+		default:
+			return Notificacion{}, fmt.Errorf("%w: motivo desconocido %q", ErrDatosInvalidos, d.Motivo)
+		}
+		return nueva(TipoCuenta, d.Email, d.EmpleadoID, ahora, "Estado de su cuenta", mensaje), nil
+
+	case EventoCuentaDesactivada:
+		var d cuentaDesactivada
+		if err := decodificar(data, &d); err != nil {
+			return Notificacion{}, err
+		}
+		if err := exigir(map[string]string{"empleadoId": d.EmpleadoID, "email": d.Email, "motivo": d.Motivo}); err != nil {
+			return Notificacion{}, err
+		}
+		if d.Permanente == nil {
+			return Notificacion{}, fmt.Errorf("%w: faltan [permanente]", ErrDatosInvalidos)
+		}
+		var mensaje string
+		switch {
+		case d.Motivo == MotivoVacaciones && !*d.Permanente:
+			mensaje = "Su cuenta fue desactivada temporalmente por vacaciones."
+		case d.Motivo == MotivoRetiro && *d.Permanente:
+			mensaje = "Su cuenta fue desactivada de forma permanente por retiro."
+		default:
+			return Notificacion{}, fmt.Errorf("%w: motivo %q con permanente=%t no es válido",
+				ErrDatosInvalidos, d.Motivo, *d.Permanente)
+		}
+		return nueva(TipoCuenta, d.Email, d.EmpleadoID, ahora, "Estado de su cuenta", mensaje), nil
 
 	case EventoVacacionesProgramadas:
 		var d vacacionesProgramadas
@@ -167,76 +231,57 @@ func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time
 		}); err != nil {
 			return Notificacion{}, err
 		}
-		return nueva(TipoVacaciones, d.Email, d.EmpleadoID, ahora,
+		return nueva(TipoVacaciones, d.Email, d.EmpleadoID, ahora, "Vacaciones programadas",
 			fmt.Sprintf("Sus vacaciones del %s al %s (%d días hábiles) quedaron programadas.",
 				d.FechaInicio, d.FechaFin, d.DiasHabiles)), nil
 
-	// --- NOTIFICACIONES DE SEGURIDAD (Manejo de Tokens y Claves) ---
-	case EventoUsuarioCreado, EventoUsuarioRecuperacion, EventoPasswordResetRequested:
-		var d usuarioRecuperacion
+	case EventoVacacionesIniciadas:
+		var d vacacionesIniciadas
 		if err := decodificar(data, &d); err != nil {
 			return Notificacion{}, err
 		}
-		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email, "token": d.Token}); err != nil {
+		if err := exigir(map[string]string{
+			"vacacionesId": d.VacacionesID, "empleadoId": d.EmpleadoID, "email": d.Email,
+			"fechaInicio": d.FechaInicio, "fechaFin": d.FechaFin,
+		}); err != nil {
 			return Notificacion{}, err
 		}
-		return nueva(TipoSeguridad, d.Email, d.UsuarioID, ahora,
-			fmt.Sprintf("Para establecer o restablecer su contraseña, utilice el siguiente token de activación: %s", d.Token)), nil
-
-	case EventoPasswordChanged:
-		var d passwordChanged
-		if err := decodificar(data, &d); err != nil {
-			return Notificacion{}, err
-		}
-		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email}); err != nil {
-			return Notificacion{}, err
-		}
-		return nueva(TipoSeguridad, d.Email, d.UsuarioID, ahora,
-			"Tu contraseña ha sido cambiada exitosamente. Si no realizaste esta acción, contacta al administrador."), nil
-
-	// --- NOTIFICACIONES DE ESTADO DE CUENTA ---
-	case EventoCuentaActivada:
-		var d cuentaActivada
-		if err := decodificar(data, &d); err != nil {
-			return Notificacion{}, err
-		}
-		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email}); err != nil {
-			return Notificacion{}, err
-		}
-		msg := "Bienvenido de regreso. Su cuenta ha sido activada."
-		if d.Motivo != "" {
-			msg = fmt.Sprintf("Bienvenido de regreso. Su cuenta ha sido activada (Motivo: %s).", d.Motivo)
-		}
-		return nueva(TipoCuenta, d.Email, d.UsuarioID, ahora, msg), nil
-
-	case EventoCuentaDesactivada:
-		var d cuentaDesactivada
-		if err := decodificar(data, &d); err != nil {
-			return Notificacion{}, err
-		}
-		if err := exigir(map[string]string{"usuarioId": d.UsuarioID, "email": d.Email, "motivo": d.Motivo}); err != nil {
-			return Notificacion{}, err
-		}
-		return nueva(TipoCuenta, d.Email, d.UsuarioID, ahora,
-			fmt.Sprintf("Su cuenta fue desactivada por el siguiente motivo: %s", d.Motivo)), nil
+		return nueva(TipoVacaciones, d.Email, d.EmpleadoID, ahora, "Inicio de sus vacaciones",
+			fmt.Sprintf("Sus vacaciones %s comenzaron (%s) y terminan el %s. Su cuenta queda inactiva durante el período.",
+				d.VacacionesID, d.FechaInicio, d.FechaFin)), nil
 
 	default:
 		return Notificacion{}, fmt.Errorf("%w: %s", ErrTipoNoSoportado, tipoEvento)
 	}
 }
 
-// LineaDeLog es la "simulación" del envío que pide el reto: un log estructurado.
+// LineaDeLog es la "simulación" del envío que pide el reto: un log estructurado. Lleva
+// el texto completo (con el token), como el ejemplo del reto5.pdf.
 func (n Notificacion) LineaDeLog() string {
-	return fmt.Sprintf("[NOTIFICACIÓN] Tipo: %s | Para: %s | Mensaje: %q", n.Tipo, n.Destinatario, n.Mensaje)
+	return fmt.Sprintf("[NOTIFICACIÓN] Tipo: %s | Para: %s | Mensaje: %q", n.Tipo, n.Destinatario, n.TextoAEntregar())
 }
 
-func nueva(tipo Tipo, destinatario, empleadoID string, ahora time.Time, mensaje string) Notificacion {
+// enmascarar deja visibles solo los últimos 4 caracteres del token: suficiente para
+// que soporte identifique cuál se envió, inútil para usarlo.
+func enmascarar(token string) string {
+	if len(token) <= 4 {
+		return "****"
+	}
+	return "****" + token[len(token)-4:]
+}
+
+func mensajeToken(token, expiraEn string) string {
+	return fmt.Sprintf("%s %s (vence %s).", prefijoToken, token, expiraEn)
+}
+
+func nueva(tipo Tipo, destinatario, empleadoID string, ahora time.Time, asunto, mensaje string) Notificacion {
 	return Notificacion{
 		Tipo:         tipo,
 		Destinatario: destinatario,
 		Mensaje:      mensaje,
 		FechaEnvio:   ahora.UTC(),
 		EmpleadoID:   empleadoID,
+		Asunto:       asunto,
 	}
 }
 

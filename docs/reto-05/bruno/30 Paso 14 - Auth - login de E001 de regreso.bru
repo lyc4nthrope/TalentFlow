@@ -1,0 +1,28 @@
+meta {
+  name: Paso 14 - Auth - login de E001 de regreso
+  type: http
+  seq: 30
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{email1}}",
+    "password": "{{passNueva}}"
+  }
+}
+
+tests {
+  test("200: cuenta ACTIVA de nuevo", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

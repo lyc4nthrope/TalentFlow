@@ -59,6 +59,7 @@ def crear_app(
         docs_url="/perfiles/docs",
         openapi_url="/perfiles/openapi.json",
         redoc_url=None,
+        swagger_ui_parameters={"persistAuthorization": True},
         lifespan=lifespan,
     )
 
@@ -161,4 +162,22 @@ def crear_app(
             },
         )
 
+    _declarar_bearer_en_openapi(app)
     return app
+
+
+def _declarar_bearer_en_openapi(app: FastAPI) -> None:
+    """D13: el Gateway exige un JWT. Se declara solo en la documentación (sin
+    dependencias de seguridad en las rutas) para no cambiar el comportamiento."""
+    generar_original = app.openapi
+
+    def openapi_con_bearer() -> dict:
+        if app.openapi_schema is None:
+            esquema = generar_original()  # también lo cachea en app.openapi_schema
+            esquema.setdefault("components", {})["securitySchemes"] = {
+                "bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+            }
+            esquema["security"] = [{"bearerAuth": []}]
+        return app.openapi_schema
+
+    app.openapi = openapi_con_bearer

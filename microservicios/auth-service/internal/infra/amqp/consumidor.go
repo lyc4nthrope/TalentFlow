@@ -9,29 +9,64 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/aplicacion"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/dominio"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/eventos"
 	amqp091 "github.com/rabbitmq/amqp091-go"
 )
 
-type ProcesadorEmpleado interface {
-	CrearCuentaDesdeEmpleado(ctx context.Context, email, nombre, apellido, empleadoID string) error
+// ProcesadorEventos son los casos de uso que reaccionan a cada evento consumido.
+// Reciben el id del envelope para deduplicar (D4).
+type ProcesadorEventos interface {
+	CrearCuentaDesdeEmpleado(ctx context.Context, eventoID string, e dominio.EmpleadoCreado) error
+	RetirarCuenta(ctx context.Context, eventoID string, e dominio.EmpleadoRetirado) error
+	SuspenderPorVacaciones(ctx context.Context, eventoID string, e dominio.VacacionesIniciadas) error
+	ReactivarPorFinDeVacaciones(ctx context.Context, eventoID string, e dominio.VacacionesFinalizadas) error
 }
+
+// esperaReintento evita reencolar al instante un mensaje que falló por un problema
+// transitorio (BD caída): sin espera sería un bucle que consume CPU sin avanzar.
+const esperaReintento = 5 * time.Second
 
 type Config struct {
 	URL      string
+	Exchange string
 	Cola     string
 	Etiqueta string
 	Prefetch int
 }
 
+// PrefetchOrdenado es 1 a propósito: con un prefetch mayor, un mensaje que falla de
+// forma transitoria se reencola DETRÁS de los que ya estaban entregados, y el orden
+// importa en el ciclo de vida (vacaciones.finalizadas antes que su vacaciones.iniciadas
+// dejaría la cuenta suspendida para siempre; empleado.retirado antes que su
+// empleado.creado daría una cuenta a un retirado). Con 1 el mensaje reencolado vuelve
+// a la cabeza de la cola. El volumen de eventos de cuentas es bajo: el rendimiento no
+// es una preocupación aquí.
+const PrefetchOrdenado = 1
+
+// ConfigConsumidorAuth es la configuración del consumidor del auth-service.
+func ConfigConsumidorAuth(url, exchange string) Config {
+	return Config{URL: url, Exchange: exchange, Cola: "auth.eventos", Etiqueta: "auth-service", Prefetch: PrefetchOrdenado}
+}
+
 type Consumidor struct {
 	cfg        Config
-	procesador ProcesadorEmpleado
+	procesador ProcesadorEventos
 	conectado  atomic.Bool
 }
 
-func NuevoConsumidor(cfg Config, procesador ProcesadorEmpleado) *Consumidor {
+func NuevoConsumidor(cfg Config, procesador ProcesadorEventos) *Consumidor {
 	return &Consumidor{cfg: cfg, procesador: procesador}
+}
+
+// Estado informa si el consumidor tiene una conexión viva con el broker ("UP" / "DOWN");
+// lo publica GET /health.
+func (c *Consumidor) Estado() string {
+	if c.conectado.Load() {
+		return "UP"
+	}
+	return "DOWN"
 }
 
 func (c *Consumidor) Ejecutar(ctx context.Context) {
@@ -74,8 +109,11 @@ func (c *Consumidor) consumir(ctx context.Context) error {
 		return fmt.Errorf("declarar cola %q: %w", c.cfg.Cola, err)
 	}
 
-	if err := canal.QueueBind(c.cfg.Cola, "empleado.creado", "talentflow.eventos", false, nil); err != nil {
-		return fmt.Errorf("bind cola %q a empleado.creado: %w", c.cfg.Cola, err)
+	// Los mismos bindings que infra/rabbitmq/definitions.json (idempotente).
+	for _, clave := range dominio.EventosConsumidos {
+		if err := canal.QueueBind(c.cfg.Cola, clave, c.cfg.Exchange, false, nil); err != nil {
+			return fmt.Errorf("bind cola %q a %s: %w", c.cfg.Cola, clave, err)
+		}
 	}
 
 	entregas, err := canal.Consume(c.cfg.Cola, c.cfg.Etiqueta, false, false, false, false, nil)
@@ -110,27 +148,66 @@ func (c *Consumidor) manejar(ctx context.Context, entrega amqp091.Delivery) {
 		return
 	}
 
-	var payload struct {
-		EmpleadoID string `json:"empleadoId"`
-		Nombre     string `json:"nombre"`
-		Apellido   string `json:"apellido"`
-		Email      string `json:"email"`
-	}
-	if err := json.Unmarshal(sobre.Data, &payload); err != nil {
-		log.Printf("auth-service: evento descartado, payload inválido: %v", err)
+	err := c.despachar(ctx, sobre)
+	switch {
+	case err == nil:
+		if err := entrega.Ack(false); err != nil {
+			log.Printf("auth-service: no se pudo confirmar el mensaje %s: %v", sobre.ID, err)
+		}
+	case errors.Is(err, errTipoNoSoportado):
+		log.Printf("auth-service: evento descartado, tipo no soportado %q (id %s)", sobre.Type, sobre.ID)
 		_ = entrega.Ack(false)
-		return
-	}
-
-	if err := c.procesador.CrearCuentaDesdeEmpleado(ctx, payload.Email, payload.Nombre, payload.Apellido, payload.EmpleadoID); err != nil {
-		log.Printf("auth-service: no se pudo crear la cuenta: %v", err)
+	case errors.Is(err, aplicacion.ErrSolicitudInvalida), errors.Is(err, aplicacion.ErrRechazoPermanente):
+		// Mensaje envenenado o dato que la BD nunca aceptará: reintentarlo no sirve.
+		log.Printf("auth-service: evento descartado (id %s, %s): %v", sobre.ID, sobre.Type, err)
+		_ = entrega.Ack(false)
+	default:
+		log.Printf("auth-service: fallo transitorio procesando %s (%s); se reintentará: %v", sobre.ID, sobre.Type, err)
+		dormir(ctx, esperaReintento)
 		_ = entrega.Nack(false, true)
-		return
 	}
+}
 
-	if err := entrega.Ack(false); err != nil {
-		log.Printf("auth-service: no se pudo confirmar el mensaje: %v", err)
+var errTipoNoSoportado = errors.New("tipo de evento no soportado")
+
+// despachar decodifica el payload según el tipo y llama al caso de uso. Un payload
+// que no se puede decodificar es una solicitud inválida (se descarta).
+func (c *Consumidor) despachar(ctx context.Context, sobre eventos.Envelope) error {
+	switch sobre.Type {
+	case dominio.EventoEmpleadoCreado:
+		var d dominio.EmpleadoCreado
+		if err := decodificar(sobre, &d); err != nil {
+			return err
+		}
+		return c.procesador.CrearCuentaDesdeEmpleado(ctx, sobre.ID, d)
+	case dominio.EventoEmpleadoRetirado:
+		var d dominio.EmpleadoRetirado
+		if err := decodificar(sobre, &d); err != nil {
+			return err
+		}
+		return c.procesador.RetirarCuenta(ctx, sobre.ID, d)
+	case dominio.EventoVacacionesIniciadas:
+		var d dominio.VacacionesIniciadas
+		if err := decodificar(sobre, &d); err != nil {
+			return err
+		}
+		return c.procesador.SuspenderPorVacaciones(ctx, sobre.ID, d)
+	case dominio.EventoVacacionesFinalizadas:
+		var d dominio.VacacionesFinalizadas
+		if err := decodificar(sobre, &d); err != nil {
+			return err
+		}
+		return c.procesador.ReactivarPorFinDeVacaciones(ctx, sobre.ID, d)
+	default:
+		return errTipoNoSoportado
 	}
+}
+
+func decodificar(sobre eventos.Envelope, destino any) error {
+	if err := json.Unmarshal(sobre.Data, destino); err != nil {
+		return fmt.Errorf("%w: payload de %s: %v", aplicacion.ErrSolicitudInvalida, sobre.Type, err)
+	}
+	return nil
 }
 
 func dormir(ctx context.Context, d time.Duration) bool {

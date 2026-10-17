@@ -1,6 +1,9 @@
 package com.talentflow.vacaciones.infraestructura.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -10,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.talentflow.vacaciones.aplicacion.ServicioVacaciones;
+import com.talentflow.vacaciones.aplicacion.SolicitudVacaciones;
 import com.talentflow.vacaciones.dominio.ConflictoDeEstadoException;
 import com.talentflow.vacaciones.dominio.EstadoVacaciones;
 import com.talentflow.vacaciones.dominio.SolicitudInvalidaException;
@@ -18,6 +22,7 @@ import com.talentflow.vacaciones.dominio.VacacionesNoEncontradasException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
@@ -27,8 +32,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @WebMvcTest(VacacionesController.class)
 class VacacionesControllerTest {
 
-    private static final Vacaciones PERIODO = new Vacaciones("V-2026-0001", "E001", LocalDateTime.of(2026, 12, 14, 0, 0),
-            LocalDateTime.of(2026, 12, 20, 0, 0), EstadoVacaciones.PROGRAMADA, Instant.parse("2026-09-28T15:00:00Z"));
+    private static final Vacaciones PERIODO = new Vacaciones("V-2026-0001", "E001", LocalDateTime.of(2026, 12, 14, 8, 0),
+            LocalDateTime.of(2026, 12, 20, 18, 30), EstadoVacaciones.PROGRAMADA, Instant.parse("2026-09-28T15:00:00Z"));
 
     @Autowired
     private MockMvc mvc;
@@ -44,13 +49,33 @@ class VacacionesControllerTest {
     void programarResponde201ConLocationYLaEstructuraDelReto() throws Exception {
         when(servicio.programar(any())).thenReturn(PERIODO);
 
-        postear("{\"empleadoId\":\"E001\",\"fechaInicio\":\"2026-12-14\",\"fechaFin\":\"2026-12-20\"}")
+        postear("{\"empleadoId\":\"E001\",\"fechaInicio\":\"2026-12-14T08:00\",\"fechaFin\":\"2026-12-20T18:30\"}")
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", "/vacaciones/V-2026-0001"))
                 .andExpect(jsonPath("$.id").value("V-2026-0001"))
-                .andExpect(jsonPath("$.fechaInicio").value("2026-12-14T00:00:00"))
+                .andExpect(jsonPath("$.fechaInicio").value("2026-12-14T08:00:00"))
+                .andExpect(jsonPath("$.fechaFin").value("2026-12-20T18:30:00"))
                 .andExpect(jsonPath("$.estado").value("PROGRAMADA"))
                 .andExpect(jsonPath("$.fechaCreacion").value("2026-09-28T15:00:00Z"));
+    }
+
+    @Test
+    void lasFechasLleganAlCasoDeUsoConSuHoraOConLaDelDiaCompletoSiSoloHayFecha() throws Exception {
+        when(servicio.programar(any())).thenReturn(PERIODO);
+        ArgumentCaptor<SolicitudVacaciones> solicitud = ArgumentCaptor.forClass(SolicitudVacaciones.class);
+
+        postear("{\"empleadoId\":\"E001\",\"fechaInicio\":\"2026-12-14T08:00:30\",\"fechaFin\":\"2026-12-20T18:30\"}")
+                .andExpect(status().isCreated());
+        postear("{\"empleadoId\":\"E001\",\"fechaInicio\":\"2026-12-14\",\"fechaFin\":\"2026-12-20\"}")
+                .andExpect(status().isCreated());
+
+        verify(servicio, times(2)).programar(solicitud.capture());
+        assertThat(solicitud.getAllValues().get(0).fechaInicio().valor()).isEqualTo(LocalDateTime.of(2026, 12, 14, 8, 0, 30));
+        assertThat(solicitud.getAllValues().get(0).fechaFin().valor()).isEqualTo(LocalDateTime.of(2026, 12, 20, 18, 30));
+        assertThat(solicitud.getAllValues().get(1).fechaInicio().valor()).isEqualTo(LocalDateTime.of(2026, 12, 14, 0, 0));
+        assertThat(solicitud.getAllValues().get(1).fechaFin().valor()).isEqualTo(LocalDateTime.of(2026, 12, 20, 23, 59, 59));
+        assertThat(solicitud.getAllValues().get(0).fechaInicio().soloFecha()).isFalse();
+        assertThat(solicitud.getAllValues().get(1).fechaInicio().soloFecha()).isTrue();
     }
 
     @Test
@@ -82,7 +107,15 @@ class VacacionesControllerTest {
     void fechaInexistente400() throws Exception {
         postear("{\"empleadoId\":\"E001\",\"fechaInicio\":\"2026-02-30\",\"fechaFin\":\"2026-03-05\"}")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errors[0].field").value("fechaInicio"));
+                .andExpect(jsonPath("$.errors[0].field").value("fechaInicio"))
+                .andExpect(jsonPath("$.errors[0].message").value("Debe ser una fecha válida YYYY-MM-DD o YYYY-MM-DDTHH:mm[:ss]"));
+    }
+
+    @Test
+    void horaInexistente400() throws Exception {
+        postear("{\"empleadoId\":\"E001\",\"fechaInicio\":\"2026-12-14T08:00\",\"fechaFin\":\"2026-12-20T24:30\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("fechaFin"));
     }
 
     @Test

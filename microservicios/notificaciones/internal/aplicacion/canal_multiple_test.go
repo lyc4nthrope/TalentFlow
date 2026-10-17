@@ -8,7 +8,7 @@ import (
 
 func TestCanalMultipleEnviaPorTodosLosCanales(t *testing.T) {
 	primero, segundo := &canalEspia{}, &canalEspia{}
-	notificacion := dominio.Notificacion{ID: "n-1", Tipo: dominio.TipoBienvenida, Destinatario: "juan@empresa.com"}
+	notificacion := dominio.Notificacion{ID: "n-1", Tipo: dominio.TipoSeguridad, Destinatario: "juan@empresa.com"}
 
 	CanalMultiple{primero, segundo}.Enviar(notificacion)
 

@@ -9,3 +9,5 @@ Dockerfile
 init.sql
 requirements-dev.txt
 pyproject.toml
+reports
+Makefile

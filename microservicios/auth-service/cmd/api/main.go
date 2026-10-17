@@ -2,57 +2,105 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"flag"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/config"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/api"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/aplicacion"
-	infra "github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/infra"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/infra/amqp"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/infra/jwt"
-	repositorio "github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/infra/repositorio"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/infra/postgres"
 )
 
-func main() {
-	cfg := config.CargarConfiguracion()
-
-	// 1. Inicializar Base de Datos Postgres (GORM)
-	db, err := infra.ConectarBD(cfg.DatabaseURL)
+// tokenAleatorio genera los tokens de activación y recuperación: UUID v4 a partir
+// de crypto/rand (Reto 5, D1).
+func tokenAleatorio() (string, error) {
+	id, err := uuid.NewRandom()
 	if err != nil {
-		log.Fatalf("Error al conectar a la base de datos: %v", err)
+		return "", err
+	}
+	return id.String(), nil
+}
+
+func main() {
+	// Reto 5, D22: la imagen distroless no tiene shell ni wget, así que el healthcheck de
+	// Docker ejecuta el propio binario con -salud.
+	salud := flag.Bool("salud", false, "consulta GET /health del servicio local y termina (0 = sano)")
+	flag.Parse()
+	if *salud {
+		os.Exit(codigoSalida(comprobarSalud(urlSaludLocal(), &http.Client{Timeout: timeoutChequeo})))
 	}
 
-	// 2. Ejecutar AutoMigrate y el Seed del usuario Admin
-	if err := infra.InitDatabase(db); err != nil {
-		log.Fatalf("Error al inicializar esquemas/seed de la BD: %v", err)
+	cfg, err := config.Cargar()
+	if err != nil {
+		log.Printf("auth-service: configuración inválida: %v", err)
+		os.Exit(1)
 	}
 
-	// 3. Inicializar Infraestructura y Repositorio Real
-	usuarioRepo := repositorio.NuevoUsuarioRepository(db)
-	productorAMQP := amqp.NuevoProductor(cfg.AMQPURL, cfg.Exchange)
-	tokenProvider := jwt.NuevoTokenProvider(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTExpirationHours)
+	ctx, cancelar := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancelar()
 
-	// 4. Inicializar Servicio de Aplicación (Inyectando el repositorio)
-	authService := aplicacion.NuevoAuthService(productorAMQP, tokenProvider, usuarioRepo)
+	pool, err := postgres.Conectar(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Printf("auth-service: %v", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
 
-	// 5. Arrancar consumidor de eventos: empleado.creado -> crea el usuario inactivo y publica usuario.creado
-	consumidor := amqp.NuevoConsumidor(amqp.Config{
-		URL:      cfg.AMQPURL,
-		Cola:     "auth.eventos",
-		Etiqueta: "auth-service",
-		Prefetch: 10,
-	}, authService)
-	go consumidor.Ejecutar(context.Background())
+	emisor, err := jwt.NuevoTokenProvider(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTVigencia, time.Now)
+	if err != nil {
+		log.Printf("auth-service: %v", err)
+		os.Exit(1)
+	}
+	servicio, err := aplicacion.NuevoAuthService(
+		postgres.NuevoRepositorio(pool),
+		amqp.NuevoProductor(cfg.AMQPURL, cfg.Exchange),
+		emisor,
+		tokenAleatorio,
+		time.Now,
+		aplicacion.Opciones{
+			VigenciaActivacion:   cfg.VigenciaActivacion,
+			VigenciaRecuperacion: cfg.VigenciaRecuperacion,
+		},
+	)
+	if err != nil {
+		log.Printf("auth-service: %v", err)
+		os.Exit(1)
+	}
 
-	// 6. Inicializar Handlers y Rutas
-	authHandler := api.NuevoAuthHandler(authService)
-	router := api.ConfigurarRutas(authHandler)
+	if err := servicio.SembrarAdmin(ctx, cfg.AdminEmail, cfg.AdminPassword); err != nil {
+		log.Printf("auth-service: %v", err)
+		os.Exit(1)
+	}
 
-	direccion := fmt.Sprintf(":%s", cfg.Port)
-	log.Printf("Servicio auth-service corriendo en el puerto %s...", cfg.Port)
-	if err := http.ListenAndServe(direccion, router); err != nil {
-		log.Fatalf("Error al iniciar el servidor: %v", err)
+	// Ciclo de vida de la cuenta: empleado.creado/retirado y vacaciones.iniciadas/finalizadas.
+	// Prefetch 1 para conservar el orden ante reintentos (ver amqp.PrefetchOrdenado).
+	consumidor := amqp.NuevoConsumidor(amqp.ConfigConsumidorAuth(cfg.AMQPURL, cfg.Exchange), servicio)
+	go consumidor.Ejecutar(ctx)
+
+	servidor := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           api.ConfigurarRutas(api.NuevoAuthHandler(servicio), api.NuevoSaludHandler(pool, consumidor)),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		<-ctx.Done()
+		apagado, cancelarApagado := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelarApagado()
+		_ = servidor.Shutdown(apagado)
+	}()
+
+	log.Printf("auth-service escuchando en el puerto %s", cfg.Port)
+	if err := servidor.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("auth-service: %v", err)
+		os.Exit(1)
 	}
 }

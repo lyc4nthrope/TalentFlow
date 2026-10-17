@@ -11,7 +11,9 @@ get {
 }
 
 tests {
-  test("se registró la notificación DESVINCULACION", function () {
-    expect(res.getBody().map((n) => n.tipo)).to.include("DESVINCULACION");
+  // Desde el Reto 5 la despedida llega como CUENTA (cuenta.desactivada con motivo RETIRO del auth-service).
+  test("se registró la desvinculación (CUENTA, desactivación permanente por retiro)", function () {
+    const mensajes = res.getBody().filter((n) => n.tipo === "CUENTA").map((n) => n.mensaje);
+    expect(mensajes).to.include("Su cuenta fue desactivada de forma permanente por retiro.");
   });
 }

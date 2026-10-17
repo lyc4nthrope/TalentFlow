@@ -59,11 +59,17 @@ curl -s -o /dev/null -w 'POST /empleados -> HTTP %{http_code}\n' -X POST "$G/emp
        "email": "juan.perez@empresa.com", "numeroEmpleado": "EMP-2026-001",
        "cargo": "Desarrollador Senior", "area": "Tecnología",
        "departamentoId": "IT", "fechaIngreso": "2026-03-01"}'
-sleep 2 # la reacción es asincrónica
+# La reacción es asincrónica y, desde el Reto 5, la bienvenida da dos saltos
+# (empleado.creado → auth-service → usuario.creado → notificaciones): se espera hasta 15 s.
+for _ in $(seq 1 15); do
+  [ "$(curl -s "$G/notificaciones/E001" | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))' 2>/dev/null)" -gt 0 ] 2>/dev/null && break
+  sleep 1
+done
 
 titulo "Paso 5 — El evento fue procesado por los consumidores (fan-out)"
 echo "Perfil creado automáticamente (GET /perfiles/E001):"
 curl -s "$G/perfiles/E001" | campos empleadoId nombre email telefono ciudad biografia archivado
+# Desde el Reto 5 la bienvenida llega como SEGURIDAD (usuario.creado del auth-service, con el token de activación).
 echo "Notificación registrada (GET /notificaciones/E001):"
 curl -s "$G/notificaciones/E001" | python3 -c "import json,sys;[print('  ',n['tipo'],'->',n['destinatario']) for n in json.load(sys.stdin)]"
 echo "Notificación simulada en el log de notificaciones-service:"
@@ -109,7 +115,8 @@ sleep 3
 echo "   notificaciones de E900: $(curl -s "$G/notificaciones/E900" | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))')"
 echo "   perfiles de E900:       $(curl -s "$G/perfiles" | python3 -c 'import json,sys;print(sum(p["empleadoId"]=="E900" for p in json.load(sys.stdin)))')"
 echo "   logs (cada consumidor lo procesó una vez y descartó el duplicado):"
-for servicio in notificaciones-service perfiles-service vacaciones-service; do
+# Desde el Reto 5 notificaciones ya no consume empleado.creado: el duplicado lo descarta auth-service.
+for servicio in auth-service perfiles-service vacaciones-service; do
   docker compose logs --no-log-prefix "$servicio" 2>/dev/null | grep '3f9b2c10' | grep -oE 'duplicado descartado|evento duplicado descartado' | head -1 \
     | sed "s/^/      $servicio: /"
 done
@@ -124,6 +131,7 @@ curl -s "$G/empleados?estado=RETIRADO" | python3 -c "import json,sys;[print('  '
 HOY=$(TZ=America/Bogota date +%F)
 echo "Auditoría por rango (desde=$HOY&hasta=$HOY):"
 curl -s "$G/empleados?estado=RETIRADO&desde=$HOY&hasta=$HOY" | python3 -c "import json,sys;print('  ',[e['id'] for e in json.load(sys.stdin)])"
+# Desde el Reto 5 la despedida llega como CUENTA (cuenta.desactivada con motivo RETIRO del auth-service).
 echo "Notificación de desvinculación:"
 curl -s "$G/notificaciones/E001" | python3 -c "import json,sys;[print('  ',n['tipo']) for n in json.load(sys.stdin)]"
 echo "Perfil archivado:"

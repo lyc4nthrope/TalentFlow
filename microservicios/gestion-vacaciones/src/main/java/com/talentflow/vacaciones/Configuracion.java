@@ -1,20 +1,26 @@
 package com.talentflow.vacaciones;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.talentflow.vacaciones.aplicacion.ProcesadorCicloVacaciones;
 import com.talentflow.vacaciones.aplicacion.ProcesadorEventosEmpleado;
 import com.talentflow.vacaciones.aplicacion.ServicioVacaciones;
 import com.talentflow.vacaciones.aplicacion.Transacciones;
-import com.talentflow.vacaciones.dominio.EventoPublisherPort;
 import com.talentflow.vacaciones.infraestructura.mensajeria.ConsumidorEventosEmpleado;
 import com.talentflow.vacaciones.infraestructura.mensajeria.RabbitPublicadorEventos;
 import com.talentflow.vacaciones.infraestructura.persistencia.JdbcDeduplicador;
 import com.talentflow.vacaciones.infraestructura.persistencia.JdbcRepositorioEmpleados;
 import com.talentflow.vacaciones.infraestructura.persistencia.JdbcRepositorioVacaciones;
 import com.talentflow.vacaciones.infraestructura.persistencia.TransaccionesSpring;
+import com.talentflow.vacaciones.infraestructura.scheduler.VacacionesScheduler;
+import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.servers.Server;
 import java.time.Clock;
 import java.time.ZoneId;
+import java.util.List;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -30,15 +36,27 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Configuration
 public class Configuracion {
 
-    /** Metadatos de la especificación (sin esto springdoc usa "OpenAPI definition"). */
+    /**
+     * Metadatos de la especificación (sin esto springdoc usa "OpenAPI definition").
+     * El servidor relativo "/" evita que springdoc lo derive del Host de la petición: tras el
+     * Gateway (changeOrigin) sería vacaciones-service:8085 y "Try it out" fallaría desde el host.
+     * D13: el Gateway exige un JWT, por eso bearerAuth es requisito global.
+     */
     @Bean
     OpenAPI especificacion() {
-        return new OpenAPI().info(new Info()
+        return new OpenAPI()
+                .servers(List.of(new Server().url("/")))
+                .components(new Components().addSecuritySchemes("bearerAuth", new SecurityScheme()
+                        .type(SecurityScheme.Type.HTTP).scheme("bearer").bearerFormat("JWT")))
+                .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
+                .info(new Info()
                 .title("TalentFlow - Servicio de Gestión de Vacaciones")
                 .version("1.0.0")
                 .description("REST para RR. HH.: programa, consulta y cancela períodos de vacaciones con las "
                         + "cuatro validaciones del reto. Mantiene una réplica local de empleados consumiendo "
-                        + "empleado.creado/actualizado/retirado y publica vacaciones.programadas (Catálogo de Eventos)."));
+                        + "empleado.creado/actualizado/retirado y publica vacaciones.programadas; un scheduler publica "
+                        + "vacaciones.iniciadas y vacaciones.finalizadas al llegar cada fecha (Catálogo de Eventos). "
+                        + "Las fechas son fecha y hora locales (America/Bogota)."));
     }
 
     @Bean
@@ -46,7 +64,7 @@ public class Configuracion {
         return ZoneId.of(zona);
     }
 
-    /** "Hoy" es el día en la zona horaria del negocio, no en UTC. */
+    /** "Ahora" es la fecha y hora en la zona horaria del negocio, no en UTC. */
     @Bean
     Clock reloj(ZoneId zonaHoraria) {
         return Clock.system(zonaHoraria);
@@ -67,22 +85,36 @@ public class Configuracion {
         return new JdbcRepositorioEmpleados(jdbc);
     }
 
-@Bean
-RabbitPublicadorEventos publicadorEventos(RabbitTemplate rabbit, ObjectMapper json, Clock reloj,
-        @Value("${vacaciones.eventos.exchange}") String exchange,
-        @Value("${vacaciones.eventos.timeout-confirmacion-ms}") long timeoutMs) {
-    return new RabbitPublicadorEventos(rabbit, json, exchange, "vacaciones-service", timeoutMs, reloj);
-}
+    @Bean
+    RabbitPublicadorEventos publicadorEventos(RabbitTemplate rabbit, ObjectMapper json, Clock reloj,
+            @Value("${vacaciones.eventos.exchange}") String exchange,
+            @Value("${vacaciones.eventos.timeout-confirmacion-ms}") long timeoutMs) {
+        return new RabbitPublicadorEventos(rabbit, json, exchange, "vacaciones-service", timeoutMs, reloj);
+    }
 
-@Bean
-ServicioVacaciones servicioVacaciones(JdbcRepositorioVacaciones vacaciones, JdbcRepositorioEmpleados empleados,
-        RabbitPublicadorEventos publicador, Transacciones transacciones, Clock reloj) {
-    return new ServicioVacaciones(vacaciones, empleados, publicador, transacciones, reloj);
-}
+    @Bean
+    ServicioVacaciones servicioVacaciones(JdbcRepositorioVacaciones vacaciones, JdbcRepositorioEmpleados empleados,
+            RabbitPublicadorEventos publicador, Transacciones transacciones, Clock reloj) {
+        return new ServicioVacaciones(vacaciones, empleados, publicador, transacciones, reloj);
+    }
+
+    @Bean
+    ProcesadorCicloVacaciones procesadorCicloVacaciones(JdbcRepositorioVacaciones vacaciones,
+            JdbcRepositorioEmpleados empleados, RabbitPublicadorEventos publicador, Transacciones transacciones,
+            Clock reloj) {
+        return new ProcesadorCicloVacaciones(vacaciones, empleados, publicador, transacciones, reloj);
+    }
+
+    @Bean
+    VacacionesScheduler vacacionesScheduler(ProcesadorCicloVacaciones ciclo) {
+        return new VacacionesScheduler(ciclo);
+    }
 
     @Bean
     ProcesadorEventosEmpleado procesadorEventosEmpleado(JdbcRepositorioEmpleados empleados, JdbcClient jdbc,
             Transacciones transacciones) {
+        // Spring traduce los SQLSTATE 22 (dato inválido) y 23 (restricción violada) a
+        // DataIntegrityViolationException: rechazos permanentes, no se reintentan.
         return new ProcesadorEventosEmpleado(empleados, new JdbcDeduplicador(jdbc), transacciones,
                 e -> e instanceof DataIntegrityViolationException);
     }

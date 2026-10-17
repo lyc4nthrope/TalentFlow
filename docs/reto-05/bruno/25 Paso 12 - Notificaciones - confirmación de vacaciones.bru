@@ -1,0 +1,26 @@
+meta {
+  name: Paso 12 - Notificaciones - confirmación de vacaciones
+  type: http
+  seq: 25
+}
+
+get {
+  url: {{baseUrl}}/notificaciones/{{e1}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+script:pre-request {
+  await bru.sleep(2500);
+}
+
+tests {
+  test("llegó la notificación VACACIONES", function () {
+    const n = res.getBody().find((x) => x.tipo === "VACACIONES" && x.mensaje.includes("programadas"));
+    expect(n).to.not.equal(undefined);
+  });
+}

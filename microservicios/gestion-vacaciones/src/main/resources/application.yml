@@ -34,7 +34,8 @@ springdoc:
   paths-to-match: /vacaciones/**
 
 vacaciones:
-  cron: ${VACACIONES_CRON:0 * * * * *}  # cada min
+  # Frecuencia del scheduler (cron de Spring: seg min hora día mes día-semana). "-" lo desactiva.
+  cron: ${VACACIONES_CRON:0 * * * * *}  # cada minuto
   zona-horaria: ${ZONA_HORARIA:America/Bogota}
   eventos:
     exchange: ${RABBITMQ_EXCHANGE:talentflow.eventos}

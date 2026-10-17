@@ -1,3 +1,11 @@
+# Reto 5, D21: el secreto del JWT se define UNA sola vez y lo reciben quien firma
+# (auth-service) y quien valida (api-gateway), así nunca divergen. Valor académico por
+# defecto para arrancar con un solo comando; un .env lo sobrescribe. El código no tiene
+# valor por defecto: sin JWT_SECRET ninguno de los dos arranca.
+x-jwt: &jwt
+  JWT_SECRET: ${JWT_SECRET:-talentflow_super_secret_2026}
+  JWT_ISSUER: ${JWT_ISSUER:-auth-service}
+
 services:
 
   # Base de Datos Autenticación (PostgreSQL) — Reto 5
@@ -31,18 +39,24 @@ services:
       target: runner
     container_name: ms-auth
     restart: on-failure
+    # D22: solo alcanzable a través del Gateway (regla del Reto 3).
     expose:
       - "8086"
-    ports:
-      - "8086:8086"
     environment:
+      <<: *jwt
       PORT: 8086
       DB_HOST: database-auth
       DB_PORT: 5432
       DB_NAME: ${DB_AUTH_NAME:-db_auth}
       DB_USER: ${DB_AUTH_USER:-user_auth}
       DB_PASS: ${DB_AUTH_PASS:-pass_auth}
-      JWT_SECRET: ${JWT_SECRET:-talentflow_super_secret_2026}
+      JWT_VIGENCIA: ${JWT_VIGENCIA:-1h}
+      # Vigencia de los tokens de activación (alta) y de recuperación de contraseña.
+      TOKEN_ACTIVACION_VIGENCIA: ${TOKEN_ACTIVACION_VIGENCIA:-24h}
+      TOKEN_RECUPERACION_VIGENCIA: ${TOKEN_RECUPERACION_VIGENCIA:-1h}
+      # Administrador semilla: se crea al arrancar si no existe (valores académicos).
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@empresa.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123*}
       RABBITMQ_HOST: message-broker
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
@@ -52,7 +66,8 @@ services:
       broker-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8086/health || exit 1"]
+      # La imagen distroless no tiene shell ni wget: el propio binario consulta su /health.
+      test: ["CMD", "/auth-service", "-salud"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -104,6 +119,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      # D23: la primera inicialización de MySQL (volumen nuevo) puede tardar más que
+      # retries × interval; durante el start_period los fallos no cuentan.
+      start_period: 30s
 
   # API Gateway para exponer un único puerto al cliente
   api-gateway:
@@ -115,8 +133,8 @@ services:
     ports:
       - "8080:8080"
     environment:
+      <<: *jwt
       PORT: 8080
-      JWT_SECRET: ${JWT_SECRET:-talentflow_super_secret_2026}
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
       NOTIFICACIONES_SERVICE_URL: http://notificaciones-service:8084
@@ -386,6 +404,9 @@ services:
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
       RABBITMQ_COLA: vacaciones.eventos
       ZONA_HORARIA: America/Bogota
+      # Scheduler (Reto 5): inicia y finaliza los períodos al llegar sus fechas. Cron de Spring
+      # (seg min hora día mes día-semana); por defecto cada minuto.
+      VACACIONES_CRON: ${VACACIONES_CRON:-0 * * * * *}
     depends_on:
       database-vacaciones:
         condition: service_healthy

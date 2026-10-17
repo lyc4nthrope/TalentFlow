@@ -1,0 +1,38 @@
+meta {
+  name: Paso 13 - Vacaciones - E001 en curso
+  type: http
+  seq: 26
+}
+
+get {
+  url: {{baseUrl}}/vacaciones/{{vac1}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+script:pre-request {
+  // El scheduler corre cada minuto (VACACIONES_CRON) y el período empieza/termina en un minuto exacto:
+  // se espera hasta ese instante más 8 s para que el evento recorra el broker.
+  const espera = Number(bru.getVar("inicio1Ms")) + 8000 - Date.now();
+  if (espera > 0) await bru.sleep(espera);
+}
+
+tests {
+  test("EN_CURSO (el scheduler publicó vacaciones.iniciadas)", function () {
+    expect(res.getBody().estado).to.equal("EN_CURSO");
+  });
+}
+
+docs {
+  Espera hasta un minuto. Orden en los logs:
+
+  ```
+  docker compose logs vacaciones-service | grep vacaciones.iniciadas
+  docker compose logs auth-service | grep "suspendida por las vacaciones"
+  docker compose logs notificaciones-service | grep -E "cuenta.desactivada|desactivada temporalmente"
+  ```
+}

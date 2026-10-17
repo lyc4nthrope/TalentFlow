@@ -25,6 +25,15 @@ public class JdbcRepositorioEmpleados implements RepositorioEmpleados {
     }
 
     @Override
+    public Optional<EmpleadoReplica> buscar(String empleadoId) {
+        return jdbc.sql("SELECT empleado_id, email, retirado FROM empleados_replica WHERE empleado_id = :id")
+                .param("id", empleadoId)
+                .query((fila, n) -> new EmpleadoReplica(
+                        fila.getString("empleado_id"), fila.getString("email"), fila.getBoolean("retirado")))
+                .optional();
+    }
+
+    @Override
     public void registrar(String empleadoId, String email) {
         jdbc.sql("""
                 INSERT INTO empleados_replica (empleado_id, email) VALUES (:id, :email)

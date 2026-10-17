@@ -1,0 +1,33 @@
+meta {
+  name: Paso 17 - Auth - login del empleado retirado
+  type: http
+  seq: 40
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{email1}}",
+    "password": "{{passNueva}}"
+  }
+}
+
+script:pre-request {
+  // empleado.retirado -> auth-service (asincrónico).
+  await bru.sleep(2000);
+}
+
+tests {
+  test("401 o 403", function () {
+    expect([401, 403]).to.include(res.getStatus());
+  });
+}

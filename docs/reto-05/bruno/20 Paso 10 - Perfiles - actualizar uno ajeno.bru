@@ -1,0 +1,31 @@
+meta {
+  name: Paso 10 - Perfiles - actualizar uno ajeno
+  type: http
+  seq: 20
+}
+
+put {
+  url: {{baseUrl}}/perfiles/{{e2}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{userToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "ciudad": "Bogotá"
+  }
+}
+
+tests {
+  test("403: el perfil es de otro empleado", function () {
+    expect(res.getStatus()).to.equal(403);
+  });
+}

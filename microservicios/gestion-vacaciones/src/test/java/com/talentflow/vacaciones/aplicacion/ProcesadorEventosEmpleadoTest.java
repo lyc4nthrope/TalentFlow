@@ -2,9 +2,16 @@ package com.talentflow.vacaciones.aplicacion;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DataAccessResourceFailureException;
 
@@ -78,5 +85,60 @@ class ProcesadorEventosEmpleadoTest {
 
         deduplicador.fallo = new DataIntegrityViolationException("value too long");
         assertThat(procesador.procesar(evento("e2", "empleado.creado", CREADO))).isEqualTo(Resultado.DESCARTADO);
+    }
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** Un empleado.creado válido con una sola alteración, para aislar cada regla del envelope. */
+    private static byte[] alterado(Consumer<ObjectNode> alteracion) throws Exception {
+        ObjectNode sobre = (ObjectNode) JSON.readTree(evento("e1", "empleado.creado", CREADO));
+        alteracion.accept(sobre);
+        return JSON.writeValueAsBytes(sobre);
+    }
+
+    private static Arguments caso(String nombre, Consumer<ObjectNode> alteracion) {
+        return Arguments.of(nombre, alteracion);
+    }
+
+    private static ObjectNode data(ObjectNode sobre) {
+        return (ObjectNode) sobre.get("data");
+    }
+
+    // Catálogo de Eventos, sección 2: todos los campos del envelope son obligatorios.
+    static Stream<Arguments> mensajesInvalidos() {
+        return Stream.of(
+                caso("sin id", s -> s.remove("id")),
+                caso("id en blanco", s -> s.put("id", "  ")),
+                caso("id que no es texto", s -> s.put("id", 42)),
+                caso("sin type", s -> s.remove("type")),
+                caso("sin data", s -> s.remove("data")),
+                caso("data que no es un objeto", s -> s.put("data", "E001")),
+                caso("sin version", s -> s.remove("version")),
+                caso("version 0", s -> s.put("version", 0)),
+                caso("sin occurredAt", s -> s.remove("occurredAt")),
+                caso("sin producer", s -> s.remove("producer")),
+                caso("producer en blanco", s -> s.put("producer", "")),
+                // Carga útil: la réplica necesita empleadoId y email.
+                caso("data sin empleadoId", s -> data(s).remove("empleadoId")),
+                caso("data con empleadoId en blanco", s -> data(s).put("empleadoId", " ")),
+                caso("data con email en blanco", s -> data(s).put("email", "")),
+                caso("data con empleadoId que no es texto", s -> data(s).putObject("empleadoId").put("valor", "E001")));
+    }
+
+    @ParameterizedTest(name = "[{index}] {0} → DESCARTADO")
+    @MethodSource("mensajesInvalidos")
+    void descartaElMensajeSinTocarLaReplicaNiConsumirSuId(String caso, Consumer<ObjectNode> alteracion) throws Exception {
+        assertThat(procesador.procesar(alterado(alteracion))).isEqualTo(Resultado.DESCARTADO);
+
+        assertThat(empleados.datos).isEmpty();
+        assertThat(deduplicador.procesados).as("el id no queda registrado").isEmpty();
+    }
+
+    @Test
+    void aceptaUnIdDeExactamenteLaLongitudDeLaColumna() throws Exception {
+        String id = "x".repeat(ProcesadorEventosEmpleado.LONGITUD_MAXIMA_ID);
+
+        assertThat(procesador.procesar(alterado(s -> s.put("id", id)))).isEqualTo(Resultado.PROCESADO);
+        assertThat(deduplicador.procesados).containsExactly(id);
     }
 }

@@ -2,8 +2,6 @@ package com.talentflow.vacaciones.infraestructura.mensajeria;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.talentflow.vacaciones.aplicacion.PublicadorEventos;
-import com.talentflow.vacaciones.dominio.EventoPublisherPort;
-
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -22,7 +20,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
  * Usa confirmaciones del broker (publisher confirms): "publicado" significa que RabbitMQ lo
  * recibió y aceptó. Nunca lanza: si falla, lo registra y devuelve false.
  */
-public class RabbitPublicadorEventos implements PublicadorEventos, EventoPublisherPort {
+public class RabbitPublicadorEventos implements PublicadorEventos {
 
     private static final Logger log = LoggerFactory.getLogger(RabbitPublicadorEventos.class);
 
@@ -78,23 +76,5 @@ public class RabbitPublicadorEventos implements PublicadorEventos, EventoPublish
             log.error("❌ No se pudo publicar {} (id {}): {}", tipo, id, e.getMessage());
             return false;
         }
-    }
-
-    @Override
-    public void publicarVacacionesIniciadas(String empleadoId, String vacacionesId) {
-        Map<String, String> payload = Map.of(
-            "empleadoId", empleadoId,
-            "vacacionesId", vacacionesId
-        );
-        publicar("vacaciones.iniciadas", payload);
-    }
-
-    @Override
-    public void publicarVacacionesFinalizadas(String empleadoId, String vacacionesId) {
-        Map<String, String> payload = Map.of(
-            "empleadoId", empleadoId,
-            "vacacionesId", vacacionesId
-        );
-        publicar("vacaciones.finalizadas", payload);
     }
 }

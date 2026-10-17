@@ -49,8 +49,7 @@ public class JdbcRepositorioVacaciones implements RepositorioVacaciones {
                     .param("creacion", fechaCreacion.atOffset(ZoneOffset.UTC))
                     .update();
         } catch (DataIntegrityViolationException e) {
-            // Red de seguridad: la restricción EXCLUDE de la BD impide el solapamiento aun
-            // si
+            // Red de seguridad: la restricción EXCLUDE de la BD impide el solapamiento aun si
             // dos solicitudes simultáneas pasaran la validación previa.
             if (e.getMostSpecificCause() instanceof SQLException sql && VIOLACION_EXCLUSION.equals(sql.getSQLState())) {
                 throw new SolicitudInvalidaException("fechaInicio",
@@ -87,14 +86,14 @@ public class JdbcRepositorioVacaciones implements RepositorioVacaciones {
     @Override
     public Optional<Vacaciones> buscarVigenteSolapado(String empleadoId, LocalDateTime fechaInicio,
             LocalDateTime fechaFin) {
-        // Rangos cerrados [inicio, fin]: se cruzan si inicioA <= finB y inicioB <=
-        // finA.
+        // Rangos semiabiertos [inicio, fin): se cruzan si cada uno empieza antes de que el
+        // otro termine (mismo criterio que la restricción EXCLUDE con tsrange '[)').
         return jdbc.sql("SELECT " + COLUMNAS + """
                  FROM vacaciones
                 WHERE empleado_id = :empleadoId
                   AND estado IN ('PROGRAMADA', 'EN_CURSO')
-                  AND fecha_inicio <= :fin
-                  AND fecha_fin >= :inicio
+                  AND fecha_inicio < :fin
+                  AND fecha_fin > :inicio
                 ORDER BY fecha_inicio
                 LIMIT 1
                 """)
@@ -123,50 +122,38 @@ public class JdbcRepositorioVacaciones implements RepositorioVacaciones {
     }
 
     @Override
-    public List<Vacaciones> findByEstadoAndFechaInicioLessThanEqual(EstadoVacaciones estado, LocalDateTime fecha) {
+    public List<Vacaciones> listarPorIniciar(LocalDateTime ahora) {
         return jdbc.sql("SELECT " + COLUMNAS + """
                  FROM vacaciones
-                WHERE estado = :estado
-                  AND fecha_inicio <= :fecha
-                ORDER BY fecha_inicio
+                WHERE estado = 'PROGRAMADA'
+                  AND fecha_inicio <= :ahora
+                ORDER BY fecha_inicio, id
                 """)
-                .param("estado", estado.name())
-                .param("fecha", fecha)
+                .param("ahora", ahora)
                 .query(JdbcRepositorioVacaciones::aVacaciones)
                 .list();
     }
 
     @Override
-    public List<Vacaciones> findByEstadoAndFechaFinLessThanEqual(EstadoVacaciones estado, LocalDateTime fecha) {
+    public List<Vacaciones> listarPorFinalizar(LocalDateTime ahora) {
         return jdbc.sql("SELECT " + COLUMNAS + """
                  FROM vacaciones
-                WHERE estado = :estado
-                  AND fecha_fin <= :fecha
-                ORDER BY fecha_fin
+                WHERE estado = 'EN_CURSO'
+                  AND fecha_fin <= :ahora
+                ORDER BY fecha_fin, id
                 """)
-                .param("estado", estado.name())
-                .param("fecha", fecha)
+                .param("ahora", ahora)
                 .query(JdbcRepositorioVacaciones::aVacaciones)
                 .list();
     }
 
     @Override
-    public boolean actualizarEstado(String id, EstadoVacaciones nuevoEstado) {
-        return jdbc.sql("UPDATE vacaciones SET estado = :nuevoEstado WHERE id = :id")
-                .param("nuevoEstado", nuevoEstado.name())
+    public boolean cambiarEstado(String id, EstadoVacaciones esperado, EstadoVacaciones nuevo) {
+        // Condicional: si otra operación ya cambió el estado, no afecta filas y no se publica nada.
+        return jdbc.sql("UPDATE vacaciones SET estado = :nuevo WHERE id = :id AND estado = :esperado")
+                .param("nuevo", nuevo.name())
                 .param("id", id)
-                .update() == 1;
-    }
-
-    @Override
-    public boolean actualizar(Vacaciones vacaciones) {
-        return jdbc.sql("""
-                UPDATE vacaciones
-                   SET estado = :estado
-                 WHERE id = :id
-                """)
-                .param("estado", vacaciones.estado().name())
-                .param("id", vacaciones.id())
+                .param("esperado", esperado.name())
                 .update() == 1;
     }
 }

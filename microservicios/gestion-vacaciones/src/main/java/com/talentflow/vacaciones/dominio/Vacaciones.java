@@ -3,7 +3,10 @@ package com.talentflow.vacaciones.dominio;
 import java.time.Instant;
 import java.time.LocalDateTime;
 
-/** Período de vacaciones (reto4.pdf, "Estructura de un período de vacaciones"). */
+/**
+ * Período de vacaciones (reto4.pdf, "Estructura de un período de vacaciones").
+ * fechaInicio y fechaFin son fecha y hora locales en la zona horaria del negocio (Reto 5, D6).
+ */
 public record Vacaciones(
         String id,
         String empleadoId,
@@ -13,8 +16,8 @@ public record Vacaciones(
         Instant fechaCreacion) {
 
     /** Solo se cancela un período programado que todavía no ha iniciado. */
-    public boolean esCancelable(LocalDateTime hoy) {
-        return estado == EstadoVacaciones.PROGRAMADA && fechaInicio.isAfter(hoy);
+    public boolean esCancelable(LocalDateTime ahora) {
+        return estado == EstadoVacaciones.PROGRAMADA && fechaInicio.isAfter(ahora);
     }
 
     /** Períodos que ocupan fechas del empleado (los cancelados o finalizados no). */
@@ -23,13 +26,10 @@ public record Vacaciones(
     }
 
     public Vacaciones cancelada() {
-        return new Vacaciones(id, empleadoId, fechaInicio, fechaFin, EstadoVacaciones.CANCELADA, fechaCreacion);
+        return conEstado(EstadoVacaciones.CANCELADA);
     }
 
-/**
-     * Devuelve una nueva instancia de Vacaciones con el estado actualizado,
-     * manteniendo la inmutabilidad del record.
-     */
+    /** Copia del período con otro estado (el record es inmutable). */
     public Vacaciones conEstado(EstadoVacaciones nuevoEstado) {
         return new Vacaciones(id, empleadoId, fechaInicio, fechaFin, nuevoEstado, fechaCreacion);
     }
