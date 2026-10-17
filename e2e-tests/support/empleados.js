@@ -204,4 +204,5 @@ module.exports = {
   establecerContrasena,
   prepararEmpleadoActivo,
   contrasenaValida,
+  correosPara,
 };

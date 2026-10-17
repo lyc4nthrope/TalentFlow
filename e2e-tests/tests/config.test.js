@@ -37,3 +37,9 @@ test('rechaza parámetros de polling que no son enteros positivos', () => {
   assert.throws(() => leerConfiguracion({ E2E_POLL_INTENTOS: '0' }), /E2E_POLL_INTENTOS/);
   assert.throws(() => leerConfiguracion({ E2E_POLL_INTERVALO_MS: '1.5' }), /E2E_POLL_INTERVALO_MS/);
 });
+
+test('la ventana mínima de las pruebas de ausencia es 3 s y se puede cambiar por entorno', () => {
+  assert.deepEqual(leerConfiguracion({}).ausencia, { ventanaMinimaMs: 3000 });
+  assert.deepEqual(leerConfiguracion({ E2E_VENTANA_AUSENCIA_MS: '5000' }).ausencia, { ventanaMinimaMs: 5000 });
+  assert.throws(() => leerConfiguracion({ E2E_VENTANA_AUSENCIA_MS: '-1' }), /E2E_VENTANA_AUSENCIA_MS/);
+});

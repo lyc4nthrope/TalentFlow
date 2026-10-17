@@ -60,6 +60,14 @@ function leerConfiguracion(entorno = process.env) {
       periodoSchedulerS: enteroPositivo('E2E_SCHEDULER_SEGUNDOS', entorno.E2E_SCHEDULER_SEGUNDOS, 5),
       zonaHoraria: zonaHoraria(entorno.E2E_ZONA_HORARIA || 'America/Bogota'),
     }),
+    // Pruebas de ausencia (F10): cuánto se vigila, como mínimo, que algo NO pase (un
+    // correo de recuperación a un retirado, una reactivación). 3 s es más de 100 veces
+    // la propagación medida de un evento hasta la notificación y el correo (F8: ≤ 26 ms)
+    // y cubre al menos tres consultas con el intervalo de polling por defecto. El paso
+    // la alarga si el control positivo del mismo escenario tardó más (support/retiro.js).
+    ausencia: Object.freeze({
+      ventanaMinimaMs: enteroPositivo('E2E_VENTANA_AUSENCIA_MS', entorno.E2E_VENTANA_AUSENCIA_MS, 3000),
+    }),
   });
 }
 

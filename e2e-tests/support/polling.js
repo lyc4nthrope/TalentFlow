@@ -42,6 +42,36 @@ async function eventualmente(condicion, { intentos, intervaloMs, descripcion = '
   );
 }
 
+// Lo contrario de eventualmente (F10): vigila durante `duracionMs` que algo NO pase.
+// `observar` devuelve un valor falso mientras todo está bien, o un texto que describe
+// lo que no debía pasar, y ahí falla de inmediato. Si `observar` lanza (sistema caído,
+// un 500), el error sale tal cual: una consulta que falla no prueba ninguna ausencia.
+// Observa al empezar, cada `intervaloMs` y una última vez al cumplirse la ventana, así
+// la ventana entera queda cubierta. Devuelve cuántas veces observó y cuánto vigiló.
+async function nuncaDurante(observar, { duracionMs, intervaloMs, descripcion = 'condición prohibida' } = {}) {
+  if (!Number.isInteger(duracionMs) || duracionMs <= 0) {
+    throw new Error('nuncaDurante: "duracionMs" debe ser un entero positivo');
+  }
+  if (!Number.isInteger(intervaloMs) || intervaloMs <= 0) {
+    throw new Error('nuncaDurante: "intervaloMs" debe ser un entero positivo');
+  }
+  const inicio = Date.now();
+  let observaciones = 0;
+  for (;;) {
+    const visto = await observar();
+    observaciones++;
+    const transcurrido = Date.now() - inicio;
+    if (visto) {
+      throw new Error(
+        `Se observó "${descripcion}" a los ${transcurrido} ms de una vigilancia de ${duracionMs} ms ` +
+          `(observación ${observaciones}): ${visto}`
+      );
+    }
+    if (transcurrido >= duracionMs) return { observaciones, ms: transcurrido };
+    await esperar(Math.min(intervaloMs, duracionMs - transcurrido));
+  }
+}
+
 // D3: cada escenario crea sus propios datos; el prefijo de tiempo ordena y el
 // sufijo aleatorio evita choques entre escenarios del mismo milisegundo.
 // La marca de tiempo va en base 36 (8 caracteres hasta el año 2059): los ids de
@@ -55,4 +85,4 @@ function emailUnico(nombre = 'e2e', dominio = 'empresa.com') {
   return `${idUnico(nombre).toLowerCase()}@${dominio}`;
 }
 
-module.exports = { eventualmente, idUnico, emailUnico };
+module.exports = { eventualmente, nuncaDurante, idUnico, emailUnico };
