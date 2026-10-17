@@ -1,6 +1,6 @@
 'use strict';
 
-const { setWorldConstructor, World } = require('@cucumber/cucumber');
+const { setWorldConstructor, setDefaultTimeout, World } = require('@cucumber/cucumber');
 const { configuracion } = require('./config');
 
 // Cuerpo como JSON cuando se puede y como texto cuando no (un 502 del proxy o
@@ -152,5 +152,14 @@ function extracto(cuerpo, maximo = 300) {
 }
 
 setWorldConstructor(MundoTalentFlow);
+
+// Cucumber corta cada paso a los 5 s por defecto: un "eventualmente" que agota sus
+// intentos (~14 s con 15 × 1 s) moría con un "function timed out" genérico, sin la
+// descripción, los intentos ni el último valor que da eventualmente(). El límite sale
+// del mismo presupuesto de polling: un paso puede encadenar dos esperas (notificación
+// y correo) y se suman 30 s para las peticiones. Sigue siendo un tope: si una espera
+// se cuelga, el paso falla igual.
+const { intentos, intervaloMs } = configuracion.polling;
+setDefaultTimeout(2 * intentos * intervaloMs + 30_000);
 
 module.exports = { MundoTalentFlow, extracto, exigirCodigo, ALIAS_USUARIO };

@@ -39,7 +39,7 @@ function leerConfiguracion(entorno = process.env) {
     }),
     polling: Object.freeze({
       intentos: enteroPositivo('E2E_POLL_INTENTOS', entorno.E2E_POLL_INTENTOS, 15),
-      intervaloMs: enteroPositivo('E2E_POLL_INTERVALO_MS', entorno.E2E_POLL_INTERVALO_MS, 2000),
+      intervaloMs: enteroPositivo('E2E_POLL_INTERVALO_MS', entorno.E2E_POLL_INTERVALO_MS, 1000),
     }),
   });
 }

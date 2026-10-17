@@ -49,6 +49,8 @@ function datosDeEmpleado(departamentoId, cambios = {}) {
 /**
  * Registra un empleado (solo el alta: la cuenta queda PENDIENTE de activación).
  * Usa el departamento del escenario o crea uno propio si aún no hay.
+ * `registradoEn` es el instante de la respuesta 201: desde ahí se miden los efectos
+ * asíncronos (D5).
  */
 async function registrarEmpleado(mundo, { alias = 'empleado', cambios } = {}) {
   const departamento = mundo.recursos.get('departamento') ?? (await crearDepartamento(mundo));
@@ -58,42 +60,54 @@ async function registrarEmpleado(mundo, { alias = 'empleado', cambios } = {}) {
     token: await mundo.tokenDeAdmin(),
   });
   exigirCodigo(respuesta, 201, `Registrar al empleado "${alias}"`);
-  mundo.recursos.set(alias, { ...datos });
+  mundo.recursos.set(alias, { ...datos, registradoEn: Date.now() });
   return mundo.recursos.get(alias);
 }
 
 /**
- * Espera la notificación SEGURIDAD de bienvenida y devuelve el token de activación.
+ * Espera la notificación SEGURIDAD de bienvenida del empleado y la devuelve con el
+ * sufijo visible del token (`sufijoToken`).
  *
- * D4 dice "leer el token de GET /notificaciones", pero esa API lo devuelve
- * enmascarado ("****0130", decisión de seguridad del Reto 5: el historial lo puede
- * leer cualquier usuario autenticado). Por eso son dos pasos, ambos por HTTP:
- *   1. GET /notificaciones/{empleadoId} por el Gateway (token ADMIN): prueba que el
- *      evento llegó y da los últimos caracteres del token.
- *   2. La API de Mailhog (MAILHOG_URL): el correo trae el token completo; se acepta
- *      solo el que termina con esos mismos caracteres.
+ * Esa notificación es la huella observable de que auth-service creó la cuenta:
+ * notificaciones la arma solo a partir de usuario.creado (desde el Reto 5 ya no
+ * sale de empleado.creado), y auth publica ese evento después de guardar la cuenta
+ * PENDIENTE_ACTIVACION con el token que generó. Auth no tiene una API para consultar
+ * cuentas, así que no hay una evidencia HTTP más directa sin consumir el token.
+ *
+ * El historial de GET /notificaciones devuelve el token enmascarado ("****0130",
+ * decisión de seguridad del Reto 5): sirve para probar que el evento llegó y para
+ * reconocer el correo correcto, no para activar.
  */
-async function esperarTokenDeActivacion(mundo, empleado) {
+async function esperarNotificacionDeActivacion(mundo, empleado) {
   const { intentos, intervaloMs } = mundo.configuracion.polling;
   const tokenAdmin = await mundo.tokenDeAdmin();
   const ruta = `/notificaciones/${encodeURIComponent(empleado.id)}`;
 
-  const sufijo = await eventualmente(
+  return eventualmente(
     async () => {
       const respuesta = await mundo.enviar('GET', ruta, { token: tokenAdmin });
       exigirCodigo(respuesta, 200, 'Consultar las notificaciones del empleado');
       const lista = Array.isArray(respuesta.body) ? respuesta.body : [];
       const delEmpleado = lista.filter((n) => n.destinatario === empleado.email);
       const seguridad = delEmpleado.find((n) => n.tipo === 'SEGURIDAD' && extraerSufijoEnmascarado(n.mensaje));
-      if (seguridad) return extraerSufijoEnmascarado(seguridad.mensaje);
+      if (seguridad) return { ...seguridad, sufijoToken: extraerSufijoEnmascarado(seguridad.mensaje) };
       throw new Error(
         `GET ${ruta} no trae aún una notificación SEGURIDAD con token para ${empleado.email}; ` +
-          `notificaciones vistas para ese email: ${extracto(delEmpleado.map(({ tipo, mensaje }) => ({ tipo, mensaje })))}`
+          `notificaciones vistas para ese email: ${extracto(delEmpleado.map(({ tipo, mensaje }) => ({ tipo, mensaje })))}; ` +
+          `destinatarios en el historial: ${[...new Set(lista.map((n) => n.destinatario))].join(', ') || 'ninguno'}`
       );
     },
     { intentos, intervaloMs, descripcion: `llega la notificación de activación de ${empleado.email}` }
   );
+}
 
+/**
+ * Espera en Mailhog el correo del empleado cuyo token termina en `sufijo` (el que
+ * mostró la notificación) y devuelve el token completo. Así no se confunde con otro
+ * correo del mismo destinatario (por ejemplo, uno de recuperación).
+ */
+async function esperarCorreoConToken(mundo, empleado, sufijo) {
+  const { intentos, intervaloMs } = mundo.configuracion.polling;
   return eventualmente(
     async () => {
       const correos = await correosPara(mundo, empleado.email);
@@ -107,6 +121,17 @@ async function esperarTokenDeActivacion(mundo, empleado) {
     },
     { intentos, intervaloMs, descripcion: `llega el correo de activación de ${empleado.email} a Mailhog` }
   );
+}
+
+/**
+ * El token de activación completo del empleado (D4, corregida en F7): primero la
+ * notificación por el Gateway, después el correo en Mailhog con el mismo sufijo.
+ * Lo guarda en el recurso como `tokenActivacion`.
+ */
+async function esperarTokenDeActivacion(mundo, empleado) {
+  const { sufijoToken } = await esperarNotificacionDeActivacion(mundo, empleado);
+  empleado.tokenActivacion = await esperarCorreoConToken(mundo, empleado, sufijoToken);
+  return empleado.tokenActivacion;
 }
 
 // Cuerpos (decodificados) de los correos que Mailhog recibió para ese destinatario.
@@ -135,9 +160,22 @@ function cuerpoDeCorreo(correo) {
 }
 
 /**
+ * POST /auth/reset-password sin autenticación, como lo hace el empleado con el
+ * token de su correo. Con `registrar` la respuesta queda como la que verifican los
+ * Entonces (paso Cuando); sin él, solo prepara datos.
+ */
+function establecerContrasena(mundo, { token, password }, { registrar = false } = {}) {
+  const enviar = registrar ? mundo.peticion.bind(mundo) : mundo.enviar.bind(mundo);
+  return enviar('POST', '/auth/reset-password', {
+    cuerpo: { token, newPassword: password },
+    token: null,
+  });
+}
+
+/**
  * Deja un empleado listo para actuar como USER: alta → notificación → token de
  * activación → contraseña propia → login. Guarda en `recursos[alias]` los datos del
- * alta más { password, token, msActivacion }.
+ * alta más { password, token, tokenActivacion, msActivacion }.
  */
 async function prepararEmpleadoActivo(mundo, { alias = 'empleado' } = {}) {
   const inicio = Date.now();
@@ -146,10 +184,7 @@ async function prepararEmpleadoActivo(mundo, { alias = 'empleado' } = {}) {
   const msActivacion = Date.now() - inicio;
 
   const password = contrasenaValida();
-  const activacion = await mundo.enviar('POST', '/auth/reset-password', {
-    cuerpo: { token: tokenActivacion, newPassword: password },
-    token: null,
-  });
+  const activacion = await establecerContrasena(mundo, { token: tokenActivacion, password });
   exigirCodigo(activacion, 200, `Establecer la contraseña de ${empleado.email} con su token de activación`);
 
   const token = await mundo.iniciarSesion({ email: empleado.email, password }, `el empleado "${alias}"`);
@@ -163,7 +198,10 @@ module.exports = {
   crearDepartamento,
   datosDeEmpleado,
   registrarEmpleado,
+  esperarNotificacionDeActivacion,
+  esperarCorreoConToken,
   esperarTokenDeActivacion,
+  establecerContrasena,
   prepararEmpleadoActivo,
   contrasenaValida,
 };

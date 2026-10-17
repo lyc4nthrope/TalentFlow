@@ -9,7 +9,7 @@ test('sin variables usa los valores académicos del Compose', () => {
   assert.equal(config.baseUrl, 'http://localhost:8080');
   assert.equal(config.mailhogUrl, 'http://localhost:8025');
   assert.deepEqual(config.admin, { email: 'admin@empresa.com', password: 'Admin123*' });
-  assert.deepEqual(config.polling, { intentos: 15, intervaloMs: 2000 });
+  assert.deepEqual(config.polling, { intentos: 15, intervaloMs: 1000 });
 });
 
 test('toma BASE_URL, credenciales y polling del entorno', () => {
