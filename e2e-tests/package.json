@@ -7,9 +7,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "pretest": "node -e \"const fs=require('fs');fs.rmSync('reports',{recursive:true,force:true});fs.mkdirSync('reports')\"",
+    "pretest": "node -e \"const fs=require('fs'),path=require('path');fs.mkdirSync('reports',{recursive:true});for(const f of fs.readdirSync('reports'))fs.rmSync(path.join('reports',f),{recursive:true,force:true})\"",
     "test": "cucumber-js",
-    "test:unidad": "node --test \"tests/*.test.js\""
+    "test:unidad": "node --test \"tests/*.test.js\"",
+    "esperar-sistema": "node scripts/esperar-sistema.js"
   },
   "devDependencies": {
     "@cucumber/cucumber": "13.3.0"

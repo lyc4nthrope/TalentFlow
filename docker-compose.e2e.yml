@@ -20,3 +20,35 @@ services:
     environment:
       # Cron de Spring de 6 campos (seg min hora día mes día-semana): cada 5 segundos.
       VACACIONES_CRON: "*/5 * * * * *"
+
+  # Suite BDD en un contenedor (Reto 6, D13). Está en el perfil "e2e", así que ni
+  # `docker compose up` ni este override la levantan solos; se ejecuta a pedido y su
+  # código de salida es el de la suite:
+  #   docker compose -f docker-compose.yml -f docker-compose.e2e.yml run --rm --build bdd-tests
+  # (o `make e2e`, que además aplica el override y espera al sistema).
+  bdd-tests:
+    build: ./e2e-tests
+    profiles: ["e2e"]
+    # Corre con el uid/gid del host para que los reportes del volumen no queden de root
+    # (el Makefile los pasa; por defecto 1000, el usuario `node` de la imagen).
+    user: "${E2E_UID:-1000}:${E2E_GID:-1000}"
+    init: true
+    environment:
+      BASE_URL: http://api-gateway:8080
+      MAILHOG_URL: http://mailhog:8025
+      # Coincide con el VACACIONES_CRON de arriba (cada 5 s).
+      E2E_SCHEDULER_SEGUNDOS: 5
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@empresa.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123*}
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      vacaciones-service:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+    volumes:
+      # Los reportes deben sobrevivir al contenedor (P6): junit.xml, cucumber.json y .html.
+      - ./e2e-tests/reports:/app/reports
+    networks:
+      - microservices-network
