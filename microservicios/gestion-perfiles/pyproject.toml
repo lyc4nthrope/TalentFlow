@@ -15,3 +15,23 @@ ignore = ["S101"]  # assert es la forma idiomática de verificar en pytest
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Reportes del Reto 6 (D9, D10 y D14): resultados JUnit y cobertura Cobertura en reports/;
+# falla si la lógica de negocio baja del 100 % de líneas y ramas. Comando: make test.
+addopts = [
+    "--junitxml=reports/junit.xml",
+    "--cov",
+    "--cov-report=xml:reports/coverage.xml",
+    "--cov-report=term-missing",
+    "--cov-fail-under=100",
+]
+
+# Lógica de negocio medida (D11): dominio, caso de uso de eventos y envelope. Con
+# source = app, un archivo nuevo de app/ se mide aunque ninguna prueba lo importe.
+# Fuera: main.py (arranque), config.py (configuración), api.py (adaptador HTTP; lo
+# recorre test_api.py sin umbral), consumidor.py (RabbitMQ) y repositorio.py (Postgres).
+[tool.coverage.run]
+source = ["app"]
+branch = true
+# El archivo de datos de coverage va con los reportes: se borra en cada make test y no se versiona.
+data_file = "reports/.coverage"
+omit = ["app/main.py", "app/config.py", "app/api.py", "app/consumidor.py", "app/repositorio.py"]

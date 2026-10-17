@@ -26,6 +26,10 @@ func TestParsearRechazaMensajesInvalidos(t *testing.T) {
 		"sin data":       strings.Replace(sobreValido, `,"data":{"empleadoId":"E001"}`, "", 1),
 		"data null":      strings.Replace(sobreValido, `{"empleadoId":"E001"}`, "null", 1),
 		"sin occurredAt": strings.Replace(sobreValido, `"occurredAt":"2026-03-01T14:32:05Z",`, "", 1),
+		"sin type":       strings.Replace(sobreValido, `"type":"empleado.creado",`, "", 1),
+		"sin version":    strings.Replace(sobreValido, `"version":1,`, "", 1),
+		"version 0":      strings.Replace(sobreValido, `"version":1,`, `"version":0,`, 1),
+		"sin producer":   strings.Replace(sobreValido, `"producer":"empleados-service",`, "", 1),
 		"id demasiado largo": strings.Replace(sobreValido, "3f9b2c10-8e4a-4d6b-9f21-7c0a5d8e1234",
 			strings.Repeat("x", LongitudMaximaID+1), 1),
 	}
