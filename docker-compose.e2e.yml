@@ -1,0 +1,22 @@
+# Override SOLO para la suite BDD (Reto 6, F9, decisión D6 de docs/reto-06/PLAN.md).
+#
+# Por qué existe: el ciclo de vacaciones (la cuenta se suspende al iniciar el período y
+# se reactiva al terminar) depende del scheduler de vacaciones-service, que por defecto
+# corre cada minuto. Con este override corre cada 5 s y el escenario completo tarda
+# segundos en lugar de minutos. No agrega ningún endpoint de disparo manual: el sistema
+# se comporta igual que en producción, solo más seguido.
+#
+# Producción y el `docker compose up` normal no lo usan y siguen con el valor por
+# defecto (`0 * * * * *`, cada minuto). La suite no queda acoplada a esta frecuencia:
+# sus pasos esperan condiciones observables y el tope de espera sale de
+# E2E_SCHEDULER_SEGUNDOS (5 aquí; con el cron por defecto, E2E_SCHEDULER_SEGUNDOS=60).
+#
+# Uso (recrea solo vacaciones-service; los datos no se tocan):
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d vacaciones-service
+# Volver al cron por defecto:
+#   docker compose up -d vacaciones-service
+services:
+  vacaciones-service:
+    environment:
+      # Cron de Spring de 6 campos (seg min hora día mes día-semana): cada 5 segundos.
+      VACACIONES_CRON: "*/5 * * * * *"

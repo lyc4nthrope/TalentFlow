@@ -27,6 +27,17 @@ function enteroPositivo(nombre, valor, porDefecto) {
   return numero;
 }
 
+// La zona tiene que ser la misma ZONA_HORARIA de vacaciones-service: las fechas de
+// POST /vacaciones son horas locales de esa zona (Reto 5, D6).
+function zonaHoraria(valor) {
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: valor });
+  } catch {
+    throw new Error(`E2E_ZONA_HORARIA no es una zona horaria IANA válida: "${valor}" (ejemplo: America/Bogota)`);
+  }
+  return valor;
+}
+
 function leerConfiguracion(entorno = process.env) {
   return Object.freeze({
     baseUrl: urlBase(entorno.BASE_URL || 'http://localhost:8080', 'BASE_URL'),
@@ -40,6 +51,14 @@ function leerConfiguracion(entorno = process.env) {
     polling: Object.freeze({
       intentos: enteroPositivo('E2E_POLL_INTENTOS', entorno.E2E_POLL_INTENTOS, 15),
       intervaloMs: enteroPositivo('E2E_POLL_INTERVALO_MS', entorno.E2E_POLL_INTERVALO_MS, 1000),
+    }),
+    // Vacaciones (F9, D6). E2E_SCHEDULER_SEGUNDOS es cada cuánto corre el scheduler de
+    // vacaciones-service (VACACIONES_CRON): 5 con docker-compose.e2e.yml, 60 con el cron
+    // por defecto. De ahí salen la duración del período y las esperas (support/tiempo.js);
+    // la suite nunca espera un tiempo fijo.
+    vacaciones: Object.freeze({
+      periodoSchedulerS: enteroPositivo('E2E_SCHEDULER_SEGUNDOS', entorno.E2E_SCHEDULER_SEGUNDOS, 5),
+      zonaHoraria: zonaHoraria(entorno.E2E_ZONA_HORARIA || 'America/Bogota'),
     }),
   });
 }
