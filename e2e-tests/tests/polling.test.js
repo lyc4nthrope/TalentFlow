@@ -70,14 +70,16 @@ test('rechaza parámetros inválidos antes de llamar a la condición', async () 
 test('idUnico sigue el formato de D3 y no se repite', () => {
   const ids = new Set(Array.from({ length: 1000 }, () => idUnico()));
   assert.equal(ids.size, 1000);
-  for (const id of ids) assert.match(id, /^E-\d{13}-[0-9a-f]{6}$/);
-  assert.match(idUnico('D'), /^D-\d{13}-[0-9a-f]{6}$/);
+  for (const id of ids) assert.match(id, /^E-[0-9a-z]{8}-[0-9a-f]{6}$/);
+  assert.match(idUnico('D'), /^D-[0-9a-z]{8}-[0-9a-f]{6}$/);
+  // Cabe en los VARCHAR(20) de las BD de empleados, departamentos y vacaciones.
+  assert.ok(idUnico('D').length <= 20);
 });
 
 test('emailUnico produce direcciones distintas, en minúsculas y con el dominio pedido', () => {
   const a = emailUnico('Ana');
   const b = emailUnico('Ana');
   assert.notEqual(a, b);
-  assert.match(a, /^ana-\d{13}-[0-9a-f]{6}@empresa\.com$/);
+  assert.match(a, /^ana-[0-9a-z]{8}-[0-9a-f]{6}@empresa\.com$/);
   assert.match(emailUnico('x', 'prueba.co'), /@prueba\.co$/);
 });

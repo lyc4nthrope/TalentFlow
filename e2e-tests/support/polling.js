@@ -44,8 +44,11 @@ async function eventualmente(condicion, { intentos, intervaloMs, descripcion = '
 
 // D3: cada escenario crea sus propios datos; el prefijo de tiempo ordena y el
 // sufijo aleatorio evita choques entre escenarios del mismo milisegundo.
+// La marca de tiempo va en base 36 (8 caracteres hasta el año 2059): los ids de
+// empleados, departamentos y vacaciones son VARCHAR(20) en sus BD, y con los 13
+// dígitos decimales "D-<ms>-<hex>" ocupaba 22 y departamentos respondía 500.
 function idUnico(prefijo = 'E') {
-  return `${prefijo}-${Date.now()}-${randomBytes(3).toString('hex')}`;
+  return `${prefijo}-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`;
 }
 
 function emailUnico(nombre = 'e2e', dominio = 'empresa.com') {

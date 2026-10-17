@@ -4,15 +4,15 @@
 // contra el Compose local, un contenedor o Jenkins cambiando solo BASE_URL.
 // Los valores por defecto son los académicos del docker-compose.yml.
 
-function urlBase(valor) {
+function urlBase(valor, nombre) {
   let url;
   try {
     url = new URL(valor);
   } catch {
-    throw new Error(`BASE_URL no es una URL válida: "${valor}" (ejemplo: http://localhost:8080)`);
+    throw new Error(`${nombre} no es una URL válida: "${valor}" (ejemplo: http://localhost:8080)`);
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`BASE_URL debe usar http o https: "${valor}"`);
+    throw new Error(`${nombre} debe usar http o https: "${valor}"`);
   }
   // Sin la barra final, para concatenar rutas que empiezan con "/".
   return url.href.replace(/\/+$/, '');
@@ -29,7 +29,10 @@ function enteroPositivo(nombre, valor, porDefecto) {
 
 function leerConfiguracion(entorno = process.env) {
   return Object.freeze({
-    baseUrl: urlBase(entorno.BASE_URL || 'http://localhost:8080'),
+    baseUrl: urlBase(entorno.BASE_URL || 'http://localhost:8080', 'BASE_URL'),
+    // El token de activación completo solo viaja en el correo: GET /notificaciones lo
+    // devuelve enmascarado (****1a2b) por diseño del Reto 5. Mailhog lo expone por HTTP.
+    mailhogUrl: urlBase(entorno.MAILHOG_URL || 'http://localhost:8025', 'MAILHOG_URL'),
     admin: Object.freeze({
       email: entorno.ADMIN_EMAIL || 'admin@empresa.com',
       password: entorno.ADMIN_PASSWORD || 'Admin123*',
