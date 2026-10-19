@@ -1,0 +1,6 @@
+¿Qué hacer en el host si te llega a dar error de permisos en docker ps?
+Si por alguna discrepancia de IDs de usuario/grupo en Linux la instrucción usermod -aG docker jenkins no es suficiente en tu máquina, puedes solucionarlo rápidamente de forma local dando acceso directo al socket desde la terminal de tu equipo (host):
+
+Bash
+sudo chmod 666 /var/run/docker.sock
+(Nota: Dar permisos 666 al socket es ideal para entornos de pruebas locales o académicos, ya que le otorga acceso a cualquier proceso para interactuar con Docker sin trabas).

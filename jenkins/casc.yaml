@@ -1,0 +1,17 @@
+jobs:
+  - script: |
+      pipelineJob('gestion-empleados') {
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/lyc4nthrope/TalentFlow.git')
+                }
+                branches('*/Vale292005')
+              }
+            }
+            scriptPath('microservicios/gestion-empleados/Jenkinsfile')
+          }
+        }
+      }

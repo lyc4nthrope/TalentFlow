@@ -8,6 +8,23 @@ x-jwt: &jwt
 
 services:
 
+  #Servicio de Jenkins del reto06
+  jenkins:
+    build:
+      context: ./jenkins
+      dockerfile: Dockerfile
+    container_name: jenkins
+    ports:
+      - "9090:8080"       #Interfaz web
+      - "50000:50000"     #Comunicacion con agentes
+    volumes: 
+      - jenkins_data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock   #Acceso al Docker del host
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+    networks:
+      - microservices-network
+
   # Base de Datos Autenticación (PostgreSQL) — Reto 5
   database-auth:
     image: postgres:16-alpine
@@ -480,3 +497,4 @@ volumes:
   vol-notificaciones:
   vol-perfiles:
   vol-vacaciones:
+  jenkins_data:

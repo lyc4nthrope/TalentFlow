@@ -1,0 +1,58 @@
+pipeline {
+    // COntenedor efimero con JDK 17 y Maven
+    agent {
+        docker {
+            image 'node:20-alpine'
+            // Monta volumen local para la caché
+            args '-v node-modules-cache:/app/node_modules'
+        }
+    }
+
+    stages {
+        stage('Checkout') {
+            steps{
+                echo 'Obteniendo código del repo...'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo 'Compilando el microservicio...'
+                sh 'npm ci'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo 'Ejecutando TODAS las pruebas...'
+                // Ignora el fallo para jenkins suba el reporte
+                sh 'npm test || true'
+            }
+
+            post {
+                always {
+                    // 1. Public los XML de la pruebas en "Test result"
+                    junit 'reports/junit.xml'
+
+                    // 2. Publica la cobertura en la pestaña "Coverage"
+                    recordCoverage(
+                    tools: [[parser: 'LCOV', pattern: 'reports/lcov.info']],
+                    sourceCodeRetention: 'EVERY_BUILD'
+                    )
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ Pipeline finalizado con éxito.'
+        }
+        unstable {
+            echo '⚠️ El código compiló pero hay pruebas fallando. Revisa la pestaña Test Result.'
+        }
+        failure {
+            echo '❌ Error de compilación o del pipeline.'
+        }
+    }
+}
