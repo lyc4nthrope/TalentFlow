@@ -2,7 +2,7 @@ pipeline {
     // COntenedor efimero con JDK 17 y Maven
     agent {
         docker {
-            image 'node:20-alpine'
+            image 'node:22-alpine'
             // Monta volumen local para la caché
             args '-v node-modules-cache:/app/node_modules'
         }
