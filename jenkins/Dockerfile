@@ -25,4 +25,7 @@ RUN apt-get update && \
 # Agregar usuario jenkins al grupo docker para accerder al socket
 RUN groupadd -f docker && usermod -aG docker jenkins
 
+# Garantiza permisos de acceso al socket
+RUN chmod 666 /var/run/docker.sock || true
+
 USER jenkins
