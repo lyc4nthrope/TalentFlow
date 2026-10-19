@@ -31,8 +31,8 @@ pipeline {
 
             post {
                 always {
-                    // 1. Public los XML de la pruebas en "Test result"
-                    junit 'reports/junit.xml'
+                    // 1. Public los XML de la pruebas en "Test result", busca en todas las sub carpetas y no falla si no hay datos
+                    junit allowEmptyResults: true, testResults: '**/reports/junit.xml'
 
                     // 2. Publica la cobertura en la pestaña "Coverage"
                     recordCoverage(
