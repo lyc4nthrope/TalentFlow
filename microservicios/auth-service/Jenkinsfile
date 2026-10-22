@@ -1,0 +1,74 @@
+pipeline {
+    // Contenedor con Go instalado
+    agent {
+        docker {
+            image 'golang:1.22-alpine'
+            // Monta volúmenes para la caché del módulo de Go y de compilación
+            args '-v go_cache:/go/pkg/mod -v go_build_cache:/root/.cache/go-build'
+        }
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Obteniendo código del repositorio...'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo 'Instalando herramientas de testing y compilando...'
+                // Herramientas necesarias para convertir reportes en Alpine
+                sh 'apk add --no-cache git'
+                sh 'go install github.com/jstemmer/go-junit-report/v2@latest'
+                sh 'go install github.com/boumenot/gocover-cobertura@latest'
+
+                // Compilar el binario del microservicio
+                sh 'go build ./...'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo 'Ejecutando pruebas y generando coberturas...'
+                sh '''
+                    mkdir -p reports
+                    
+                    # 1. Ejecuta pruebas con verbose y cobertura, guardando el output en un log
+                    go test -v -coverprofile=reports/coverage.out ./... > reports/test.log || true
+
+                    # 2. Convierte el log de Go a formato JUnit XML
+                    cat reports/test.log | go-junit-report > reports/junit.xml
+
+                    # 3. Convierte el reporte de cobertura de Go a formato Cobertura XML
+                    gocover-cobertura < reports/coverage.out > reports/coverage.xml
+                '''
+            }
+
+            post {
+                always {
+                    // 1. Publica los resultados en la pestaña "Test Result"
+                    junit allowEmptyResults: true, testResults: 'reports/junit.xml'
+
+                    // 2. Publica la cobertura usando el parser COBERTURA
+                    recordCoverage(
+                        tools: [[parser: 'COBERTURA', pattern: 'reports/coverage.xml']],
+                        sourceCodeRetention: 'EVERY_BUILD'
+                    )
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ Pipeline finalizado con éxito.'
+        }
+        unstable {
+            echo '⚠️ El código compiló pero hay pruebas fallando. Revisa la pestaña Test Result.'
+        }
+        failure {
+            echo '❌ Error de compilación o del pipeline.'
+        }
+    }
+}
