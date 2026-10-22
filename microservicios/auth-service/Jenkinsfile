@@ -2,8 +2,7 @@ pipeline {
     // Contenedor con Go instalado
     agent {
         docker {
-            image 'golang:1.22-alpine'
-            // Monta volúmenes para la caché del módulo de Go y de compilación
+            image 'golang:alpine' // Utiliza la versión más reciente de Go
             args '-v go_cache:/go/pkg/mod -v go_build_cache:/root/.cache/go-build'
         }
     }
