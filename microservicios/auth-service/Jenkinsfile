@@ -22,7 +22,7 @@ pipeline {
                     // Herramientas necesarias para convertir reportes en Alpine
                     sh 'apk add --no-cache git'
                     sh 'go install github.com/jstemmer/go-junit-report/v2@latest'
-                    sh 'go install github.com/boumenot/gocover-cobertura@latest'
+                    sh 'go install github.com/boumenot/gocover-cobertura@v1.2.0'
 
                     // Compilar el binario del microservicio
                     sh 'go build ./...'

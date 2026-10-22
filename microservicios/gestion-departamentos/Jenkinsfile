@@ -2,9 +2,8 @@ pipeline {
     // Usamos una imagen de PHP con CLI que incluya Composer y PCOV/Xdebug
     agent {
         docker {
-            image 'composer:2'
-            // Monta volumen para la caché de Composer
-            args '-v composer_cache:/tmp/cache'
+            image 'php:8.2-cli'
+            args '-v php_cache:/root/.cache'
         }
     }
 
