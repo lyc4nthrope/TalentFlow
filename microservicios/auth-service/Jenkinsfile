@@ -31,31 +31,35 @@ pipeline {
 
         stage('Test') {
             steps {
-                echo 'Ejecutando pruebas y generando coberturas...'
-                sh '''
-                    mkdir -p reports
+                dir('microservicios/auth-service') {
+                    echo 'Ejecutando pruebas y generando coberturas...'
+                    sh '''
+                        mkdir -p reports
                     
-                    # 1. Ejecuta pruebas con verbose y cobertura, guardando el output en un log
-                    go test -v -coverprofile=reports/coverage.out ./... > reports/test.log || true
+                        # 1. Ejecuta pruebas con verbose y cobertura, guardando el output en un log
+                        go test -v -coverprofile=reports/coverage.out ./... > reports/test.log || true
 
-                    # 2. Convierte el log de Go a formato JUnit XML
-                    cat reports/test.log | go-junit-report > reports/junit.xml
+                        # 2. Convierte el log de Go a formato JUnit XML
+                        cat reports/test.log | go-junit-report > reports/junit.xml
 
-                    # 3. Convierte el reporte de cobertura de Go a formato Cobertura XML
-                    gocover-cobertura < reports/coverage.out > reports/coverage.xml
-                '''
+                        # 3. Convierte el reporte de cobertura de Go a formato Cobertura XML
+                        gocover-cobertura < reports/coverage.out > reports/coverage.xml
+                    '''
+                }
             }
 
             post {
                 always {
-                    // 1. Publica los resultados en la pestaña "Test Result"
-                    junit allowEmptyResults: true, testResults: 'reports/junit.xml'
+                    dir('microservicios/auth-service') {
+                        // 1. Publica los resultados en la pestaña "Test Result"
+                        junit allowEmptyResults: true, testResults: 'reports/junit.xml'
 
-                    // 2. Publica la cobertura usando el parser COBERTURA
-                    recordCoverage(
-                        tools: [[parser: 'COBERTURA', pattern: 'reports/coverage.xml']],
-                        sourceCodeRetention: 'EVERY_BUILD'
-                    )
+                        // 2. Publica la cobertura usando el parser COBERTURA
+                        recordCoverage(
+                            tools: [[parser: 'COBERTURA', pattern: 'reports/coverage.xml']],
+                            sourceCodeRetention: 'EVERY_BUILD'
+                        )
+                    }
                 }
             }
         }
