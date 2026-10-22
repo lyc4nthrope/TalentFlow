@@ -16,16 +16,17 @@ pipeline {
         }
 
         stage('Build') {
-            steps {
-                echo 'Instalando herramientas de testing y compilando...'
-                // Herramientas necesarias para convertir reportes en Alpine
-                sh 'apk add --no-cache git'
-                sh 'go install github.com/jstemmer/go-junit-report/v2@latest'
-                sh 'go install github.com/boumenot/gocover-cobertura@latest'
+            dir('microservicios/gestion-perfiles') {
+                steps {
+                    echo 'Instalando herramientas de testing y compilando...'
+                    // Herramientas necesarias para convertir reportes en Alpine
+                    sh 'apk add --no-cache git'
+                    sh 'go install github.com/jstemmer/go-junit-report/v2@latest'
+                    sh 'go install github.com/boumenot/gocover-cobertura@latest'
 
-                // Compilar el binario del microservicio
-                sh 'go build ./...'
-            }
+                    // Compilar el binario del microservicio
+                    sh 'go build ./...'
+                }
         }
 
         stage('Test') {
