@@ -20,31 +20,33 @@ pipeline {
                 dir('microservicios/gestion-perfiles') {
                     echo 'Instalando dependencias de Python...'
                     sh 'pip install --upgrade pip'
-                    // Instala los paquetes del proyecto junto con pytest y plugins de reportes
-                    sh 'pip install -r requirements.txt pytest pytest-cov'
+                    // Se agregó httpx necesario para TestClient de FastAPI
+                    sh 'pip install -r requirements.txt pytest pytest-cov httpx'
                 }
             }
         }
 
         stage('Test') {
             steps {
-                echo 'Ejecutando pruebas unitarias con Pytest y generando reportes...'
-                // 1. --junitxml genera el XML de resultados de pruebas
-                // 2. --cov genera el reporte de cobertura en formato XML (Cobertura)
-                // 3. || true evita abortar antes de publicar reportes en post { always }
-                sh 'pytest --junitxml=reports/junit.xml --cov=. --cov-report=xml:reports/coverage.xml || true'
+                // Se agrega dir para ejecutar pytest dentro de la carpeta del microservicio
+                dir('microservicios/gestion-perfiles') {
+                    echo 'Ejecutando pruebas unitarias con Pytest y generando reportes...'
+                    sh 'pytest --junitxml=reports/junit.xml --cov=. --cov-report=xml:reports/coverage.xml || true'
+                }
             }
 
             post {
                 always {
-                    // 1. Publica las pruebas en la pestaña "Test Result"
-                    junit allowEmptyResults: true, testResults: 'reports/junit.xml'
+                    dir('microservicios/gestion-perfiles') {
+                        // 1. Publica las pruebas en la pestaña "Test Result"
+                        junit allowEmptyResults: true, testResults: 'reports/junit.xml'
 
-                    // 2. Publica la cobertura usando el parser COBERTURA
-                    recordCoverage(
-                        tools: [[parser: 'COBERTURA', pattern: 'reports/coverage.xml']],
-                        sourceCodeRetention: 'EVERY_BUILD'
-                    )
+                        // 2. Publica la cobertura usando el parser COBERTURA
+                        recordCoverage(
+                            tools: [[parser: 'COBERTURA', pattern: 'reports/coverage.xml']],
+                            sourceCodeRetention: 'EVERY_BUILD'
+                        )
+                    }
                 }
             }
         }
