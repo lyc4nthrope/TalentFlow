@@ -1,0 +1,62 @@
+pipeline {
+    // Usamos una imagen oficial de Python de Docker
+    agent {
+        docker {
+            image 'python:3.11-slim'
+            // Monta volumen para la caché de pip
+            args '-v pip_cache:/root/.cache/pip'
+        }
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Obteniendo código del repositorio...'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo 'Instalando dependencias de Python...'
+                sh 'pip install --upgrade pip'
+                // Instala los paquetes del proyecto junto con pytest y plugins de reportes
+                sh 'pip install -r requirements.txt pytest pytest-cov pytest-junitxml'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo 'Ejecutando pruebas unitarias con Pytest y generando reportes...'
+                // 1. --junitxml genera el XML de resultados de pruebas
+                // 2. --cov genera el reporte de cobertura en formato XML (Cobertura)
+                // 3. || true evita abortar antes de publicar reportes en post { always }
+                sh 'pytest --junitxml=reports/junit.xml --cov=. --cov-report=xml:reports/coverage.xml || true'
+            }
+
+            post {
+                always {
+                    // 1. Publica las pruebas en la pestaña "Test Result"
+                    junit allowEmptyResults: true, testResults: 'reports/junit.xml'
+
+                    // 2. Publica la cobertura usando el parser COBERTURA
+                    recordCoverage(
+                        tools: [[parser: 'COBERTURA', pattern: 'reports/coverage.xml']],
+                        sourceCodeRetention: 'EVERY_BUILD'
+                    )
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ Pipeline finalizado con éxito.'
+        }
+        unstable {
+            echo '⚠️ Hay pruebas fallando. Revisa la pestaña Test Result.'
+        }
+        failure {
+            echo '❌ Error en la instalación o ejecución en Python.'
+        }
+    }
+}

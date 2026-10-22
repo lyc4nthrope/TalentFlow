@@ -1,0 +1,60 @@
+pipeline {
+    // Usamos una imagen de PHP con CLI que incluya Composer y PCOV/Xdebug
+    agent {
+        docker {
+            image 'composer:2'
+            // Monta volumen para la caché de Composer
+            args '-v composer_cache:/tmp/cache'
+        }
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Obteniendo código del repositorio...'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo 'Instalando dependencias de PHP...'
+                // Instala dependencias sin paquetes de desarrollo innecesarios en prod si aplica
+                sh 'composer install --prefer-dist --no-progress --no-interaction'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo 'Ejecutando pruebas unitarias e integración con PHPUnit...'
+
+                // Genera el reporte de pruebas y de cobertura directamente con flags de la CLI
+                sh './vendor/bin/phpunit --log-junit reports/junit.xml --coverage-clover reports/clover.xml || true'
+            }
+
+            post {
+                always {
+                    // 1. Publica las pruebas en la pestaña "Test Result"
+                    junit allowEmptyResults: true, testResults: 'reports/junit.xml'
+
+                    // 2. Publica la cobertura en la pestaña "Coverage"
+                    recordCoverage(
+                        tools: [[parser: 'CLOVER', pattern: 'reports/clover.xml']],
+                        sourceCodeRetention: 'EVERY_BUILD'
+                    )
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ Pipeline finalizado con éxito.'
+        }
+        unstable {
+            echo '⚠️ Hay pruebas fallando. Revisa la pestaña Test Result.'
+        }
+        failure {
+            echo '❌ Error de sintaxis, compilación o ejecución en PHP.'
+        }
+    }
+}
