@@ -14,12 +14,12 @@ pipeline {
             }
         }
 
-        stage('Build') {
+        stage('Build / Lint') {
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    echo 'Instalando dependencias de PHP...'
-                    // Instala dependencias sin paquetes de desarrollo innecesarios en prod si aplica
-                    sh 'find . -name "*.php" -exec php -l {} \;'
+                    echo 'Verificando sintaxis de archivos PHP...'
+                    // Usamos + al final para evitar la barra invertida que rompe Groovy
+                    sh 'find . -name "*.php" -exec php -l {} +'
                 }
             }
         }
