@@ -4,7 +4,7 @@ pipeline {
         docker {
             image 'node:22-alpine'
             // Monta volumen local para la caché
-            args '-v node-modules-cache:/app/node_modules'
+            args '-v node_cache:/root/.npm'
         }
     }
 
@@ -16,9 +16,11 @@ pipeline {
         }
 
         stage('Build') {
-            steps {
-                echo 'Compilando el microservicio...'
-                sh 'npm ci'
+            dir('microservicios/gestion-empleados') {
+                steps {
+                    echo 'Compilando el microservicio...'
+                    sh 'npm ci'
+                }
             }
         }
 

@@ -1,5 +1,9 @@
+jenkins:
+  systemMessage: "Servidor CI/CD - TalentFlow"
+
 jobs:
   - script: |
+      // 1. Gestión Empleados (Node.js)
       pipelineJob('gestion-empleados') {
         definition {
           cpsScm {
@@ -12,6 +16,74 @@ jobs:
               }
             }
             scriptPath('microservicios/gestion-empleados/Jenkinsfile')
+          }
+        }
+      }
+
+      // 2. Auth Service (Go)
+      pipelineJob('auth-service') {
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/lyc4nthrope/TalentFlow.git')
+                }
+                branches('*/Vale292005')
+              }
+            }
+            scriptPath('microservicios/auth-service/Jenkinsfile')
+          }
+        }
+      }
+
+      // 3. Gestión Departamentos (PHP)
+      pipelineJob('gestion-departamentos') {
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/lyc4nthrope/TalentFlow.git')
+                }
+                branches('*/Vale292005')
+              }
+            }
+            scriptPath('microservicios/gestion-departamentos/Jenkinsfile')
+          }
+        }
+      }
+
+      // 4. Gestión Vacaciones (Java)
+      pipelineJob('gestion-vacaciones') {
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/lyc4nthrope/TalentFlow.git')
+                }
+                branches('*/Vale292005')
+              }
+            }
+            scriptPath('microservicios/gestion-vacaciones/Jenkinsfile')
+          }
+        }
+      }
+
+      // 5. Gestión Perfiles (Python)
+      pipelineJob('gestion-perfiles') {
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/lyc4nthrope/TalentFlow.git')
+                }
+                branches('*/Vale292005')
+              }
+            }
+            scriptPath('microservicios/gestion-perfiles/Jenkinsfile')
           }
         }
       }

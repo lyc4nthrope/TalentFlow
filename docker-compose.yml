@@ -14,6 +14,7 @@ services:
       context: ./jenkins
       dockerfile: Dockerfile
     container_name: jenkins
+    user: root
     ports:
       - "9090:8080"       #Interfaz web
       - "50000:50000"     #Comunicacion con agentes
@@ -21,6 +22,8 @@ services:
       - jenkins_data:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock   #Acceso al Docker del host
       - ./jenkins:/var/jenkins_home/casc_configs #Monta la carpeta del casc
+      # Volumen para caché de Maven/dependencias
+      - npm_cache:/root/.npm
     environment:
       - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
       - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
@@ -500,3 +503,8 @@ volumes:
   vol-perfiles:
   vol-vacaciones:
   jenkins_data:
+  npm_cache:
+  composer_cache:
+  pip_cache:
+  maven_cache:
+  go_build_cache:

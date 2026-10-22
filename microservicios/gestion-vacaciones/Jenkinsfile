@@ -26,22 +26,26 @@ pipeline {
 
         stage('Test') {
             steps {
-                echo 'Ejecutando pruebas unitarias e integración con JaCoCo...'
-                // -Dmaven.test.failure.ignore=true evita que el comando aborte de inmediato
-                // para permitir que el bloque post publique los reportes JUnit y JaCoCo
-                sh 'mvn verify -Dmaven.test.failure.ignore=true'
+                dir('microservicios/gestion-vacaciones') {
+                    echo 'Ejecutando pruebas unitarias e integración con JaCoCo...'
+                    // -Dmaven.test.failure.ignore=true evita que el comando aborte de inmediato
+                    // para permitir que el bloque post publique los reportes JUnit y JaCoCo
+                    sh 'mvn verify -Dmaven.test.failure.ignore=true'
+                }
             }
 
             post {
                 always {
-                    // 1. Publica los resultados en la pestaña "Test Result"
-                    junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml, target/failsafe-reports/*.xml'
+                    dir('microservicios/gestion-vacaciones') {
+                        // 1. Publica los resultados en la pestaña "Test Result"
+                        junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml, target/failsafe-reports/*.xml'
 
-                    // 2. Publica la cobertura usando el parser JACOCO
-                    recordCoverage(
+                        // 2. Publica la cobertura usando el parser JACOCO
+                        recordCoverage(
                         tools: [[parser: 'JACOCO', pattern: 'target/site/jacoco/jacoco.xml']],
                         sourceCodeRetention: 'EVERY_BUILD'
-                    )
+                        )
+                    }
                 }
             }
         }
