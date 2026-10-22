@@ -16,8 +16,8 @@ pipeline {
         }
 
         stage('Build') {
-            dir('microservicios/gestion-perfiles') {
-                steps {
+            steps {
+                dir('microservicios/gestion-perfiles') {
                     echo 'Compilando el proyecto...'
                     sh 'mvn clean compile -DskipTests'
                 }

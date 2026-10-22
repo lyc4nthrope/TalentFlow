@@ -16,8 +16,8 @@ pipeline {
         }
 
         stage('Build') {
-            dir('microservicios/gestion-perfiles') {
-                steps {
+            steps {
+                dir('microservicios/gestion-perfiles') {
                     echo 'Instalando dependencias de PHP...'
                     // Instala dependencias sin paquetes de desarrollo innecesarios en prod si aplica
                     sh 'composer install --prefer-dist --no-progress --no-interaction'

@@ -16,8 +16,8 @@ pipeline {
         }
 
         stage('Build') {
-            dir('microservicios/gestion-perfiles') {
-                steps {
+            steps {
+                dir('microservicios/gestion-departamentos') {
                     echo 'Instalando herramientas de testing y compilando...'
                     // Herramientas necesarias para convertir reportes en Alpine
                     sh 'apk add --no-cache git'
@@ -27,6 +27,7 @@ pipeline {
                     // Compilar el binario del microservicio
                     sh 'go build ./...'
                 }
+            }
         }
 
         stage('Test') {

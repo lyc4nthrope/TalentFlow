@@ -20,8 +20,8 @@ pipeline {
                 dir('microservicios/gestion-perfiles') {
                     echo 'Instalando dependencias de Python...'
                     sh 'pip install --upgrade pip'
-                // Instala los paquetes del proyecto junto con pytest y plugins de reportes
-                    sh 'pip install -r requirements.txt pytest pytest-cov pytest-junitxml'
+                    // Instala los paquetes del proyecto junto con pytest y plugins de reportes
+                    sh 'pip install -r requirements.txt pytest pytest-cov'
                 }
             }
         }
