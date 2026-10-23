@@ -20,7 +20,7 @@ pipeline {
                 dir('microservicios/gestion-perfiles') {
                     echo 'Instalando dependencias de Python y herramientas...'
                     sh '''
-                        apt-get update && apt-get install -y openjdk-17-jre-headless curl unzip
+                        apt-get update && apt-get install -y default-jre-headless curl unzip
                         pip install --upgrade pip
                         pip install -r requirements.txt pytest pytest-cov httpx
                     '''
