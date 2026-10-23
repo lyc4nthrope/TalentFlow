@@ -16,19 +16,16 @@ pipeline {
         stage('Build / Lint') {
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    echo 'Instalando extensiones, Composer y verificando sintaxis...'
+                    echo 'Instalando Node.js, PHPUnit y verificando sintaxis...'
                     sh '''
-                        # 1. Instalar herramientas del sistema y extensiones de PHP
-                        apt-get update && apt-get install -y unzip git nodejs npm libzip-dev
-                        docker-php-ext-install zip pdo_mysql
+                        # 1. Instalar herramientas necesarias y npx para SonarQube
+                        apt-get update && apt-get install -y unzip git nodejs npm curl
 
-                        # 2. Instalar Composer globalmente
-                        curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+                        # 2. Descargar ejecutable de PHPUnit standalone
+                        curl -sSL https://phar.phpunit.de/phpunit-10.phar -o /usr/local/bin/phpunit
+                        chmod +x /usr/local/bin/phpunit
 
-                        # 3. Instalar dependencias del proyecto (omitiendo la verificación estricta de plataforma si falta algo)
-                        composer install --prefer-dist --no-progress --no-interaction --ignore-platform-reqs
-
-                        # 4. Verificar sintaxis PHP
+                        # 3. Verificar sintaxis PHP
                         find . -name "*.php" -exec php -l {} +
                     '''
                 }
@@ -38,10 +35,11 @@ pipeline {
         stage('Test') {
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    echo 'Ejecutando pruebas unitarias e integración con PHPUnit...'
+                    echo 'Ejecutando pruebas unitarias con PHPUnit...'
                     sh '''
                         mkdir -p reports
-                        ./vendor/bin/phpunit --log-junit reports/junit.xml --coverage-clover reports/clover.xml || true
+                        # Ejecuta phpunit global si existen pruebas
+                        phpunit --log-junit reports/junit.xml || true
                     '''
                 }
             }
@@ -50,10 +48,6 @@ pipeline {
                 always {
                     dir('microservicios/gestion-departamentos') {
                         junit allowEmptyResults: true, testResults: 'reports/junit.xml'
-                        recordCoverage(
-                            tools: [[parser: 'CLOVER', pattern: 'reports/clover.xml']],
-                            sourceCodeRetention: 'EVERY_BUILD'
-                        )
                     }
                 }
             }

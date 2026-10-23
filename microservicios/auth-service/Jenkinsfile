@@ -69,8 +69,8 @@ pipeline {
                     echo 'Ejecutando análisis de SonarQube...'
                     withSonarQubeEnv('SonarQubeServer') {
                         sh '''
-                            # Instala nodejs y npm dentro del contenedor de Go
-                            apk add --no-cache nodejs npm
+                            # Instala Node.js, npm y la capa de compatibilidad glibc para Alpine
+                            apk add --no-cache nodejs npm gcompat libc6-compat
                             
                             # Ejecuta el escáner de SonarQube
                             npx sonarqube-scanner -Dsonar.host.url=http://host.docker.internal:9000
