@@ -45,14 +45,19 @@ pipeline {
         }
 
         stage('SonarQube') {
-            environment {
-                SONAR_TOKEN = credentials('sonarqube-token') 
-            }
             steps {
                 dir('microservicios/gestion-empleados') {
                     echo 'Ejecutando análisis de SonarQube...'
-                    // Pasamos -Dsonar.login y -Dsonar.token para compatibilidad completa con SonarQube 9.x
-                    sh 'npx sonarqube-scanner -Dsonar.host.url=http://host.docker.internal:9000 -Dsonar.login=${SONAR_TOKEN} -Dsonar.token=${SONAR_TOKEN}'
+                        withSonarQubeEnv('SonarQubeServer') { 
+                            sh 'npx sonarqube-scanner -Dsonar.host.url=http://host.docker.internal:9000'
+                    }  
+                }
+            }
+        }
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }

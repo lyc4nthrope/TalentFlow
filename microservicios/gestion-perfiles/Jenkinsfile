@@ -60,20 +60,31 @@ pipeline {
             steps {
                 dir('microservicios/gestion-perfiles') {
                     echo 'Descargando y ejecutando SonarScanner (ARM64 / JVM nativo)...'
-                    sh '''
-                        if [ ! -d "/tmp/sonar-scanner" ]; then
-                        curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006.zip
-                        unzip -q /tmp/sonar-scanner.zip -d /tmp/
-                        mv /tmp/sonar-scanner-5.0.1.3006 /tmp/sonar-scanner
-                        fi
-                        
-                        /tmp/sonar-scanner/bin/sonar-scanner \
-                        -Dsonar.host.url=http://host.docker.internal:9000 \
-                        -Dsonar.token=${SONAR_TOKEN}
-                    '''
+                    withSonarQubeEnv('SonarQubeServer') {
+                        sh '''
+                            if [ ! -d "/tmp/sonar-scanner" ]; then
+                            curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006.zip
+                            unzip -q /tmp/sonar-scanner.zip -d /tmp/
+                            mv /tmp/sonar-scanner-5.0.1.3006 /tmp/sonar-scanner
+                            fi
+                            
+                            /tmp/sonar-scanner/bin/sonar-scanner \
+                            -Dsonar.host.url=http://host.docker.internal:9000 \
+                            -Dsonar.token=${SONAR_TOKEN}
+                        '''
+                    }
                 }
             }
         }
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+
     }
 
     post {
