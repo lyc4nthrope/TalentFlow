@@ -1,25 +1,22 @@
 pipeline {
-    // COntenedor efimero con JDK 17 y Maven
     agent {
         docker {
             image 'node:22-alpine'
-            // Monta volumen local para la caché
             args '-v node_cache:/root/.npm'
         }
     }
 
     stages {
-
         stage('Checkout') {
-            steps{
+            steps {
                 echo 'Obteniendo código del repo...'
             }
         }
 
         stage('Build') {
-            dir('microservicios/gestion-empleados') {
-                steps {
-                    echo 'Compilando el microservicio...'
+            steps {
+                dir('microservicios/gestion-empleados') {
+                    echo 'Compilando e instalando dependencias...'
                     sh 'npm ci'
                 }
             }
@@ -45,6 +42,7 @@ pipeline {
                 }
             }
         }
+
         stage('SonarQube') {
             environment {
                 SONAR_TOKEN = credentials('sonarqube-token') 
