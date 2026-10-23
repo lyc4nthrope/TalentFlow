@@ -7,6 +7,36 @@ x-jwt: &jwt
   JWT_ISSUER: ${JWT_ISSUER:-auth-service}
 
 services:
+  # Servicio de sonarwube del reto 06
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: sonarqube
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_JDBC_URL=jdbc:postgresql://sonar-db:5432/sonar
+      - SONAR_JDBC_USERNAME=sonar
+      - SONAR_JDBC_PASSWORD=sonar
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions
+    depends_on:
+      - sonar-db
+    networks:
+      - microservices-network
+    
+  sonar-db:
+    image: postgres:16-alpine
+    container_name: sonar-db
+    environment:
+      - POSTGRES_DB=sonar
+      - POSTGRES_USER=sonar
+      - POSTGRES_PASSWORD=sonar
+    volumes:
+      - sonar_db_data:/var/lib/postgresql/data
+    networks:
+      - microservices-network
 
   #Servicio de Jenkins del reto06
   jenkins:
@@ -508,3 +538,7 @@ volumes:
   pip_cache:
   maven_cache:
   go_build_cache:
+  sonarqube_data:
+  sonarqube_logs:
+  sonarqube_extensions:
+  sonar_db_data:

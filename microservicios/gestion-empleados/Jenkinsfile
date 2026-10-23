@@ -9,6 +9,16 @@ pipeline {
     }
 
     stages {
+        stage('SonarQube') {
+            environment {
+            // Trae de forma segura el secreto guardado en Jenkins
+            SONAR_TOKEN = credentials('sonarqube-token') 
+        }
+        steps {
+            // Pasa el token dinámicamente como argumento del CLI
+            sh 'sonar-scanner -Dsonar.token=${SONAR_TOKEN}'
+        }
+    
         stage('Checkout') {
             steps{
                 echo 'Obteniendo código del repo...'
