@@ -57,13 +57,9 @@ pipeline {
             }
             steps {
                 dir('microservicios/gestion-perfiles') {
-                    echo 'Instalando e ejecutando SonarQube Scanner...'
+                    echo 'Ejecutando análisis con SonarQube Scanner (versión compatible ARM64)...'
                     sh '''
-                        # Instalar Node.js para ejecutar npx sonarqube-scanner de forma nativa en ARM64/M4
-                        apt-get update && apt-get install -y nodejs npm
-                        
-                        # Ejecutar el scanner
-                        npx sonarqube-scanner \
+                        npx sonarqube-scanner@3.1.0 \
                         -Dsonar.host.url=http://host.docker.internal:9000 \
                         -Dsonar.token=${SONAR_TOKEN}
                     '''
