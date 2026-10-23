@@ -52,17 +52,12 @@ pipeline {
             }
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    echo 'Ejecutando SonarQube Scanner...'
-                    // Usamos la imagen oficial de SonarScanner que detecta nativamente la arquitectura ARM64 de tu M4
-                    script {
-                        docker.image('sonarsource/sonar-scanner-cli').inside {
-                            sh '''
-                                sonar-scanner \
-                                  -Dsonar.host.url=http://host.docker.internal:9000 \
-                                  -Dsonar.token=${SONAR_TOKEN}
-                            '''
-                        }
-                    }
+                    echo 'Ejecutando SonarQube Scanner con npx...'
+                    sh '''
+                        npx sonarqube-scanner \
+                          -Dsonar.host.url=http://host.docker.internal:9000 \
+                          -Dsonar.token=${SONAR_TOKEN}
+                    '''
                 }
             }
         }

@@ -64,18 +64,17 @@ pipeline {
             }
         }
         stage('SonarQube') {
-            agent {
-                docker {
-                    image 'sonarsource/sonar-scanner-cli:latest'
-                }
-            }
             environment {
                 SONAR_TOKEN = credentials('sonarqube-token')
             }
             steps {
-                dir('microservice/auth-service') {
-                    echo 'Ejecutando análisis de SonarQube para Go...'
-                    sh 'sonar-scanner -Dsonar.host.url=http://host.docker.internal:9000 -Dsonar.token=${SONAR_TOKEN}'
+                dir('microservicios/auth-service') {
+                    echo 'Ejecutando análisis de SonarQube...'
+                    sh '''
+                        npx sonarqube-scanner \
+                          -Dsonar.host.url=http://host.docker.internal:9000 \
+                          -Dsonar.token=${SONAR_TOKEN}
+                    '''
                 }
             }
         }

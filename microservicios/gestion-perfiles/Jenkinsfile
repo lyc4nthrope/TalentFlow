@@ -57,16 +57,16 @@ pipeline {
             }
             steps {
                 dir('microservicios/gestion-perfiles') {
-                    echo 'Ejecutando análisis de SonarQube...'
-                    script {
-                        docker.image('sonarsource/sonar-scanner-cli').inside {
-                            sh '''
-                                sonar-scanner \
-                                -Dsonar.host.url=http://host.docker.internal:9000 \
-                                -Dsonar.token=${SONAR_TOKEN}
-                            '''
-                        }
-                    }
+                    echo 'Instalando e ejecutando SonarQube Scanner...'
+                    sh '''
+                        # Instalar Node.js para ejecutar npx sonarqube-scanner de forma nativa en ARM64/M4
+                        apt-get update && apt-get install -y nodejs npm
+                        
+                        # Ejecutar el scanner
+                        npx sonarqube-scanner \
+                        -Dsonar.host.url=http://host.docker.internal:9000 \
+                        -Dsonar.token=${SONAR_TOKEN}
+                    '''
                 }
             }
         }

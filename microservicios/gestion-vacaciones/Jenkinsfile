@@ -57,11 +57,7 @@ pipeline {
 
             steps{
                 dir('microservicios/gestion-vacaciones'){
-                    sh """
-                    mvn sonar:sonar \
-                    -Dsonar.host.url=http://sonarqube:9000 \
-                    -Dsonar.token=${SONAR_TOKEN}
-                    """
+                    sh 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.host.url=http://sonarqube:9000 -Dsonar.token=${SONAR_TOKEN}'
                 }
             }
         }
