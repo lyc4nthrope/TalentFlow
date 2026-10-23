@@ -11,8 +11,9 @@ pipeline {
     stages {
         stage('SonarQube') {
             environment {
-            // Trae de forma segura el secreto guardado en Jenkins
-            SONAR_TOKEN = credentials('sonarqube-token') 
+                // Trae de forma segura el secreto guardado en Jenkins
+                SONAR_TOKEN = credentials('sonarqube-token') 
+            }
         }
         steps {
             // Pasa el token dinámicamente como argumento del CLI
