@@ -52,21 +52,17 @@ pipeline {
             }
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    echo 'Instalando e ejecutando SonarQube Scanner...'
-                    sh '''
-                        # Instala wget y unzip si no están en el contenedor
-                        apt-get update && apt-get install -y wget unzip
-                                                        # Descarga sonar-scanner si no existe
-                        if [ ! -f "/tmp/sonar-scanner/bin/sonar-scanner" ]; then
-                            wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip -O /tmp/sonar.zip
-                            unzip -q /tmp/sonar.zip -d /tmp/
-                            mv /tmp/sonar-scanner-* /tmp/sonar-scanner
-                        fi
-                            
-                        /tmp/sonar-scanner/bin/sonar-scanner \
-                        -Dsonar.host.url=http://host.docker.internal:9000 \
-                        -Dsonar.token=${SONAR_TOKEN}
-                    '''
+                    echo 'Ejecutando SonarQube Scanner...'
+                    // Usamos la imagen oficial de SonarScanner que detecta nativamente la arquitectura ARM64 de tu M4
+                    script {
+                        docker.image('sonarsource/sonar-scanner-cli').inside {
+                            sh '''
+                                sonar-scanner \
+                                  -Dsonar.host.url=http://host.docker.internal:9000 \
+                                  -Dsonar.token=${SONAR_TOKEN}
+                            '''
+                        }
+                    }
                 }
             }
         }

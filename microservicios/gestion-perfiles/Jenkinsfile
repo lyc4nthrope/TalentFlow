@@ -57,9 +57,16 @@ pipeline {
             }
             steps {
                 dir('microservicios/gestion-perfiles') {
-                    echo 'Ejecutando analisis de SonarQube'
-                    sh 'pip install sonar-scanner-cli'
-                    sh 'sonar-scanner -Dsonar.host.url=http://host.docker.internal:9000 -Dsonar.token=${SONAR_TOKEN}'
+                    echo 'Ejecutando análisis de SonarQube...'
+                    script {
+                        docker.image('sonarsource/sonar-scanner-cli').inside {
+                            sh '''
+                                sonar-scanner \
+                                -Dsonar.host.url=http://host.docker.internal:9000 \
+                                -Dsonar.token=${SONAR_TOKEN}
+                            '''
+                        }
+                    }
                 }
             }
         }

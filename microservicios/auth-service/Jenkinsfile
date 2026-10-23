@@ -69,7 +69,7 @@ pipeline {
                     image 'sonarsource/sonar-scanner-cli:latest'
                 }
             }
-            enviroment {
+            environment {
                 SONAR_TOKEN = credentials('sonarqube-token')
             }
             steps {
