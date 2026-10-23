@@ -47,17 +47,24 @@ pipeline {
         }
 
         stage('Sonarqube') {
-            environment {
-                SONAR_TOKEN = credentials('sonarqube-token')
-            }
             steps {
                 dir('microservicios/gestion-departamentos') {
                     echo 'Ejecutando SonarQube Scanner con npx...'
-                    sh '''
-                        npx sonarqube-scanner \
-                          -Dsonar.host.url=http://host.docker.internal:9000 \
-                          -Dsonar.token=${SONAR_TOKEN}
-                    '''
+                    withSonarQubeEnv('SonarQubeServer') {
+                        sh '''
+                            npx sonarqube-scanner \
+                            -Dsonar.host.url=http://host.docker.internal:9000 \
+                            -Dsonar.token=${SONAR_TOKEN}
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }
