@@ -50,6 +50,19 @@ pipeline {
                 }
             }
         }
+
+        stage('SonarQube') {
+            environment {
+                SONAR_TOKEN = credentials('sonarqube-token')
+            }
+            steps {
+                dir('microservicios/gestion-perfiles') {
+                    echo 'Ejecutando analisis de SonarQube'
+                    sh 'pip install sonar-scanner-cli'
+                    sh 'sonar-scanner -Dsonar.host.url=http://host.docker.internal:9000 -Dsonar.token=${SONAR_TOKEN}'
+                }
+            }
+        }
     }
 
     post {

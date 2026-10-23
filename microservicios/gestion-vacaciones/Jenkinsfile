@@ -49,6 +49,29 @@ pipeline {
                 }
             }
         }
+
+        stage('SonarQube') {
+            environments {
+                SONAR_TOKEN = credentials('sonarqube-token')
+            }
+
+            steps{
+                dir('microservicios/gestion-vacaciones'){
+                    sh """
+                    mvn sonar:sonar \
+                    -Dsonar.host.url=http://sonarqube:9000 \
+                    -Dsonar.token=${SONAR_TOKEN}
+                    """
+                }
+            }
+        }
+        stage('Quality Gate') {
+        steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
     }
 
     post {
