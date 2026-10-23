@@ -18,9 +18,9 @@ pipeline {
         stage('Build') {
             steps {
                 dir('microservicios/gestion-perfiles') {
-                    echo 'Instalando dependencias de Python...'
+                    echo 'Instalando dependencias de Python y herramientas...'
                     sh '''
-                        apt-get update && apt-get install -y nodejs npm
+                        apt-get update && apt-get install -y openjdk-17-jre-headless curl unzip
                         pip install --upgrade pip
                         pip install -r requirements.txt pytest pytest-cov httpx
                     '''
@@ -59,9 +59,15 @@ pipeline {
             }
             steps {
                 dir('microservicios/gestion-perfiles') {
-                    echo 'Ejecutando análisis con SonarQube Scanner (versión compatible ARM64)...'
+                    echo 'Descargando y ejecutando SonarScanner (ARM64 / JVM nativo)...'
                     sh '''
-                        npx sonarqube-scanner@3.1.0 \
+                        if [ ! -d "/tmp/sonar-scanner" ]; then
+                        curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006.zip
+                        unzip -q /tmp/sonar-scanner.zip -d /tmp/
+                        mv /tmp/sonar-scanner-5.0.1.3006 /tmp/sonar-scanner
+                        fi
+                        
+                        /tmp/sonar-scanner/bin/sonar-scanner \
                         -Dsonar.host.url=http://host.docker.internal:9000 \
                         -Dsonar.token=${SONAR_TOKEN}
                     '''
