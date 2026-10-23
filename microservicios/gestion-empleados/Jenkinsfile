@@ -43,18 +43,18 @@ pipeline {
             }
         }
 
-    stage('SonarQube') {
-        environment {
-            SONAR_TOKEN = credentials('sonarqube-token') 
-        }
-        steps {
-            dir('microservicios/gestion-empleados') {
-                echo 'Ejecutando análisis de SonarQube...'
-                // Usamos el nombre exacto del ejecutable expuesto por el paquete sonarqube-scanner
-                sh 'npx sonarqube-scanner -Dsonar.token=${SONAR_TOKEN}'
+        stage('SonarQube') {
+            environment {
+                SONAR_TOKEN = credentials('sonarqube-token') 
+            }
+            steps {
+                dir('microservicios/gestion-empleados') {
+                    echo 'Ejecutando análisis de SonarQube...'
+                    sh 'npx sonarqube-scanner -Dsonar.token=${SONAR_TOKEN}'
+                }
             }
         }
-    }
+    } // <-- AQUÍ FALTABA CERRAR EL BLOQUE STAGES
 
     post {
         success {
