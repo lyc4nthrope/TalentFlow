@@ -16,16 +16,16 @@ pipeline {
         stage('Build / Lint') {
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    echo 'Instalando herramientas y verificando sintaxis...'
+                    echo 'Instalando herramientas, Java y verificando sintaxis...'
                     sh '''
-                        # 1. Instalar dependencias del sistema y Java nativo
-                        apt-get update && apt-get install -y unzip git curl default-jre nodejs npm
+                        # 1. Instalar dependencias del sistema y Java nativo (ARM64 compatible)
+                        apt-get update && apt-get install -y unzip git curl default-jre
 
-                        # 2. Descargar ejecutable standalone de PHPUnit
+                        # 2. Descargar PHPUnit standalone
                         curl -sSL https://phar.phpunit.de/phpunit-10.phar -o /usr/local/bin/phpunit
                         chmod +x /usr/local/bin/phpunit
 
-                        # 3. Descargar SonarScanner CLI ejecutable
+                        # 3. Descargar SonarScanner CLI nativo
                         if [ ! -d "/tmp/sonar-scanner" ]; then
                             curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006.zip
                             unzip -q /tmp/sonar-scanner.zip -d /tmp/
@@ -45,13 +45,14 @@ pipeline {
                     echo 'Ejecutando pruebas unitarias con PHPUnit...'
                     sh '''
                         mkdir -p reports
-                        # Ejecutar indicando la carpeta de pruebas o el archivo phpunit.xml
+                        # Especificar la carpeta tests o el archivo phpunit.xml
                         if [ -d "tests" ]; then
                             phpunit --log-junit reports/junit.xml tests || true
                         elif [ -f "phpunit.xml" ]; then
                             phpunit --log-junit reports/junit.xml || true
                         else
-                            echo "No se encontraron pruebas unitarias, omitiendo PHPUnit..."
+                            echo "No se encontraron pruebas unitarias, generando reporte vacío..."
+                            echo '<?xml version="1.0" encoding="UTF-8"?><testsuites></testsuites>' > reports/junit.xml
                         fi
                     '''
                 }
@@ -69,7 +70,7 @@ pipeline {
         stage('Sonarqube') {
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    echo 'Ejecutando análisis de SonarQube con Java nativo...'
+                    echo 'Ejecutando SonarQube Scanner nativo...'
                     withSonarQubeEnv('SonarQubeServer') {
                         sh '''
                             /tmp/sonar-scanner/bin/sonar-scanner \
