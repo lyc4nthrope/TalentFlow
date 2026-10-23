@@ -69,9 +69,11 @@ pipeline {
                     echo 'Ejecutando análisis de SonarQube...'
                     withSonarQubeEnv('SonarQubeServer') {
                         sh '''
-                            npx sonarqube-scanner \
-                            -Dsonar.host.url=http://host.docker.internal:9000 \
-                            -Dsonar.token=${SONAR_TOKEN}
+                            # Instala nodejs y npm dentro del contenedor de Go
+                            apk add --no-cache nodejs npm
+                            
+                            # Ejecuta el escáner de SonarQube
+                            npx sonarqube-scanner -Dsonar.host.url=http://host.docker.internal:9000
                         '''
                     }
                 }

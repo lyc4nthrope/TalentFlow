@@ -1,5 +1,4 @@
 pipeline {
-    // Usamos una imagen de PHP con CLI que incluya Composer y PCOV/Xdebug
     agent {
         docker {
             image 'php:8.2-cli'
@@ -17,31 +16,45 @@ pipeline {
         stage('Build / Lint') {
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    echo 'Verificando sintaxis de archivos PHP...'
-                    // Usamos + al final para evitar la barra invertida que rompe Groovy
-                    sh 'find . -name "*.php" -exec php -l {} +'
+                    echo 'Instalando extensiones, Composer y verificando sintaxis...'
+                    sh '''
+                        # 1. Instalar herramientas del sistema y extensiones de PHP
+                        apt-get update && apt-get install -y unzip git nodejs npm libzip-dev
+                        docker-php-ext-install zip pdo_mysql
+
+                        # 2. Instalar Composer globalmente
+                        curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+                        # 3. Instalar dependencias del proyecto (omitiendo la verificación estricta de plataforma si falta algo)
+                        composer install --prefer-dist --no-progress --no-interaction --ignore-platform-reqs
+
+                        # 4. Verificar sintaxis PHP
+                        find . -name "*.php" -exec php -l {} +
+                    '''
                 }
             }
         }
 
         stage('Test') {
             steps {
-                echo 'Ejecutando pruebas unitarias e integración con PHPUnit...'
-
-                // Genera el reporte de pruebas y de cobertura directamente con flags de la CLI
-                sh './vendor/bin/phpunit --log-junit reports/junit.xml --coverage-clover reports/clover.xml || true'
+                dir('microservicios/gestion-departamentos') {
+                    echo 'Ejecutando pruebas unitarias e integración con PHPUnit...'
+                    sh '''
+                        mkdir -p reports
+                        ./vendor/bin/phpunit --log-junit reports/junit.xml --coverage-clover reports/clover.xml || true
+                    '''
+                }
             }
 
             post {
                 always {
-                    // 1. Publica las pruebas en la pestaña "Test Result"
-                    junit allowEmptyResults: true, testResults: 'reports/junit.xml'
-
-                    // 2. Publica la cobertura en la pestaña "Coverage"
-                    recordCoverage(
-                        tools: [[parser: 'CLOVER', pattern: 'reports/clover.xml']],
-                        sourceCodeRetention: 'EVERY_BUILD'
-                    )
+                    dir('microservicios/gestion-departamentos') {
+                        junit allowEmptyResults: true, testResults: 'reports/junit.xml'
+                        recordCoverage(
+                            tools: [[parser: 'CLOVER', pattern: 'reports/clover.xml']],
+                            sourceCodeRetention: 'EVERY_BUILD'
+                        )
+                    }
                 }
             }
         }
@@ -49,13 +62,9 @@ pipeline {
         stage('Sonarqube') {
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    echo 'Ejecutando SonarQube Scanner con npx...'
+                    echo 'Ejecutando SonarQube Scanner...'
                     withSonarQubeEnv('SonarQubeServer') {
-                        sh '''
-                            npx sonarqube-scanner \
-                            -Dsonar.host.url=http://host.docker.internal:9000 \
-                            -Dsonar.token=${SONAR_TOKEN}
-                        '''
+                        sh 'npx sonarqube-scanner -Dsonar.host.url=http://host.docker.internal:9000'
                     }
                 }
             }
