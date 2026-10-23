@@ -9,17 +9,7 @@ pipeline {
     }
 
     stages {
-        stage('SonarQube') {
-            environment {
-                // Trae de forma segura el secreto guardado en Jenkins
-                SONAR_TOKEN = credentials('sonarqube-token') 
-            }
-        }
-        steps {
-            // Pasa el token dinámicamente como argumento del CLI
-            sh 'sonar-scanner -Dsonar.token=${SONAR_TOKEN}'
-        }
-    
+
         stage('Checkout') {
             steps{
                 echo 'Obteniendo código del repo...'
@@ -37,21 +27,32 @@ pipeline {
 
         stage('Test') {
             steps {
-                echo 'Ejecutando TODAS las pruebas...'
-                // Ignora el fallo para jenkins suba el reporte
-                sh 'npm test || true'
+                dir('microservicios/gestion-empleados') {
+                    echo 'Ejecutando TODAS las pruebas...'
+                    sh 'npm test || true'
+                }
             }
 
             post {
                 always {
-                    // 1. Public los XML de la pruebas en "Test result", busca en todas las sub carpetas y no falla si no hay datos
-                    junit allowEmptyResults: true, testResults: '**/reports/junit.xml'
-
-                    // 2. Publica la cobertura en la pestaña "Coverage"
-                    recordCoverage(
-                    tools: [[parser: 'LCOV', pattern: 'reports/lcov.info']],
-                    sourceCodeRetention: 'EVERY_BUILD'
-                    )
+                    dir('microservicios/gestion-empleados') {
+                        junit allowEmptyResults: true, testResults: '**/reports/junit.xml'
+                        recordCoverage(
+                            tools: [[parser: 'LCOV', pattern: 'reports/lcov.info']],
+                            sourceCodeRetention: 'EVERY_BUILD'
+                        )
+                    }
+                }
+            }
+        }
+        stage('SonarQube') {
+            environment {
+                SONAR_TOKEN = credentials('sonarqube-token') 
+            }
+            steps {
+                dir('microservicios/gestion-empleados') {
+                    echo 'Ejecutando análisis de SonarQube...'
+                    sh 'npx sonar-scanner -Dsonar.token=${SONAR_TOKEN}'
                 }
             }
         }
