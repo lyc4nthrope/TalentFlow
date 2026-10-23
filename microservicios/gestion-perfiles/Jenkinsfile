@@ -19,9 +19,11 @@ pipeline {
             steps {
                 dir('microservicios/gestion-perfiles') {
                     echo 'Instalando dependencias de Python...'
-                    sh 'pip install --upgrade pip'
-                    // Se agregó httpx necesario para TestClient de FastAPI
-                    sh 'pip install -r requirements.txt pytest pytest-cov httpx'
+                    sh '''
+                        apt-get update && apt-get install -y nodejs npm
+                        pip install --upgrade pip
+                        pip install -r requirements.txt pytest pytest-cov httpx
+                    '''
                 }
             }
         }
