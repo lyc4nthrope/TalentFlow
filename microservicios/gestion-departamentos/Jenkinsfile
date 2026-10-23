@@ -16,16 +16,23 @@ pipeline {
         stage('Build / Lint') {
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    echo 'Instalando Node.js, PHPUnit y verificando sintaxis...'
+                    echo 'Instalando herramientas y verificando sintaxis...'
                     sh '''
-                        # 1. Instalar herramientas necesarias y npx para SonarQube
-                        apt-get update && apt-get install -y unzip git nodejs npm curl
+                        # 1. Instalar dependencias del sistema y Java nativo
+                        apt-get update && apt-get install -y unzip git curl default-jre nodejs npm
 
-                        # 2. Descargar ejecutable de PHPUnit standalone
+                        # 2. Descargar ejecutable standalone de PHPUnit
                         curl -sSL https://phar.phpunit.de/phpunit-10.phar -o /usr/local/bin/phpunit
                         chmod +x /usr/local/bin/phpunit
 
-                        # 3. Verificar sintaxis PHP
+                        # 3. Descargar SonarScanner CLI ejecutable
+                        if [ ! -d "/tmp/sonar-scanner" ]; then
+                            curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006.zip
+                            unzip -q /tmp/sonar-scanner.zip -d /tmp/
+                            mv /tmp/sonar-scanner-5.0.1.3006 /tmp/sonar-scanner
+                        fi
+
+                        # 4. Verificar sintaxis PHP
                         find . -name "*.php" -exec php -l {} +
                     '''
                 }
@@ -38,8 +45,14 @@ pipeline {
                     echo 'Ejecutando pruebas unitarias con PHPUnit...'
                     sh '''
                         mkdir -p reports
-                        # Ejecuta phpunit global si existen pruebas
-                        phpunit --log-junit reports/junit.xml || true
+                        # Ejecutar indicando la carpeta de pruebas o el archivo phpunit.xml
+                        if [ -d "tests" ]; then
+                            phpunit --log-junit reports/junit.xml tests || true
+                        elif [ -f "phpunit.xml" ]; then
+                            phpunit --log-junit reports/junit.xml || true
+                        else
+                            echo "No se encontraron pruebas unitarias, omitiendo PHPUnit..."
+                        fi
                     '''
                 }
             }
@@ -56,9 +69,13 @@ pipeline {
         stage('Sonarqube') {
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    echo 'Ejecutando SonarQube Scanner...'
+                    echo 'Ejecutando análisis de SonarQube con Java nativo...'
                     withSonarQubeEnv('SonarQubeServer') {
-                        sh 'npx sonarqube-scanner -Dsonar.host.url=http://host.docker.internal:9000'
+                        sh '''
+                            /tmp/sonar-scanner/bin/sonar-scanner \
+                              -Dsonar.host.url=http://host.docker.internal:9000 \
+                              -Dsonar.sources=.
+                        '''
                     }
                 }
             }
