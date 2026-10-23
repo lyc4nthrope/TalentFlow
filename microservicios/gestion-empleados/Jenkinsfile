@@ -1,9 +1,9 @@
 pipeline {
     agent {
         docker {
-            // Se usa node:22-slim en lugar de alpine para compatibilidad con el binario de SonarScanner
             image 'node:22-slim'
-            args '-v node_cache:/root/.npm'
+            // Forzamos la plataforma x86_64 para compatibilidad total con el CLI de SonarQube
+            args '--platform linux/amd64 -v node_cache:/root/.npm'
         }
     }
 
