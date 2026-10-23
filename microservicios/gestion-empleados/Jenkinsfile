@@ -1,7 +1,8 @@
 pipeline {
     agent {
         docker {
-            image 'node:22-alpine'
+            // Se usa node:22-slim en lugar de alpine para compatibilidad con el binario de SonarScanner
+            image 'node:22-slim'
             args '-v node_cache:/root/.npm'
         }
     }
@@ -54,7 +55,7 @@ pipeline {
                 }
             }
         }
-    } 
+    }
 
     post {
         success {
