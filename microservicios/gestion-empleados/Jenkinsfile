@@ -50,11 +50,11 @@ pipeline {
             steps {
                 dir('microservicios/gestion-empleados') {
                     echo 'Ejecutando análisis de SonarQube...'
-                    sh 'npx sonarqube-scanner -Dsonar.token=${SONAR_TOKEN}'
+                    sh 'npx sonarqube-scanner -Dsonar.host.url=http://host.docker.internal:9000 -Dsonar.token=${SONAR_TOKEN}'
                 }
             }
         }
-    } // <-- AQUÍ FALTABA CERRAR EL BLOQUE STAGES
+    } 
 
     post {
         success {
