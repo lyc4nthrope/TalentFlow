@@ -69,11 +69,23 @@ pipeline {
                     echo 'Ejecutando análisis de SonarQube...'
                     withSonarQubeEnv('SonarQubeServer') {
                         sh '''
-                            # Instala Node.js, npm y la capa de compatibilidad glibc para Alpine
-                            apk add --no-cache nodejs npm gcompat libc6-compat
-                            
-                            # Ejecuta el escáner de SonarQube
-                            npx sonarqube-scanner -Dsonar.host.url=http://host.docker.internal:9000
+                            # 1. Instalar Java (JRE), Node, cURL y Unzip en Alpine
+                            apk add --no-cache openjdk17-jre nodejs npm curl unzip
+
+                            # 2. Descargar y configurar SonarScanner CLI nativo
+                            if [ ! -d "/tmp/sonar-scanner" ]; then
+                                curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006.zip
+                                unzip -q /tmp/sonar-scanner.zip -d /tmp/
+                                mv /tmp/sonar-scanner-5.0.1.3006 /tmp/sonar-scanner
+                            fi
+
+                            # 3. Ejecutar el binario de SonarScanner directamente con Java del sistema
+                            /tmp/sonar-scanner/bin/sonar-scanner \
+                              -Dsonar.host.url=http://host.docker.internal:9000 \
+                              -Dsonar.sources=. \
+                              -Dsonar.tests=. \
+                              -Dsonar.test.inclusions=**/*_test.go \
+                              -Dsonar.go.coverage.reportPaths=reports/coverage.out
                         '''
                     }
                 }
