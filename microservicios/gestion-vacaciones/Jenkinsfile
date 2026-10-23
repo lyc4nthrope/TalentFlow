@@ -51,22 +51,21 @@ pipeline {
         }
 
         stage('SonarQube') {
-            environment {
-                SONAR_TOKEN = credentials('sonarqube-token')
-            }
             steps {
                 dir('microservicios/gestion-vacaciones') {
                     echo 'Ejecutando análisis de SonarQube...'
-                    sh '''
-                        mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-                        -Dsonar.host.url=http://host.docker.internal:9000 \
-                        -Dsonar.token=${SONAR_TOKEN}
-                    '''
+                    // Este wrapper es el que conecta Jenkins con SonarQube
+                    withSonarQubeEnv('SonarQubeServer') { 
+                        sh '''
+                            mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+                              -Dsonar.host.url=http://host.docker.internal:9000
+                        '''
+                    }
                 }
             }
         }
         stage('Quality Gate') {
-        steps {
+            steps {
                 timeout(time: 5, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
                 }
