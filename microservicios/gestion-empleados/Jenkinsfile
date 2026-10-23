@@ -51,7 +51,8 @@ pipeline {
             steps {
                 dir('microservicios/gestion-empleados') {
                     echo 'Ejecutando análisis de SonarQube...'
-                    sh 'npx sonarqube-scanner -Dsonar.host.url=http://host.docker.internal:9000 -Dsonar.token=${SONAR_TOKEN}'
+                    // Pasamos -Dsonar.login y -Dsonar.token para compatibilidad completa con SonarQube 9.x
+                    sh 'npx sonarqube-scanner -Dsonar.host.url=http://host.docker.internal:9000 -Dsonar.login=${SONAR_TOKEN} -Dsonar.token=${SONAR_TOKEN}'
                 }
             }
         }
