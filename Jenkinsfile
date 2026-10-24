@@ -91,7 +91,7 @@ pipeline {
         stage('E2E Tests') {
             steps {
                 // Levantar el sistema completo
-                sh 'docker compose -f docker-compose.yml up -d --build'
+                sh 'docker-compose -f docker-compose.yml up -d --build'
                 
                 // Esperar health checks de los servicios
                 sh './scripts/wait-for-healthy.sh'
@@ -108,7 +108,7 @@ pipeline {
             post {
                 always {
                     // 1. Resultados máquina-legibles JUnit
-                    junit 'e2e-tests/reports/junit.xml'
+                    junit allowEmptyResults: true, testResults: 'e2e-tests/reports/junit.xml'
                     
                     // 2. Reporte navegable BDD Cucumber
                     cucumber(
@@ -127,11 +127,11 @@ pipeline {
                     ])
                     
                     // 4. Archivar logs para diagnóstico
-                    sh 'docker compose logs --no-color > docker-logs.txt || true'
+                    sh 'docker-compose logs --no-color > docker-logs.txt || true'
                     archiveArtifacts artifacts: 'docker-logs.txt', allowEmptyArchive: true
                     
                     // 5. Apagar y limpiar el entorno
-                    sh 'docker compose -f docker-compose.yml down -v'
+                    sh 'docker-compose -f docker-compose.yml down -v'
                 }
             }
         }
