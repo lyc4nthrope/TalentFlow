@@ -98,8 +98,17 @@ pipeline {
                     test -f "${WORKSPACE}/docker-compose.e2e.yml"
                     mkdir -p "${WORKSPACE}/e2e-tests/reports"
 
-                    echo "==> Levantando entorno con Docker Compose usando el Docker del host de Jenkins"
-                    docker compose -f "${WORKSPACE}/docker-compose.yml" up -d --build
+                    if docker compose version >/dev/null 2>&1; then
+                        COMPOSE=(docker compose)
+                    elif command -v docker-compose >/dev/null 2>&1; then
+                        COMPOSE=(docker-compose)
+                    else
+                        echo "ERROR: no hay Docker Compose disponible en Jenkins. Instala el plugin v2 o docker-compose."
+                        exit 1
+                    fi
+
+                    echo "==> Levantando entorno con: ${COMPOSE[*]}"
+                    "${COMPOSE[@]}" -f "${WORKSPACE}/docker-compose.yml" up -d --build
                 '''
 
                 sh './scripts/wait-for-healthy.sh'
@@ -117,7 +126,19 @@ pipeline {
                     sh '''
                         set +e
                         mkdir -p "${WORKSPACE}/e2e-tests/reports"
-                        docker compose -f "${WORKSPACE}/docker-compose.yml" logs > "${WORKSPACE}/docker-logs.txt" || true
+                        if docker compose version >/dev/null 2>&1; then
+                            COMPOSE=(docker compose)
+                        elif command -v docker-compose >/dev/null 2>&1; then
+                            COMPOSE=(docker-compose)
+                        else
+                            COMPOSE=()
+                        fi
+
+                        if [ "${#COMPOSE[@]}" -gt 0 ]; then
+                            "${COMPOSE[@]}" -f "${WORKSPACE}/docker-compose.yml" logs > "${WORKSPACE}/docker-logs.txt" || true
+                        else
+                            echo "No se pudo crear el log porque no hay Docker Compose disponible." > "${WORKSPACE}/docker-logs.txt"
+                        fi
                     '''
 
                     junit allowEmptyResults: true, testResults: 'e2e-tests/reports/junit.xml'
@@ -141,7 +162,15 @@ pipeline {
 
                     sh '''
                         set +e
-                        docker compose -f "${WORKSPACE}/docker-compose.yml" down -v || true
+                        if docker compose version >/dev/null 2>&1; then
+                            COMPOSE=(docker compose)
+                        elif command -v docker-compose >/dev/null 2>&1; then
+                            COMPOSE=(docker-compose)
+                        else
+                            exit 0
+                        fi
+
+                        "${COMPOSE[@]}" -f "${WORKSPACE}/docker-compose.yml" down -v || true
                     '''
                 }
             }
