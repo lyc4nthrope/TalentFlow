@@ -3,6 +3,23 @@ jenkins:
 
 jobs:
   - script: |
+      // Pipeline E2E
+      pipelineJob('pipeline-orquestador-e2e') {
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/tu-usuario/tu-repositorio.git') // <-- Cambia a tu URL de Git
+                }
+                branches('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile') // <-- Apunta al Jenkinsfile de la raíz del proyecto
+          }
+        }
+      }
+
       // 1. Gestión Empleados (Node.js)
       pipelineJob('gestion-empleados') {
         definition {
