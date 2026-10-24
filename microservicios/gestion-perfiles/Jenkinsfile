@@ -3,6 +3,7 @@ pipeline {
     agent {
         docker {
             image 'python:3.11-slim'
+            SERVICE_NAME = "gestion-perfiles"
             // Monta volumen para la caché de pip
             args '-v pip_cache:/root/.cache/pip'
         }
@@ -84,7 +85,29 @@ pipeline {
             }
         }
 
+        //E2E
+        stage('Package') {
+            steps {
+                script {
+                    def imageName = "${SERVICE_NAME}"
+                    def imageTag = "${env.BUILD_NUMBER}"
+                    sh "docker build -t ${imageName}:${imageTag} -t ${imageName}:latest ."
+                    echo "✅ Imagen construida: ${imageName}:${imageTag}"
+                }
+            }
+        }
 
+        stage('Publish') {
+            steps {
+                script {
+                    def imageName = "localhost:5000/${SERVICE_NAME}"
+                    def imageTag = "${env.BUILD_NUMBER}"
+                    sh "docker tag ${SERVICE_NAME}:${imageTag} ${imageName}:${imageTag}"
+                    sh "docker push ${imageName}:${imageTag}"
+                    echo "📤 Imagen publicada en registry: ${imageName}:${imageTag}"
+                }
+            }
+        }
     }
 
     post {

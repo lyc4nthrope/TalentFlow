@@ -7,6 +7,15 @@ x-jwt: &jwt
   JWT_ISSUER: ${JWT_ISSUER:-auth-service}
 
 services:
+  registry:
+  image: registry:2
+  container_name: docker-registry
+  ports:
+  - "5000:5000"
+  volumes:
+  - registry_data:/var/lib/registry
+  networks:
+  - microservices-network
   # Servicio de sonarwube del reto 06
   sonarqube:
     image: sonarqube:lts-community
@@ -542,3 +551,4 @@ volumes:
   sonarqube_logs:
   sonarqube_extensions:
   sonar_db_data:
+  registry_data:

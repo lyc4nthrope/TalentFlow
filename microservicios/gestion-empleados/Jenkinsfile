@@ -2,6 +2,7 @@ pipeline {
     agent {
         docker {
             image 'node:22-slim'
+            SERVICE_NAME = "gestion-empleados"
             // Forzamos la plataforma x86_64 para compatibilidad total con el CLI de SonarQube
             args '--platform linux/amd64 -v node_cache:/root/.npm'
         }
@@ -58,6 +59,30 @@ pipeline {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        //E2E
+        stage('Package') {
+            steps {
+                script {
+                    def imageName = "${SERVICE_NAME}"
+                    def imageTag = "${env.BUILD_NUMBER}"
+                    sh "docker build -t ${imageName}:${imageTag} -t ${imageName}:latest ."
+                    echo "✅ Imagen construida: ${imageName}:${imageTag}"
+                }
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                script {
+                    def imageName = "localhost:5000/${SERVICE_NAME}"
+                    def imageTag = "${env.BUILD_NUMBER}"
+                    sh "docker tag ${SERVICE_NAME}:${imageTag} ${imageName}:${imageTag}"
+                    sh "docker push ${imageName}:${imageTag}"
+                    echo "📤 Imagen publicada en registry: ${imageName}:${imageTag}"
                 }
             }
         }
