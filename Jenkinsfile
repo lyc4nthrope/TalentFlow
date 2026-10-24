@@ -2,8 +2,9 @@ pipeline {
     agent any
 
     environment {
-        REGISTRY  = "localhost:5000"
-        IMAGE_TAG = "${env.BUILD_NUMBER}"
+        REGISTRY     = "localhost:5000"
+        IMAGE_TAG    = "${env.BUILD_NUMBER}"
+        COMPOSE_FILE = "docker-compose.yml"
     }
 
     stages {
@@ -90,8 +91,11 @@ pipeline {
 
         stage('E2E Tests') {
             steps {
-                // Levantar el sistema completo
-                sh 'docker compose -f docker-compose.yml up -d --build'
+                // Crear previamente el directorio para garantizar que siempre exista
+                sh 'mkdir -p e2e-tests/reports'
+
+                // Levantar el sistema completo (usando la variable COMPOSE_FILE)
+                sh 'docker compose up -d --build'
                 
                 // Esperar health checks de los servicios
                 sh './scripts/wait-for-healthy.sh'
@@ -107,6 +111,9 @@ pipeline {
             }
             post {
                 always {
+                    // Garantizar directorio previo
+                    sh 'mkdir -p e2e-tests/reports'
+
                     // 1. Resultados máquina-legibles JUnit
                     junit allowEmptyResults: true, testResults: 'e2e-tests/reports/junit.xml'
                     
@@ -123,15 +130,16 @@ pipeline {
                         reportFiles: 'cucumber.html',
                         reportName: 'Reporte BDD',
                         keepAll: true,
-                        alwaysLinkToLastBuild: true
+                        alwaysLinkToLastBuild: true,
+                        allowMissing: true
                     ])
                     
-                    // 4. Archivar logs para diagnóstico
-                    sh 'docker compose logs --no-color > docker-logs.txt || true'
+                    // 4. Archivar logs para diagnóstico (sin la flag --no-color no soportada)
+                    sh 'docker compose logs > docker-logs.txt || true'
                     archiveArtifacts artifacts: 'docker-logs.txt', allowEmptyArchive: true
                     
                     // 5. Apagar y limpiar el entorno
-                    sh 'docker compose -f docker-compose.yml down -v'
+                    sh 'docker compose down -v || true'
                 }
             }
         }
