@@ -90,24 +90,22 @@ pipeline {
 
         stage('E2E Tests') {
             steps {
-                // Crear directorio de reportes
-                sh 'mkdir -p e2e-tests/reports'
+                sh '''
+                    set -e
+                    echo "WORKSPACE=${WORKSPACE}"
+                    ls -la "${WORKSPACE}"
+                    test -f "${WORKSPACE}/docker-compose.yml"
+                    test -f "${WORKSPACE}/docker-compose.e2e.yml"
+                    mkdir -p "${WORKSPACE}/e2e-tests/reports"
 
-                // Levantar los servicios con docker-compose
-                sh '''
-                    docker run --rm \
-                      -v /var/run/docker.sock:/var/run/docker.sock \
-                      -v "${WORKSPACE}":/app \
-                      -w /app \
-                      docker:latest compose -f docker-compose.yml up -d --build
+                    echo "==> Levantando entorno con Docker Compose usando el Docker del host de Jenkins"
+                    docker compose -f "${WORKSPACE}/docker-compose.yml" up -d --build
                 '''
-                
-                // Esperar health checks
+
                 sh './scripts/wait-for-healthy.sh'
-                
-                // Ejecutar la suite BDD
+
                 sh '''
-                    cd e2e-tests
+                    cd "${WORKSPACE}/e2e-tests"
                     npx cucumber-js \
                     --format junit:reports/junit.xml \
                     --format json:reports/cucumber.json \
@@ -116,20 +114,20 @@ pipeline {
             }
             post {
                 always {
-                    // Garantizar directorio de reportes
-                    sh 'mkdir -p e2e-tests/reports'
+                    sh '''
+                        set +e
+                        mkdir -p "${WORKSPACE}/e2e-tests/reports"
+                        docker compose -f "${WORKSPACE}/docker-compose.yml" logs > "${WORKSPACE}/docker-logs.txt" || true
+                    '''
 
-                    // 1. Resultados máquina-legibles JUnit
                     junit allowEmptyResults: true, testResults: 'e2e-tests/reports/junit.xml'
-                    
-                    // 2. Reporte navegable BDD Cucumber
+
                     cucumber(
                         jsonReportDirectory: 'e2e-tests/reports',
                         fileIncludePattern: '**/cucumber.json',
                         buildStatus: 'UNSTABLE'
                     )
-                    
-                    // 3. Reporte HTML genérico
+
                     publishHTML(target: [
                         reportDir: 'e2e-tests/reports',
                         reportFiles: 'cucumber.html',
@@ -138,24 +136,12 @@ pipeline {
                         alwaysLinkToLastBuild: true,
                         allowMissing: true
                     ])
-                    
-                    // 4. Archivar logs para diagnóstico
-                    sh '''
-                        docker run --rm \
-                          -v /var/run/docker.sock:/var/run/docker.sock \
-                          -v "${WORKSPACE}":/app \
-                          -w /app \
-                          docker:latest compose -f docker-compose.yml logs > docker-logs.txt || true
-                    '''
+
                     archiveArtifacts artifacts: 'docker-logs.txt', allowEmptyArchive: true
-                    
-                    // 5. Apagar y limpiar el entorno
+
                     sh '''
-                        docker run --rm \
-                          -v /var/run/docker.sock:/var/run/docker.sock \
-                          -v "${WORKSPACE}":/app \
-                          -w /app \
-                          docker:latest compose -f docker-compose.yml down -v || true
+                        set +e
+                        docker compose -f "${WORKSPACE}/docker-compose.yml" down -v || true
                     '''
                 }
             }
