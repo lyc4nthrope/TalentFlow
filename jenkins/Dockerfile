@@ -1,6 +1,6 @@
 FROM jenkins/jenkins:lts-jdk17
 
-# Instalar plugins necesarios de forma automatizada (incluye reportes de pruebas)
+# Instalar plugins de Jenkins necesarios
 RUN jenkins-plugin-cli --plugins \
     docker-workflow \
     pipeline-stage-view \
@@ -16,7 +16,7 @@ RUN jenkins-plugin-cli --plugins \
 
 USER root
 
-# 1. Instalar dependencias base, Docker CLI, Node.js y npm
+# 1. Instalar Docker CLI, Node.js y dependencias
 RUN apt-get update && \
     apt-get install -y \
         docker.io \
@@ -26,16 +26,19 @@ RUN apt-get update && \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# 2. Instalar Docker Compose (CLI plugin v2) descargando el binario oficial
+# 2. Instalar Docker Compose (v2.29.1)
 RUN mkdir -p /usr/libexec/docker/cli-plugins && \
-    curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" \
+    curl -SL "https://github.com/docker/compose/releases/download/v2.29.1/docker-compose-linux-$(uname -m)" \
     -o /usr/libexec/docker/cli-plugins/docker-compose && \
-    chmod +x /usr/libexec/docker/cli-plugins/docker-compose
+    chmod +x /usr/libexec/docker/cli-plugins/docker-compose && \
+    ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose || true
 
-# Crear alias/enlace simbólico para compatibilidad con 'docker-compose'
-RUN ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose || true
+# 3. Instalar Docker Buildx actualizado (v0.19.1 o superior)
+RUN curl -SL "https://github.com/docker/buildx/releases/download/v0.19.1/buildx-v0.19.1.linux-$(uname -m)" \
+    -o /usr/libexec/docker/cli-plugins/docker-buildx && \
+    chmod +x /usr/libexec/docker/cli-plugins/docker-buildx
 
-# 3. Agregar usuario jenkins al grupo docker para acceder al socket
+# 4. Asignar usuario al grupo docker
 RUN groupadd -f docker && usermod -aG docker jenkins
 
 USER jenkins
