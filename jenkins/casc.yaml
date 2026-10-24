@@ -10,7 +10,7 @@ jobs:
             scm {
               git {
                 remote {
-                  url('https://github.com/tu-usuario/tu-repositorio.git') // <-- Cambia a tu URL de Git
+                  url('https://github.com/lyc4nthrope/TalentFlow.git') 
                 }
                 branches('*/main')
               }
