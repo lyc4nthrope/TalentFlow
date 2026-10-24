@@ -20,7 +20,7 @@ USER root
 RUN apt-get update && \
     apt-get install -y \
         docker.io \
-        docker-compose-v2 \
+        docker-compose-plugin \
         nodejs \
         npm \
         curl \
