@@ -19,7 +19,7 @@ RUN jenkins-plugin-cli --plugins \
 # Isntalar cliente Docker dentro del contenedor Jenkins
 USER root
 RUN apt-get update && \
-    apt-get install -y docker.io && \
+    apt-get install -y docker.io docker-compose-plugin docker-compose && \
     rm -rf /var/lib/apt/lists/*
 
 # Agregar usuario jenkins al grupo docker para accerder al socket
