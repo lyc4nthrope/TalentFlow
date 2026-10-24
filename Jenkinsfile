@@ -99,16 +99,16 @@ pipeline {
                     mkdir -p "${WORKSPACE}/e2e-tests/reports"
 
                     if docker compose version >/dev/null 2>&1; then
-                        COMPOSE=(docker compose)
+                        COMPOSE_CMD='docker compose'
                     elif command -v docker-compose >/dev/null 2>&1; then
-                        COMPOSE=(docker-compose)
+                        COMPOSE_CMD='docker-compose'
                     else
                         echo "ERROR: no hay Docker Compose disponible en Jenkins. Instala el plugin v2 o docker-compose."
                         exit 1
                     fi
 
-                    echo "==> Levantando entorno con: ${COMPOSE[*]}"
-                    "${COMPOSE[@]}" -f "${WORKSPACE}/docker-compose.yml" up -d --build
+                    echo "==> Levantando entorno con: ${COMPOSE_CMD}"
+                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.yml\" up -d --build"
                 '''
 
                 sh './scripts/wait-for-healthy.sh'
@@ -126,16 +126,17 @@ pipeline {
                     sh '''
                         set +e
                         mkdir -p "${WORKSPACE}/e2e-tests/reports"
+
                         if docker compose version >/dev/null 2>&1; then
-                            COMPOSE=(docker compose)
+                            COMPOSE_CMD='docker compose'
                         elif command -v docker-compose >/dev/null 2>&1; then
-                            COMPOSE=(docker-compose)
+                            COMPOSE_CMD='docker-compose'
                         else
-                            COMPOSE=()
+                            COMPOSE_CMD=''
                         fi
 
-                        if [ "${#COMPOSE[@]}" -gt 0 ]; then
-                            "${COMPOSE[@]}" -f "${WORKSPACE}/docker-compose.yml" logs > "${WORKSPACE}/docker-logs.txt" || true
+                        if [ -n "$COMPOSE_CMD" ]; then
+                            sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.yml\" logs > \"${WORKSPACE}/docker-logs.txt\" || true"
                         else
                             echo "No se pudo crear el log porque no hay Docker Compose disponible." > "${WORKSPACE}/docker-logs.txt"
                         fi
@@ -163,14 +164,14 @@ pipeline {
                     sh '''
                         set +e
                         if docker compose version >/dev/null 2>&1; then
-                            COMPOSE=(docker compose)
+                            COMPOSE_CMD='docker compose'
                         elif command -v docker-compose >/dev/null 2>&1; then
-                            COMPOSE=(docker-compose)
+                            COMPOSE_CMD='docker-compose'
                         else
                             exit 0
                         fi
 
-                        "${COMPOSE[@]}" -f "${WORKSPACE}/docker-compose.yml" down -v || true
+                        sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.yml\" down -v || true"
                     '''
                 }
             }
