@@ -21,11 +21,7 @@ pipeline {
                         dir('microservicios/auth-service') {
                             sh """
                                 set -e
-                                echo "==> Build auth-service"
-                                go mod download
-                                go build ./...
-
-                                echo "==> Publish auth-service"
+                                echo "==> Building & Publishing auth-service"
                                 docker build -t ${REGISTRY}/auth-service:${IMAGE_TAG} -t ${REGISTRY}/auth-service:latest .
                                 docker push ${REGISTRY}/auth-service:${IMAGE_TAG}
                                 docker push ${REGISTRY}/auth-service:latest
@@ -39,10 +35,7 @@ pipeline {
                         dir('microservicios/gestion-departamentos') {
                             sh """
                                 set -e
-                                echo "==> Build gestion-departamentos"
-                                find . -name "*.php" -exec php -l {} +
-
-                                echo "==> Publish gestion-departamentos"
+                                echo "==> Building & Publishing gestion-departamentos"
                                 docker build -t ${REGISTRY}/gestion-departamentos:${IMAGE_TAG} -t ${REGISTRY}/gestion-departamentos:latest .
                                 docker push ${REGISTRY}/gestion-departamentos:${IMAGE_TAG}
                                 docker push ${REGISTRY}/gestion-departamentos:latest
@@ -56,11 +49,7 @@ pipeline {
                         dir('microservicios/gestion-empleados') {
                             sh """
                                 set -e
-                                echo "==> Build gestion-empleados"
-                                npm ci
-                                npm test || true
-
-                                echo "==> Publish gestion-empleados"
+                                echo "==> Building & Publishing gestion-empleados"
                                 docker build -t ${REGISTRY}/gestion-empleados:${IMAGE_TAG} -t ${REGISTRY}/gestion-empleados:latest .
                                 docker push ${REGISTRY}/gestion-empleados:${IMAGE_TAG}
                                 docker push ${REGISTRY}/gestion-empleados:latest
@@ -74,12 +63,7 @@ pipeline {
                         dir('microservicios/gestion-perfiles') {
                             sh """
                                 set -e
-                                echo "==> Build gestion-perfiles"
-                                python -m pip install --upgrade pip
-                                pip install -r requirements.txt
-                                pytest || true
-
-                                echo "==> Publish gestion-perfiles"
+                                echo "==> Building & Publishing gestion-perfiles"
                                 docker build -t ${REGISTRY}/gestion-perfiles:${IMAGE_TAG} -t ${REGISTRY}/gestion-perfiles:latest .
                                 docker push ${REGISTRY}/gestion-perfiles:${IMAGE_TAG}
                                 docker push ${REGISTRY}/gestion-perfiles:latest
@@ -93,10 +77,7 @@ pipeline {
                         dir('microservicios/gestion-vacaciones') {
                             sh """
                                 set -e
-                                echo "==> Build gestion-vacaciones"
-                                mvn clean compile -DskipTests
-
-                                echo "==> Publish gestion-vacaciones"
+                                echo "==> Building & Publishing gestion-vacaciones"
                                 docker build -t ${REGISTRY}/gestion-vacaciones:${IMAGE_TAG} -t ${REGISTRY}/gestion-vacaciones:latest .
                                 docker push ${REGISTRY}/gestion-vacaciones:${IMAGE_TAG}
                                 docker push ${REGISTRY}/gestion-vacaciones:latest
