@@ -219,8 +219,8 @@ services:
   # Microservicio Empleados (Node.js)
   empleados-service:
     build:
-      context: .
-      dockerfile: ./microservicios/gestion-empleados/Dockerfile
+      context: ./microservicios/gestion-empleados
+      dockerfile: Dockerfile
       target: runner
     container_name: ms-empleados
     restart: on-failure
