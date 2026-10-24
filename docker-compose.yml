@@ -9,7 +9,7 @@ x-jwt: &jwt
 services:
   registry:
     image: registry:2
-    container_name: docker-registry
+    # container_name: docker-registry
     ports:
     - "5000:5000"
     volumes:
@@ -19,7 +19,7 @@ services:
   # Servicio de sonarwube del reto 06
   sonarqube:
     image: sonarqube:lts-community
-    container_name: sonarqube
+    # container_name: sonarqube
     ports:
       - "9000:9000"
     environment:
@@ -37,7 +37,7 @@ services:
     
   sonar-db:
     image: postgres:16-alpine
-    container_name: sonar-db
+    # container_name: sonar-db
     environment:
       - POSTGRES_DB=sonar
       - POSTGRES_USER=sonar
@@ -52,7 +52,7 @@ services:
     build:
       context: ./jenkins
       dockerfile: Dockerfile
-    container_name: jenkins
+    # container_name: jenkins
     user: root
     ports:
       - "9090:8080"       #Interfaz web
@@ -72,7 +72,7 @@ services:
   # Base de Datos Autenticación (PostgreSQL) — Reto 5
   database-auth:
     image: postgres:16-alpine
-    container_name: db-auth
+    # container_name: db-auth
     restart: always
     environment:
       POSTGRES_DB: ${DB_AUTH_NAME:-db_auth}
@@ -98,7 +98,7 @@ services:
       context: ./microservicios/auth-service
       dockerfile: Dockerfile
       target: runner
-    container_name: ms-auth
+    # container_name: ms-auth
     restart: on-failure
     # D22: solo alcanzable a través del Gateway (regla del Reto 3).
     expose:
@@ -138,7 +138,7 @@ services:
   # Base de Datos Empleados (PostgreSQL)
   database-empleados:
     image: postgres:16-alpine
-    container_name: db-empleados
+    # container_name: db-empleados
     restart: always
     environment:
       POSTGRES_DB: ${DB_EMPLEADOS_NAME:-db_empleados}
@@ -161,7 +161,7 @@ services:
   # Base de Datos Departamentos (MySQL)
   database-departamentos:
     image: mysql:8.0
-    container_name: db-departamentos
+    # container_name: db-departamentos
     restart: always
     environment:
       MYSQL_DATABASE: ${DB_DEPTO_NAME:-db_deptos}
@@ -189,7 +189,7 @@ services:
     build:
       context: ./microservicios/api-gateway
       dockerfile: Dockerfile
-    container_name: api-gateway
+    # container_name: api-gateway
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -222,7 +222,7 @@ services:
       context: ./microservicios/gestion-empleados
       dockerfile: Dockerfile
       target: runner
-    container_name: ms-empleados
+    # container_name: ms-empleados
     restart: on-failure
     expose:
       - "8081"
@@ -262,7 +262,7 @@ services:
       context: ./microservicios/gestion-departamentos
       dockerfile: Dockerfile
       target: runner
-    container_name: ms-departamentos
+    # container_name: ms-departamentos
     restart: on-failure
     expose:
       - "8082"
@@ -288,7 +288,7 @@ services:
   # Base de Datos Notificaciones (PostgreSQL) — propia del servicio (Reto 4)
   database-notificaciones:
     image: postgres:16-alpine
-    container_name: db-notificaciones
+    # container_name: db-notificaciones
     restart: always
     environment:
       POSTGRES_DB: ${DB_NOTIF_NAME:-db_notificaciones}
@@ -314,7 +314,7 @@ services:
       context: ./microservicios/notificaciones
       dockerfile: Dockerfile
       target: runner
-    container_name: ms-notificaciones
+    # container_name: ms-notificaciones
     restart: on-failure
     expose:
       - "8084"
@@ -354,7 +354,7 @@ services:
   # Los guarda en memoria: se pierden al recrear el contenedor.
   mailhog:
     image: mailhog/mailhog:v1.0.1
-    container_name: mailhog
+    # container_name: mailhog
     restart: unless-stopped
     expose:
       - "1025"              # SMTP: solo dentro de la red de Docker
@@ -366,7 +366,7 @@ services:
   # Base de Datos Perfiles (PostgreSQL) — propia del servicio (Reto 4)
   database-perfiles:
     image: postgres:16-alpine
-    container_name: db-perfiles
+    # container_name: db-perfiles
     restart: always
     environment:
       POSTGRES_DB: ${DB_PERFILES_NAME:-db_perfiles}
@@ -392,7 +392,7 @@ services:
       context: ./microservicios/gestion-perfiles
       dockerfile: Dockerfile
       target: runner
-    container_name: ms-perfiles
+    # container_name: ms-perfiles
     restart: on-failure
     expose:
       - "8083"
@@ -423,7 +423,7 @@ services:
   # Base de Datos Vacaciones (PostgreSQL) — propia del servicio (Reto 4)
   database-vacaciones:
     image: postgres:16-alpine
-    container_name: db-vacaciones
+    # container_name: db-vacaciones
     restart: always
     environment:
       POSTGRES_DB: ${DB_VACACIONES_NAME:-db_vacaciones}
@@ -449,7 +449,7 @@ services:
       context: ./microservicios/gestion-vacaciones
       dockerfile: Dockerfile
       target: runner
-    container_name: ms-vacaciones
+    # container_name: ms-vacaciones
     restart: on-failure
     expose:
       - "8085"
@@ -485,7 +485,7 @@ services:
   # Message Broker (RabbitMQ) — comunicación asincrónica por eventos (Reto 4)
   message-broker:
     image: rabbitmq:3.13-management-alpine
-    container_name: message-broker
+    # container_name: message-broker
     # Nombre de nodo estable: RabbitMQ guarda sus datos por nombre de nodo
     # (rabbit@<hostname>). Sin hostname fijo, recrear el contenedor cambiaría el
     # nombre y los mensajes persistidos en el volumen quedarían huérfanos.
@@ -514,7 +514,7 @@ services:
   # termine con éxito, así el exchange y las colas existen antes del primer evento.
   broker-init:
     image: rabbitmq:3.13-management-alpine
-    container_name: broker-init
+    # container_name: broker-init
     entrypoint: ["sh", "/importar-definiciones.sh"]
     restart: "no"
     environment:
