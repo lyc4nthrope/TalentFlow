@@ -12,7 +12,7 @@ jobs:
                 remote {
                   url('https://github.com/lyc4nthrope/TalentFlow.git') 
                 }
-                branches('*/main')
+                branches('*/Vale292005')
               }
             }
             scriptPath('Jenkinsfile') // <-- Apunta al Jenkinsfile de la raíz del proyecto
