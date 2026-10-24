@@ -16,13 +16,13 @@ RUN jenkins-plugin-cli --plugins \
     cucumber-reports \
     htmlpublisher
 
-# Isntalar cliente Docker dentro del contenedor Jenkins
+# Instalar cliente Docker y Docker Compose dentro del contenedor Jenkins
 USER root
 RUN apt-get update && \
-    apt-get install -y docker.io && \
+    (apt-get install -y docker.io docker-compose-plugin || apt-get install -y docker.io docker-compose) && \
     rm -rf /var/lib/apt/lists/*
 
-# Agregar usuario jenkins al grupo docker para accerder al socket
+# Agregar usuario jenkins al grupo docker para acceder al socket
 RUN groupadd -f docker && usermod -aG docker jenkins
 
 # Garantiza permisos de acceso al socket
