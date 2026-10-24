@@ -2,9 +2,8 @@ pipeline {
     agent any
 
     environment {
-        REGISTRY     = "localhost:5000"
-        IMAGE_TAG    = "${env.BUILD_NUMBER}"
-        COMPOSE_FILE = "docker-compose.yml"
+        REGISTRY  = "localhost:5000"
+        IMAGE_TAG = "${env.BUILD_NUMBER}"
     }
 
     stages {
@@ -91,11 +90,17 @@ pipeline {
 
         stage('E2E Tests') {
             steps {
-                // Crear previamente el directorio para garantizar que siempre exista
+                // Crear carpeta de reportes previamente
                 sh 'mkdir -p e2e-tests/reports'
 
-                // Levantar el sistema completo (usando la variable COMPOSE_FILE)
-                sh 'docker compose up -d --build'
+                // Levantar el entorno mediante una imagen efímera de docker/compose
+                sh '''
+                    docker run --rm \
+                      -v /var/run/docker.sock:/var/run/docker.sock \
+                      -v "$PWD":/app \
+                      -w /app \
+                      docker/compose:1.29.2 -f docker-compose.yml up -d
+                '''
                 
                 // Esperar health checks de los servicios
                 sh './scripts/wait-for-healthy.sh'
@@ -111,7 +116,7 @@ pipeline {
             }
             post {
                 always {
-                    // Garantizar directorio previo
+                    // Garantizar directorio de reportes
                     sh 'mkdir -p e2e-tests/reports'
 
                     // 1. Resultados máquina-legibles JUnit
@@ -134,12 +139,24 @@ pipeline {
                         allowMissing: true
                     ])
                     
-                    // 4. Archivar logs para diagnóstico (sin la flag --no-color no soportada)
-                    sh 'docker compose logs > docker-logs.txt || true'
+                    // 4. Archivar logs para diagnóstico usando contenedor compose
+                    sh '''
+                        docker run --rm \
+                          -v /var/run/docker.sock:/var/run/docker.sock \
+                          -v "$PWD":/app \
+                          -w /app \
+                          docker/compose:1.29.2 -f docker-compose.yml logs > docker-logs.txt || true
+                    '''
                     archiveArtifacts artifacts: 'docker-logs.txt', allowEmptyArchive: true
                     
                     // 5. Apagar y limpiar el entorno
-                    sh 'docker compose down -v || true'
+                    sh '''
+                        docker run --rm \
+                          -v /var/run/docker.sock:/var/run/docker.sock \
+                          -v "$PWD":/app \
+                          -w /app \
+                          docker/compose:1.29.2 -f docker-compose.yml down -v || true
+                    '''
                 }
             }
         }
