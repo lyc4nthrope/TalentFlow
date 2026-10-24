@@ -90,19 +90,19 @@ pipeline {
 
         stage('E2E Tests') {
             steps {
-                // Crear carpeta de reportes previamente
+                // Crear directorio de reportes
                 sh 'mkdir -p e2e-tests/reports'
 
-                // Levantar el entorno mediante una imagen efímera de docker/compose
+                // Usar contenedor oficial de Docker (compatible con ARM64 / Mac)
                 sh '''
                     docker run --rm \
                       -v /var/run/docker.sock:/var/run/docker.sock \
                       -v "$PWD":/app \
                       -w /app \
-                      docker/compose:1.29.2 -f docker-compose.yml up -d
+                      docker:latest compose -f docker-compose.yml up -d --build
                 '''
                 
-                // Esperar health checks de los servicios
+                // Esperar health checks
                 sh './scripts/wait-for-healthy.sh'
                 
                 // Ejecutar la suite BDD
@@ -139,13 +139,13 @@ pipeline {
                         allowMissing: true
                     ])
                     
-                    // 4. Archivar logs para diagnóstico usando contenedor compose
+                    // 4. Archivar logs para diagnóstico
                     sh '''
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
                           -v "$PWD":/app \
                           -w /app \
-                          docker/compose:1.29.2 -f docker-compose.yml logs > docker-logs.txt || true
+                          docker:latest compose -f docker-compose.yml logs > docker-logs.txt || true
                     '''
                     archiveArtifacts artifacts: 'docker-logs.txt', allowEmptyArchive: true
                     
@@ -155,7 +155,7 @@ pipeline {
                           -v /var/run/docker.sock:/var/run/docker.sock \
                           -v "$PWD":/app \
                           -w /app \
-                          docker/compose:1.29.2 -f docker-compose.yml down -v || true
+                          docker:latest compose -f docker-compose.yml down -v || true
                     '''
                 }
             }
