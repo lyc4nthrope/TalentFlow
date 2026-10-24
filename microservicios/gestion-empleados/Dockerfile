@@ -3,9 +3,9 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-COPY microservicios/gestion-empleados ./microservicios/gestion-empleados
+COPY . .
 
-RUN npm ci
+RUN npm ci --only=production
 
 FROM node:22-alpine AS runner
 
