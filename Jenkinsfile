@@ -93,11 +93,11 @@ pipeline {
                 // Crear directorio de reportes
                 sh 'mkdir -p e2e-tests/reports'
 
-                // Usar contenedor oficial de Docker (compatible con ARM64 / Mac)
+                // Levantar los servicios con docker-compose
                 sh '''
                     docker run --rm \
                       -v /var/run/docker.sock:/var/run/docker.sock \
-                      -v "$PWD":/app \
+                      -v "${WORKSPACE}":/app \
                       -w /app \
                       docker:latest compose -f docker-compose.yml up -d --build
                 '''
@@ -143,7 +143,7 @@ pipeline {
                     sh '''
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
-                          -v "$PWD":/app \
+                          -v "${WORKSPACE}":/app \
                           -w /app \
                           docker:latest compose -f docker-compose.yml logs > docker-logs.txt || true
                     '''
@@ -153,7 +153,7 @@ pipeline {
                     sh '''
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
-                          -v "$PWD":/app \
+                          -v "${WORKSPACE}":/app \
                           -w /app \
                           docker:latest compose -f docker-compose.yml down -v || true
                     '''
