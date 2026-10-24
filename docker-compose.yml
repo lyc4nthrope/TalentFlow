@@ -8,14 +8,14 @@ x-jwt: &jwt
 
 services:
   registry:
-  image: registry:2
-  container_name: docker-registry
-  ports:
-  - "5000:5000"
-  volumes:
-  - registry_data:/var/lib/registry
-  networks:
-  - microservices-network
+    image: registry:2
+    container_name: docker-registry
+    ports:
+    - "5000:5000"
+    volumes:
+    - registry_data:/var/lib/registry
+    networks:
+    - microservices-network
   # Servicio de sonarwube del reto 06
   sonarqube:
     image: sonarqube:lts-community
