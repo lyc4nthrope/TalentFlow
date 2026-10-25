@@ -18,16 +18,8 @@ pipeline {
                 dir('microservicios/gestion-perfiles') {
                     echo 'Instalando dependencias de Python y herramientas...'
                     sh '''
-                        # Crear venv sin ensurepip
-                        python3 -m venv --without-pip venv
+                        python3 -m venv venv
                         . venv/bin/activate
-                        
-                        # Descargar e instalar pip de forma independiente
-                        curl -sS https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-                        python get-pip.py
-                        rm get-pip.py
-                        
-                        # Instalar dependencias del proyecto
                         pip install --upgrade pip
                         pip install -r requirements.txt pytest pytest-cov httpx
                     '''

@@ -17,28 +17,7 @@ pipeline {
             steps {
                 dir('microservicios/gestion-departamentos') {
                     echo 'Instalando herramientas, PHP, Java y verificando sintaxis...'
-                    sh '''
-                        # 1. Instalar PHP, dependencias del sistema y Java nativo
-                        if ! command -v php >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
-                            apt-get update && apt-get install -y php-cli php-mbstring php-xml unzip git curl default-jre
-                        fi
-
-                        # 2. Descargar PHPUnit standalone
-                        if [ ! -f "/usr/local/bin/phpunit" ]; then
-                            curl -sSL https://phar.phpunit.de/phpunit-10.phar -o /usr/local/bin/phpunit
-                            chmod +x /usr/local/bin/phpunit
-                        fi
-
-                        # 3. Descargar SonarScanner CLI nativo
-                        if [ ! -d "/tmp/sonar-scanner" ]; then
-                            curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006.zip
-                            unzip -q /tmp/sonar-scanner.zip -d /tmp/
-                            mv /tmp/sonar-scanner-5.0.1.3006 /tmp/sonar-scanner
-                        fi
-
-                        # 4. Verificar sintaxis PHP
-                        find . -name "*.php" -exec php -l {} +
-                    '''
+                    sh 'find . -name "*.php" -exec php -l {} +'
                 }
             }
         }

@@ -16,15 +16,8 @@ pipeline {
         stage('Build') {
             steps {
                 dir('microservicios/auth-service') {
-                    echo 'Instalando herramientas de testing y compilando Go...'
-                    sh '''
-                        # Instalar herramientas para reportes si Go está disponible
-                        if command -v go >/dev/null 2>&1; then
-                            GOSUMDB=off go install github.com/jstemmer/go-junit-report/v2@latest || true
-                            GOSUMDB=off go install github.com/boumenot/gocover-cobertura@v1.2.0 || true
-                            go build ./...
-                        fi
-                    '''
+                    echo 'compilando Go...'
+                    sh 'go build ./...'
                 }
             }
         }
