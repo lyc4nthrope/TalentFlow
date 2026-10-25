@@ -65,6 +65,7 @@ services:
       start_period: 10s
 
   # Microservicio Autenticación
+  # Microservicio Autenticación (Reto 5)
   auth-service:
     build:
       context: ./microservicios/auth-service
@@ -98,8 +99,8 @@ services:
       test: ["CMD", "/auth-service", "-salud"]
       interval: 5s
       timeout: 3s
-      retries: 10
-      start_period: 30s
+      retries: 15          # <--- Ampliado de 5 a 15 reintentos
+      start_period: 30s    # <--- Ampliado de 10s a 30s de periodo de gracia inicial
     networks:
       - microservices-network
 
