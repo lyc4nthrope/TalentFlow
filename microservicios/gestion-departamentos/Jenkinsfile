@@ -16,11 +16,11 @@ pipeline {
         stage('Build / Lint') {
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    echo 'Instalando herramientas, Java y verificando sintaxis...'
+                    echo 'Instalando herramientas, PHP, Java y verificando sintaxis...'
                     sh '''
-                        # 1. Instalar dependencias del sistema y Java nativo
-                        if ! command -v unzip >/dev/null 2>&1; then
-                            apt-get update && apt-get install -y unzip git curl default-jre
+                        # 1. Instalar PHP, dependencias del sistema y Java nativo
+                        if ! command -v php >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
+                            apt-get update && apt-get install -y php-cli php-mbstring php-xml unzip git curl default-jre
                         fi
 
                         # 2. Descargar PHPUnit standalone
