@@ -110,14 +110,20 @@ pipeline {
                     sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --remove-orphans"
                 '''
 
-                sh './scripts/wait-for-healthy.sh || true'
+                // Otorgar permisos de ejecución al script antes de llamarlo
+                sh '''
+                    chmod +x ./scripts/wait-for-healthy.sh || true
+                    ./scripts/wait-for-healthy.sh || true
+                '''
 
+                // Instalar dependencias locales y ejecutar el ejecutable del paquete @cucumber/cucumber
                 sh '''
                     cd "${WORKSPACE}/e2e-tests"
+                    npm install
                     npx cucumber-js \
-                    --format junit:reports/junit.xml \
-                    --format json:reports/cucumber.json \
-                    --format html:reports/cucumber.html || true
+                      --format junit:reports/junit.xml \
+                      --format json:reports/cucumber.json \
+                      --format html:reports/cucumber.html || true
                 '''
             }
             post {
