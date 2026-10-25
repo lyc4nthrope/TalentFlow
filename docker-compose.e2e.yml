@@ -1,54 +1,58 @@
-# Override SOLO para la suite BDD (Reto 6, F9, decisión D6 de docs/reto-06/PLAN.md).
-#
-# Por qué existe: el ciclo de vacaciones (la cuenta se suspende al iniciar el período y
-# se reactiva al terminar) depende del scheduler de vacaciones-service, que por defecto
-# corre cada minuto. Con este override corre cada 5 s y el escenario completo tarda
-# segundos en lugar de minutos. No agrega ningún endpoint de disparo manual: el sistema
-# se comporta igual que en producción, solo más seguido.
-#
-# Producción y el `docker compose up` normal no lo usan y siguen con el valor por
-# defecto (`0 * * * * *`, cada minuto). La suite no queda acoplada a esta frecuencia:
-# sus pasos esperan condiciones observables y el tope de espera sale de
-# E2E_SCHEDULER_SEGUNDOS (5 aquí; con el cron por defecto, E2E_SCHEDULER_SEGUNDOS=60).
-#
-# Uso (recrea solo vacaciones-service; los datos no se tocan):
-#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d vacaciones-service
-# Volver al cron por defecto:
-#   docker compose up -d vacaciones-service
-services:
-  vacaciones-service:
-    environment:
-      # Cron de Spring de 6 campos (seg min hora día mes día-semana): cada 5 segundos.
-      VACACIONES_CRON: "*/5 * * * * *"
+version: '3.8'
 
-  # Suite BDD en un contenedor (Reto 6, D13). Está en el perfil "e2e", así que ni
-  # `docker compose up` ni este override la levantan solos; se ejecuta a pedido y su
-  # código de salida es el de la suite:
-  #   docker compose -f docker-compose.yml -f docker-compose.e2e.yml run --rm --build bdd-tests
-  # (o `make e2e`, que además aplica el override y espera al sistema).
-  bdd-tests:
-    build: ./e2e-tests
-    profiles: ["e2e"]
-    # Corre con el uid/gid del host para que los reportes del volumen no queden de root
-    # (el Makefile los pasa; por defecto 1000, el usuario `node` de la imagen).
-    user: "${E2E_UID:-1000}:${E2E_GID:-1000}"
-    init: true
+networks:
+  microservices-network:
+    driver: bridge
+
+volumes:
+  vol-vacaciones:
+
+services:
+  # Base de Datos de Vacaciones
+  database-vacaciones:
+    image: postgres:16-alpine
+    restart: always
     environment:
-      BASE_URL: http://api-gateway:8080
-      MAILHOG_URL: http://mailhog:8025
-      # Coincide con el VACACIONES_CRON de arriba (cada 5 s).
-      E2E_SCHEDULER_SEGUNDOS: 5
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@empresa.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123*}
-    depends_on:
-      api-gateway:
-        condition: service_healthy
-      vacaciones-service:
-        condition: service_healthy
-      mailhog:
-        condition: service_started
+      POSTGRES_DB: ${DB_VACACIONES_NAME:-db_vacaciones}
+      POSTGRES_USER: ${DB_VACACIONES_USER:-user_vacaciones}
+      POSTGRES_PASSWORD: ${DB_VACACIONES_PASS:-pass_vacaciones}
+    expose:
+      - "5432"
     volumes:
-      # Los reportes deben sobrevivir al contenedor (P6): junit.xml, cucumber.json y .html.
-      - ./e2e-tests/reports:/app/reports
+      - vol-vacaciones:/var/lib/postgresql/data
+      - ./microservicios/gestion-vacaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_VACACIONES_USER:-user_vacaciones} -d ${DB_VACACIONES_NAME:-db_vacaciones}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Microservicio de Vacaciones (apuntando a la imagen generada en el build)
+  vacaciones-service:
+    image: localhost:5000/gestion-vacaciones:latest
+    restart: on-failure
+    expose:
+      - "8085"
+    environment:
+      PORT: 8085
+      DB_HOST: database-vacaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_VACACIONES_NAME:-db_vacaciones}
+      DB_USER: ${DB_VACACIONES_USER:-user_vacaciones}
+      DB_PASS: ${DB_VACACIONES_PASS:-pass_vacaciones}
+      ZONA_HORARIA: America/Bogota
+      # Cron de Spring acelerado para la suite BDD (cada 5 segundos)
+      VACACIONES_CRON: "*/5 * * * * *"
+    depends_on:
+      database-vacaciones:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8085/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
     networks:
       - microservices-network
