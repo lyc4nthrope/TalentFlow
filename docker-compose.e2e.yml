@@ -43,6 +43,7 @@ services:
       - microservices-network
 
   # Base de Datos Autenticación (PostgreSQL)
+  # Base de Datos Autenticación (PostgreSQL)
   database-auth:
     image: postgres:16-alpine
     restart: always
@@ -58,11 +59,12 @@ services:
     networks:
       - microservices-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
+      # Verifica que PostgreSQL responda Y que el esquema/tabla "usuarios" ya exista
+      test: ["CMD-SHELL", "psql -U $${POSTGRES_USER:-user_auth} -d $${POSTGRES_DB:-db_auth} -c 'SELECT 1 FROM usuarios LIMIT 1;' || exit 1"]
+      interval: 3s
       timeout: 3s
-      retries: 10
-      start_period: 15s
+      retries: 15
+      start_period: 10s
 
   # Microservicio Autenticación
   auth-service:
