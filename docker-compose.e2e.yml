@@ -418,7 +418,7 @@ services:
       - ./e2e-tests/reports:/app/reports
     depends_on:
       auth-service:
-        condition: service_healthy
+        condition: service_started
       api-gateway:
         condition: service_healthy
     networks:
