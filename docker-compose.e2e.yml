@@ -72,29 +72,31 @@ services:
     image: localhost:5000/auth-service:latest
     restart: always
     environment:
+      <<: *jwt
+      PORT: "8086"
       DB_HOST: database-auth
       DB_PORT: "5432"
+      DB_NAME: ${DB_AUTH_NAME:-db_auth}
       DB_USER: ${DB_AUTH_USER:-user_auth}
       DB_PASS: ${DB_AUTH_PASS:-pass_auth}
-      DB_NAME: ${DB_AUTH_NAME:-db_auth}
-      PORT: "8086"
-      JWT_SECRET: ${JWT_SECRET:-supersecretkey}
-      RABBITMQ_URL: amqp://user:pass@message-broker:5672/
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
     expose:
       - "8086"
     depends_on:
       database-auth:
         condition: service_healthy
-      message-broker:
-        condition: service_healthy
-    networks:
-      - microservices-network
+      broker-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/auth-service", "-salud"]
       interval: 5s
       timeout: 3s
       retries: 5
       start_period: 5s
+    networks:
+      - microservices-network
 
   # Base de Datos Empleados
   database-empleados:
