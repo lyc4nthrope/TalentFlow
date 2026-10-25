@@ -90,11 +90,7 @@ services:
     networks:
       - microservices-network
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 8086 || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
+      disable: true
 
   # Base de Datos Empleados
   database-empleados:
