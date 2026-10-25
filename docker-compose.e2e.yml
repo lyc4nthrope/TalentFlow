@@ -8,7 +8,7 @@ volumes:
   vol-vacaciones:
 
 services:
-  # Base de Datos de Vacaciones
+  # 1. Base de Datos
   database-vacaciones:
     image: postgres:16-alpine
     restart: always
@@ -29,7 +29,7 @@ services:
       timeout: 3s
       retries: 10
 
-  # Microservicio Auth (Necesario para /auth/login)
+  # 2. Servicio de Autenticación
   auth-service:
     image: localhost:5000/auth-service:latest
     restart: on-failure
@@ -38,7 +38,7 @@ services:
     networks:
       - microservices-network
 
-  # Microservicio Empleados
+  # 3. Servicio de Empleados
   gestion-empleados:
     image: localhost:5000/gestion-empleados:latest
     restart: on-failure
@@ -47,7 +47,7 @@ services:
     networks:
       - microservices-network
 
-  # Microservicio Vacaciones
+  # 4. Servicio de Vacaciones
   vacaciones-service:
     image: localhost:5000/gestion-vacaciones:latest
     restart: on-failure
@@ -65,24 +65,25 @@ services:
     depends_on:
       database-vacaciones:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8085/health || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 20s
     networks:
       - microservices-network
 
-  # Suite de Pruebas BDD / Cucumber
+  # 5. API Gateway (Si existe en la solución)
+  api-gateway:
+    image: localhost:5000/api-gateway:latest
+    restart: on-failure
+    ports:
+      - "8080:8080"
+    networks:
+      - microservices-network
+
+  # 6. Contenedor de Pruebas BDD
   bdd-tests:
     build: ./e2e-tests
     profiles: ["e2e"]
     user: "root"
     environment:
-      BASE_URL: http://vacaciones-service:8085
-      AUTH_SERVICE_URL: http://auth-service:8086
-      EMPLEADOS_SERVICE_URL: http://gestion-empleados:8081
+      BASE_URL: http://api-gateway:8080  # Apuntar al Gateway que sabe redirigir /auth y /empleados
       E2E_SCHEDULER_SEGUNDOS: 5
     depends_on:
       vacaciones-service:
