@@ -58,12 +58,11 @@ services:
     networks:
       - microservices-network
     healthcheck:
-      # Verifica pg_isready O si la tabla 'usuarios' ya está registrada en el catálogo de PostgreSQL
-      test: ["CMD-SHELL", "psql -U $${POSTGRES_USER:-user_auth} -d $${POSTGRES_DB:-db_auth} -c \"SELECT 1 FROM pg_tables WHERE tablename='usuarios';\" | grep -q 1 || exit 1"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_AUTH_USER:-user_auth} -d ${DB_AUTH_NAME:-db_auth}"]
       interval: 3s
       timeout: 3s
-      retries: 15
-      start_period: 5s
+      retries: 10
+      start_period: 10s
 
   # Microservicio Autenticación
   auth-service:
