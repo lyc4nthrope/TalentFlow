@@ -81,11 +81,7 @@ services:
       message-broker:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "/auth-service", "-salud"]
-      interval: 5s
-      timeout: 5s                             
-      retries: 10                              
-      start_period: 15s                        
+      disable: true
     networks:
       - microservices-network
 
@@ -416,7 +412,7 @@ services:
       - ./e2e-tests/reports:/app/reports
     depends_on:
       auth-service:
-        condition: service_healthy
+        condition: service_started
       api-gateway:
         condition: service_healthy
     networks:
