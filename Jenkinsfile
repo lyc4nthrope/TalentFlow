@@ -96,7 +96,8 @@ pipeline {
                     ls -la "${WORKSPACE}"
                     test -f "${WORKSPACE}/docker-compose.e2e.yml"
 
-                    # Crear el directorio de reportes y otorgar permisos totales para el contenedor
+                    # Limpiar y preparar permisos de la carpeta reports
+                    rm -rf "${WORKSPACE}/e2e-tests/reports"
                     mkdir -p "${WORKSPACE}/e2e-tests/reports"
                     chmod -R 777 "${WORKSPACE}/e2e-tests/reports"
 
@@ -109,10 +110,10 @@ pipeline {
                         exit 0
                     fi
 
-                    echo "==> Levantando infraestructura E2E para vacaciones-service..."
+                    echo "==> Levantando infraestructura E2E..."
                     sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --remove-orphans"
 
-                    echo "==> Ejecutando suite BDD dentro de su contenedor de Node.js..."
+                    echo "==> Ejecutando suite BDD dentro de su contenedor..."
                     sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" run --rm bdd-tests || true"
                 '''
             }
@@ -120,7 +121,6 @@ pipeline {
                 always {
                     sh '''
                         set +e
-                        # Asegurar directorio y permisos antes de recolectar logs y reportes
                         mkdir -p "${WORKSPACE}/e2e-tests/reports"
                         chmod -R 777 "${WORKSPACE}/e2e-tests/reports"
 
