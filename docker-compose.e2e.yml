@@ -81,7 +81,11 @@ services:
       message-broker:
         condition: service_healthy
     healthcheck:
-      disable: true
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8086/health || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
     networks:
       - microservices-network
 
@@ -384,18 +388,24 @@ services:
       PERFILES_SERVICE_URL: http://perfiles-service:8083
       VACACIONES_SERVICE_URL: http://vacaciones-service:8085
     depends_on:
-      - auth-service
-      - empleados-service
-      - departamentos-service
-      - notificaciones-service
-      - perfiles-service
-      - vacaciones-service
+      auth-service:
+        condition: service_healthy
+      empleados-service:
+        condition: service_healthy
+      departamentos-service:
+        condition: service_healthy
+      notificaciones-service:
+        condition: service_healthy
+      perfiles-service:
+        condition: service_healthy
+      vacaciones-service:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     networks:
       - microservices-network
 
@@ -412,7 +422,7 @@ services:
       - ./e2e-tests/reports:/app/reports
     depends_on:
       auth-service:
-        condition: service_started
+        condition: service_healthy
       api-gateway:
         condition: service_healthy
     networks:
