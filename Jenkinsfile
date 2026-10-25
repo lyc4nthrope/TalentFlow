@@ -94,24 +94,31 @@ pipeline {
                     echo "WORKSPACE=${WORKSPACE}"
                     test -f "${WORKSPACE}/docker-compose.e2e.yml"
 
-                    # Permisos para reportes
+                    # Limpiar reportes
                     rm -rf "${WORKSPACE}/e2e-tests/reports"
                     mkdir -p "${WORKSPACE}/e2e-tests/reports"
                     chmod -R 777 "${WORKSPACE}/e2e-tests/reports"
 
+                    # Elegir docker compose v2 o legacy
                     if docker compose version >/dev/null 2>&1; then
                         COMPOSE_CMD='docker compose'
                     elif command -v docker-compose >/dev/null 2>&1; then
                         COMPOSE_CMD='docker-compose'
                     else
                         echo "Docker Compose no está disponible."
-                        exit 0
+                        exit 1
                     fi
 
-                    echo "==> Levantando infraestructura E2E..."
-                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --build --remove-orphans --wait"
+                    echo "==> Limpiando estado previo para evitar volúmenes stale del broker y BD..."
+                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" down -v --remove-orphans || true"
 
-                    echo "==> Verificando que la infraestructura está lista antes del BDD..."
+                    echo "==> Levantando infraestructura E2E..."
+                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --build --remove-orphans"
+
+                    echo "==> Esperando a que RabbitMQ termine la importación de la topología..."
+                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" wait broker-init"
+
+                    echo "==> Verificando que la infraestructura esté lista antes del BDD..."
                     sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" ps"
 
                     echo "==> Ejecutando suite BDD dentro de su contenedor..."
