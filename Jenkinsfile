@@ -95,7 +95,10 @@ pipeline {
                     echo "WORKSPACE=${WORKSPACE}"
                     ls -la "${WORKSPACE}"
                     test -f "${WORKSPACE}/docker-compose.e2e.yml"
+
+                    # Crear el directorio de reportes y otorgar permisos totales para el contenedor
                     mkdir -p "${WORKSPACE}/e2e-tests/reports"
+                    chmod -R 777 "${WORKSPACE}/e2e-tests/reports"
 
                     if docker compose version >/dev/null 2>&1; then
                         COMPOSE_CMD='docker compose'
@@ -109,7 +112,7 @@ pipeline {
                     echo "==> Levantando infraestructura E2E para vacaciones-service..."
                     sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --remove-orphans"
 
-                    echo "==> Ejecutando suite BDD dentro de su contenedor de Node.js 22..."
+                    echo "==> Ejecutando suite BDD dentro de su contenedor de Node.js..."
                     sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" run --rm bdd-tests || true"
                 '''
             }
@@ -117,7 +120,9 @@ pipeline {
                 always {
                     sh '''
                         set +e
+                        # Asegurar directorio y permisos antes de recolectar logs y reportes
                         mkdir -p "${WORKSPACE}/e2e-tests/reports"
+                        chmod -R 777 "${WORKSPACE}/e2e-tests/reports"
 
                         if docker compose version >/dev/null 2>&1; then
                             COMPOSE_CMD='docker compose'
