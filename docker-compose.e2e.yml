@@ -11,19 +11,35 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-admin}
-      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbitmq_management load_definitions \"/etc/rabbitmq/definitions.json\""
     expose:
       - "5672"
       - "15672"
     volumes:
       - vol-rabbitmq-e2e:/var/lib/rabbitmq
-      - ./infra/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 10s
+    networks:
+      - microservices-network
+
+  # Paso de inicialización del broker: importa la topología de eventos
+  # (exchange, colas y bindings) después de que RabbitMQ esté arrancado.
+  broker-init:
+    image: rabbitmq:3.13-management-alpine
+    entrypoint: ["sh", "/importar-definiciones.sh"]
+    restart: "no"
+    environment:
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+    volumes:
+      - ./infra/rabbitmq/importar-definiciones.sh:/importar-definiciones.sh:ro
+      - ./infra/rabbitmq/definitions.json:/definitions.json:ro
+    depends_on:
+      message-broker:
+        condition: service_healthy
     networks:
       - microservices-network
 
@@ -80,8 +96,10 @@ services:
         condition: service_healthy
       message-broker:
         condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8086/health || exit 1"]
+      test: ["CMD", "/auth-service", "-salud"]
       interval: 3s
       timeout: 3s
       retries: 10
@@ -139,6 +157,8 @@ services:
         condition: service_healthy
       message-broker:
         condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 5s
@@ -247,6 +267,8 @@ services:
         condition: service_healthy
       message-broker:
         condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/notificaciones", "-healthcheck"]
       interval: 5s
@@ -302,6 +324,8 @@ services:
         condition: service_healthy
       message-broker:
         condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8083/health', timeout=2)"]
       interval: 5s
@@ -349,12 +373,12 @@ services:
       DB_NAME: ${DB_VACACIONES_NAME:-db_vacaciones}
       DB_USER: ${DB_VACACIONES_USER:-user_vacaciones}
       DB_PASS: ${DB_VACACIONES_PASS:-pass_vacaciones}
-      # Propiedades nativas de Spring Boot para RabbitMQ:
+      # Propiedades nativas de Spring Boot para RabbitMQ
       SPRING_RABBITMQ_HOST: message-broker
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASS:-admin}
-      # Mantenemos las genéricas por si tu código personalizado las consulta:
+      # Variables del servicio
       RABBITMQ_HOST: message-broker
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
@@ -366,6 +390,8 @@ services:
         condition: service_healthy
       message-broker:
         condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8085/health || exit 1"]
       interval: 5s
