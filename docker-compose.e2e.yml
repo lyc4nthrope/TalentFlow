@@ -13,8 +13,7 @@ services:
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-admin}
     expose:
       - "5672"
-    ports:
-      - "15672:15672"
+      - "15672"
     volumes:
       - vol-rabbitmq-e2e:/var/lib/rabbitmq
     healthcheck:
@@ -389,8 +388,10 @@ services:
       context: ./microservicios/api-gateway
       dockerfile: Dockerfile
     restart: unless-stopped
+    expose:
+      - "8080"
     ports:
-      - "8080:8080"
+      - "8088:8080"
     environment:
       <<: *jwt
       PORT: 8080
