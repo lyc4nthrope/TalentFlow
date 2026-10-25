@@ -69,6 +69,7 @@ services:
     build:
       context: ./microservicios/auth-service
       dockerfile: Dockerfile
+      target: runner                          # <-- AGREGAR ESTA LÍNEA
     image: localhost:5000/auth-service:latest
     restart: always
     environment:
@@ -102,7 +103,7 @@ services:
       start_period: 5s
     networks:
       - microservices-network
-
+      
   # Base de Datos Empleados
   database-empleados:
     image: postgres:16-alpine
