@@ -55,14 +55,16 @@ services:
     depends_on:
       database-auth:
         condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/auth-service", "-salud"]
+      interval: 5s
+      timeout: 3s
+      retries: 10          # Aumentado de 5 a 10
+      start_period: 30s    # Aumentado de 10s a 30s
     networks:
       - microservices-network
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"] # O la ruta de healthcheck de tu servicio
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
 
   # Base de Datos Empleados
   database-empleados:
