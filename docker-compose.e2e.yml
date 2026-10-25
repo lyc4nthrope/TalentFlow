@@ -69,39 +69,32 @@ services:
     build:
       context: ./microservicios/auth-service
       dockerfile: Dockerfile
-      target: runner
-    restart: on-failure
+    image: localhost:5000/auth-service:latest
+    restart: always
+    environment:
+      DB_HOST: database-auth
+      DB_PORT: "5432"
+      DB_USER: ${DB_AUTH_USER:-user_auth}
+      DB_PASSWORD: ${DB_AUTH_PASS:-pass_auth}
+      DB_NAME: ${DB_AUTH_NAME:-db_auth}
+      PORT: "8086"
+      JWT_SECRET: ${JWT_SECRET:-supersecretkey}
+      RABBITMQ_URL: amqp://user:pass@message-broker:5672/
     expose:
       - "8086"
-    environment:
-      <<: *jwt
-      PORT: 8086
-      DB_HOST: database-auth
-      DB_PORT: 5432
-      DB_NAME: ${DB_AUTH_NAME:-db_auth}
-      DB_USER: ${DB_AUTH_USER:-user_auth}
-      DB_PASS: ${DB_AUTH_PASS:-pass_auth}
-      JWT_VIGENCIA: ${JWT_VIGENCIA:-1h}
-      TOKEN_ACTIVACION_VIGENCIA: ${TOKEN_ACTIVACION_VIGENCIA:-24h}
-      TOKEN_RECUPERACION_VIGENCIA: ${TOKEN_RECUPERACION_VIGENCIA:-1h}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@empresa.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123*}
-      RABBITMQ_HOST: message-broker
-      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
-      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
     depends_on:
       database-auth:
         condition: service_healthy
-      broker-init:
-        condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD", "/auth-service", "-salud"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 40s
+      message-broker:
+        condition: service_healthy
     networks:
       - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8086 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   # Base de Datos Empleados
   database-empleados:
