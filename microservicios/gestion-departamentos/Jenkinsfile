@@ -55,9 +55,16 @@ pipeline {
                     echo 'Ejecutando SonarQube Scanner nativo...'
                     withSonarQubeEnv('SonarQubeServer') {
                         sh '''
+                            if [ ! -f /tmp/sonar-scanner/bin/sonar-scanner ]; then
+                                echo "Descargando e instalando SonarScanner..."
+                                curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+                                unzip -q /tmp/sonar-scanner.zip -d /tmp/
+                                mv /tmp/sonar-scanner-5.0.1.3006-linux /tmp/sonar-scanner
+                            fi
+
                             /tmp/sonar-scanner/bin/sonar-scanner \
-                              -Dsonar.host.url=http://host.docker.internal:9000 \
-                              -Dsonar.sources=.
+                            -Dsonar.host.url=http://host.docker.internal:9000 \
+                            -Dsonar.sources=.
                         '''
                     }
                 }
