@@ -43,7 +43,7 @@ services:
     networks:
       - microservices-network
 
-  # Base de Datos Autenticación (PostgreSQL)
+  # Base de Datos Autenticación
   database-auth:
     image: postgres:16-alpine
     restart: always
@@ -54,13 +54,13 @@ services:
     expose:
       - "5432"
     volumes:
-      - vol-auth-e2e:/var/lib/postgresql/data
-      - ./microservicios/auth-service/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - vol-auth:/var/lib/postgresql/data
+      - ./microservicios/auth-service/schema.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     networks:
       - microservices-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_AUTH_USER:-user_auth} -d ${DB_AUTH_NAME:-db_auth}"]
-      interval: 3s
+      interval: 5s
       timeout: 3s
       retries: 10
       start_period: 10s
@@ -168,7 +168,7 @@ services:
     networks:
       - microservices-network
 
-  # Base de Datos Departamentos
+  # Base de Datos Departamentos (MySQL)
   database-departamentos:
     image: mysql:8.0
     restart: always
@@ -180,12 +180,12 @@ services:
     expose:
       - "3306"
     volumes:
-      - vol-departamentos-e2e:/var/lib/mysql
+      - vol-departamentos:/var/lib/mysql
       - ./microservicios/gestion-departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     networks:
       - microservices-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_DEPTO_USER:-user_deptos}", "-p${DB_DEPTO_PASS:-pass_deptos}"]
       interval: 5s
       timeout: 3s
       retries: 10
