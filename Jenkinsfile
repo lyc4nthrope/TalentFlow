@@ -109,7 +109,10 @@ pipeline {
                     fi
 
                     echo "==> Levantando infraestructura E2E..."
-                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --build --remove-orphans"
+                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --build --remove-orphans --wait"
+
+                    echo "==> Verificando que la infraestructura está lista antes del BDD..."
+                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" ps"
 
                     echo "==> Ejecutando suite BDD dentro de su contenedor..."
                     sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" run --rm bdd-tests || true"
