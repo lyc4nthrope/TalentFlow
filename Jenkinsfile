@@ -106,24 +106,11 @@ pipeline {
                         exit 0
                     fi
 
-                    echo "==> Levantando entorno BDD para vacaciones-service..."
+                    echo "==> Levantando infraestructura E2E para vacaciones-service..."
                     sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --remove-orphans"
-                '''
 
-                // Otorgar permisos de ejecución al script antes de llamarlo
-                sh '''
-                    chmod +x ./scripts/wait-for-healthy.sh || true
-                    ./scripts/wait-for-healthy.sh || true
-                '''
-
-                // Instalar dependencias locales y ejecutar el ejecutable del paquete @cucumber/cucumber
-                sh '''
-                    cd "${WORKSPACE}/e2e-tests"
-                    npm install
-                    npx cucumber-js \
-                      --format junit:reports/junit.xml \
-                      --format json:reports/cucumber.json \
-                      --format html:reports/cucumber.html || true
+                    echo "==> Ejecutando suite BDD dentro de su contenedor de Node.js 22..."
+                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" run --rm bdd-tests || true"
                 '''
             }
             post {

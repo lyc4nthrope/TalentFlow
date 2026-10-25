@@ -56,3 +56,18 @@ services:
       start_period: 20s
     networks:
       - microservices-network
+
+  # Suite de Pruebas BDD / Cucumber
+  bdd-tests:
+    build: ./e2e-tests
+    profiles: ["e2e"]
+    environment:
+      BASE_URL: http://vacaciones-service:8085
+      E2E_SCHEDULER_SEGUNDOS: 5
+    depends_on:
+      vacaciones-service:
+        condition: service_healthy
+    volumes:
+      - ./e2e-tests/reports:/app/reports
+    networks:
+      - microservices-network
