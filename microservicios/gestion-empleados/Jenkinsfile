@@ -48,7 +48,20 @@ pipeline {
                 dir('microservicios/gestion-empleados') {
                     echo 'Ejecutando análisis de SonarQube...'
                     withSonarQubeEnv('SonarQubeServer') { 
-                        sh 'npx sonarqube-scanner -Dsonar.host.url=http://host.docker.internal:9000'
+                        sh '''
+                            if ! command -v unzip >/dev/null 2>&1; then
+                                apt-get update && apt-get install -y unzip
+                            fi
+
+                            if [ ! -d "/tmp/sonar-scanner" ]; then
+                                curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006.zip
+                                unzip -q /tmp/sonar-scanner.zip -d /tmp/
+                                mv /tmp/sonar-scanner-5.0.1.3006 /tmp/sonar-scanner
+                            fi
+                            
+                            /tmp/sonar-scanner/bin/sonar-scanner \
+                              -Dsonar.host.url=http://host.docker.internal:9000
+                        '''
                     }  
                 }
             }
