@@ -238,6 +238,7 @@ services:
       DB_USER: ${DB_NOTIF_USER:-user_notificaciones}
       DB_PASS: ${DB_NOTIF_PASS:-pass_notificaciones}
       RABBITMQ_HOST: message-broker
+      RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
       RABBITMQ_COLA: notificaciones.eventos
@@ -348,6 +349,12 @@ services:
       DB_NAME: ${DB_VACACIONES_NAME:-db_vacaciones}
       DB_USER: ${DB_VACACIONES_USER:-user_vacaciones}
       DB_PASS: ${DB_VACACIONES_PASS:-pass_vacaciones}
+      # Propiedades nativas de Spring Boot para RabbitMQ:
+      SPRING_RABBITMQ_HOST: message-broker
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASS:-admin}
+      # Mantenemos las genéricas por si tu código personalizado las consulta:
       RABBITMQ_HOST: message-broker
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
