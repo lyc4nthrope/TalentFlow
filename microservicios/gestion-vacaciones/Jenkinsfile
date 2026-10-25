@@ -1,12 +1,9 @@
 pipeline {
-    // Usamos un contenedor de Maven con JDK 17
-    agent {
-        docker {
-            image 'maven:3.9-eclipse-temurin-17'
-            SERVICE_NAME = "gestion-vacaciones"
-            // Monta volumen para la caché local de Maven (.m2)
-            args '-v maven_cache:/root/.m2'
-        }
+    agent any
+
+    environment {
+        SERVICE_NAME = "gestion-vacaciones"
+        REGISTRY = "localhost:5000"
     }
 
     stages {
@@ -29,8 +26,6 @@ pipeline {
             steps {
                 dir('microservicios/gestion-vacaciones') {
                     echo 'Ejecutando pruebas unitarias e integración con JaCoCo...'
-                    // -Dmaven.test.failure.ignore=true evita que el comando aborte de inmediato
-                    // para permitir que el bloque post publique los reportes JUnit y JaCoCo
                     sh 'mvn verify -Dmaven.test.failure.ignore=true'
                 }
             }
@@ -38,13 +33,10 @@ pipeline {
             post {
                 always {
                     dir('microservicios/gestion-vacaciones') {
-                        // 1. Publica los resultados en la pestaña "Test Result"
                         junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml, target/failsafe-reports/*.xml'
-
-                        // 2. Publica la cobertura usando el parser JACOCO
                         recordCoverage(
-                        tools: [[parser: 'JACOCO', pattern: 'target/site/jacoco/jacoco.xml']],
-                        sourceCodeRetention: 'EVERY_BUILD'
+                            tools: [[parser: 'JACOCO', pattern: 'target/site/jacoco/jacoco.xml']],
+                            sourceCodeRetention: 'EVERY_BUILD'
                         )
                     }
                 }
@@ -55,7 +47,6 @@ pipeline {
             steps {
                 dir('microservicios/gestion-vacaciones') {
                     echo 'Ejecutando análisis de SonarQube...'
-                    // Este wrapper es el que conecta Jenkins con SonarQube
                     withSonarQubeEnv('SonarQubeServer') { 
                         sh '''
                             mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
@@ -65,6 +56,7 @@ pipeline {
                 }
             }
         }
+
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
@@ -73,27 +65,24 @@ pipeline {
             }
         }
 
-        //E2E
         stage('Package') {
             steps {
-                script {
-                    def imageName = "${SERVICE_NAME}"
-                    def imageTag = "${env.BUILD_NUMBER}"
-                    sh "docker build -t ${imageName}:${imageTag} -t ${imageName}:latest ."
-                    echo "✅ Imagen construida: ${imageName}:${imageTag}"
+                dir('microservicios/gestion-vacaciones') {
+                    sh "docker build -t ${SERVICE_NAME}:${BUILD_NUMBER} -t ${SERVICE_NAME}:latest ."
+                    echo "✅ Imagen construida: ${SERVICE_NAME}:${BUILD_NUMBER}"
                 }
             }
         }
 
         stage('Publish') {
             steps {
-                script {
-                    def imageName = "localhost:5000/${SERVICE_NAME}"
-                    def imageTag = "${env.BUILD_NUMBER}"
-                    sh "docker tag ${SERVICE_NAME}:${imageTag} ${imageName}:${imageTag}"
-                    sh "docker push ${imageName}:${imageTag}"
-                    echo "📤 Imagen publicada en registry: ${imageName}:${imageTag}"
-                }
+                sh """
+                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
+                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${REGISTRY}/${SERVICE_NAME}:latest
+                    docker push ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
+                    docker push ${REGISTRY}/${SERVICE_NAME}:latest
+                """
+                echo "📤 Imagen publicada en registry: ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}"
             }
         }
     }
