@@ -16,12 +16,13 @@ RUN jenkins-plugin-cli --plugins \
 
 USER root
 
-# 1. Instalar Docker CLI, Node.js y dependencias
+# 1. Instalar Docker CLI, Node.js, Maven y dependencias
 RUN apt-get update && \
     apt-get install -y \
         docker.io \
         nodejs \
         npm \
+        maven \
         curl \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
@@ -33,7 +34,7 @@ RUN mkdir -p /usr/libexec/docker/cli-plugins && \
     chmod +x /usr/libexec/docker/cli-plugins/docker-compose && \
     ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose || true
 
-# 3. Instalar Docker Buildx actualizado (v0.19.1 o superior)
+# 3. Instalar Docker Buildx actualizado
 RUN curl -SL "https://github.com/docker/buildx/releases/download/v0.19.1/buildx-v0.19.1.linux-$(uname -m)" \
     -o /usr/libexec/docker/cli-plugins/docker-buildx && \
     chmod +x /usr/libexec/docker/cli-plugins/docker-buildx
