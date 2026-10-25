@@ -69,14 +69,14 @@ services:
     build:
       context: ./microservicios/auth-service
       dockerfile: Dockerfile
-      target: runner                          # <-- AGREGAR ESTA LÍNEA
+      target: runner                          
     image: localhost:5000/auth-service:latest
     restart: always
     environment:
       <<: *jwt
-      PORT: "8086"
+      PORT: 8086                               
       DB_HOST: database-auth
-      DB_PORT: "5432"
+      DB_PORT: 5432
       DB_NAME: ${DB_AUTH_NAME:-db_auth}
       DB_USER: ${DB_AUTH_USER:-user_auth}
       DB_PASS: ${DB_AUTH_PASS:-pass_auth}
@@ -98,12 +98,12 @@ services:
     healthcheck:
       test: ["CMD", "/auth-service", "-salud"]
       interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 5s
+      timeout: 5s                             
+      retries: 10                              
+      start_period: 15s                        
     networks:
       - microservices-network
-      
+
   # Base de Datos Empleados
   database-empleados:
     image: postgres:16-alpine
