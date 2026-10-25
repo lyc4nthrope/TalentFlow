@@ -75,7 +75,7 @@ services:
       DB_HOST: database-auth
       DB_PORT: "5432"
       DB_USER: ${DB_AUTH_USER:-user_auth}
-      DB_PASSWORD: ${DB_AUTH_PASS:-pass_auth}
+      DB_PASS: ${DB_AUTH_PASS:-pass_auth}
       DB_NAME: ${DB_AUTH_NAME:-db_auth}
       PORT: "8086"
       JWT_SECRET: ${JWT_SECRET:-supersecretkey}
@@ -90,7 +90,11 @@ services:
     networks:
       - microservices-network
     healthcheck:
-      disable: true
+      test: ["CMD", "/auth-service", "-salud"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   # Base de Datos Empleados
   database-empleados:
@@ -418,7 +422,7 @@ services:
       - ./e2e-tests/reports:/app/reports
     depends_on:
       auth-service:
-        condition: service_started
+        condition: service_healthy
       api-gateway:
         condition: service_healthy
     networks:
