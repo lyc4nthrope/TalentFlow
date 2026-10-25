@@ -94,7 +94,6 @@ pipeline {
                     set -e
                     echo "WORKSPACE=${WORKSPACE}"
                     ls -la "${WORKSPACE}"
-                    test -f "${WORKSPACE}/docker-compose.yml"
                     test -f "${WORKSPACE}/docker-compose.e2e.yml"
                     mkdir -p "${WORKSPACE}/e2e-tests/reports"
 
@@ -107,8 +106,8 @@ pipeline {
                         exit 0
                     fi
 
-                    echo "==> Levantando entorno BDD/E2E con override..."
-                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.yml\" -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --build --remove-orphans"
+                    echo "==> Levantando entorno BDD para vacaciones-service..."
+                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --remove-orphans"
                 '''
 
                 sh './scripts/wait-for-healthy.sh || true'
@@ -136,7 +135,7 @@ pipeline {
                             exit 0
                         fi
 
-                        sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.yml\" -f \"${WORKSPACE}/docker-compose.e2e.yml\" logs > \"${WORKSPACE}/docker-logs.txt\" || true"
+                        sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" logs > \"${WORKSPACE}/docker-logs.txt\" || true"
                     '''
 
                     junit allowEmptyResults: true, testResults: 'e2e-tests/reports/junit.xml'
@@ -168,7 +167,7 @@ pipeline {
                             exit 0
                         fi
 
-                        sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.yml\" -f \"${WORKSPACE}/docker-compose.e2e.yml\" down --remove-orphans || true"
+                        sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" down --remove-orphans || true"
                     '''
                 }
             }
