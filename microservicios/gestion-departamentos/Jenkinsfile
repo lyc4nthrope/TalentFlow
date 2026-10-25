@@ -1,10 +1,9 @@
 pipeline {
-    agent {
-        docker {
-            image 'php:8.2-cli'
-            SERVICE_NAME = "gestion-departamentos"
-            args '-v php_cache:/root/.cache'
-        }
+    agent any
+
+    environment {
+        SERVICE_NAME = "gestion-departamentos"
+        REGISTRY = "localhost:5000"
     }
 
     stages {
@@ -19,12 +18,16 @@ pipeline {
                 dir('microservicios/gestion-departamentos') {
                     echo 'Instalando herramientas, Java y verificando sintaxis...'
                     sh '''
-                        # 1. Instalar dependencias del sistema y Java nativo (ARM64 compatible)
-                        apt-get update && apt-get install -y unzip git curl default-jre
+                        # 1. Instalar dependencias del sistema y Java nativo
+                        if ! command -v unzip >/dev/null 2>&1; then
+                            apt-get update && apt-get install -y unzip git curl default-jre
+                        fi
 
                         # 2. Descargar PHPUnit standalone
-                        curl -sSL https://phar.phpunit.de/phpunit-10.phar -o /usr/local/bin/phpunit
-                        chmod +x /usr/local/bin/phpunit
+                        if [ ! -f "/usr/local/bin/phpunit" ]; then
+                            curl -sSL https://phar.phpunit.de/phpunit-10.phar -o /usr/local/bin/phpunit
+                            chmod +x /usr/local/bin/phpunit
+                        fi
 
                         # 3. Descargar SonarScanner CLI nativo
                         if [ ! -d "/tmp/sonar-scanner" ]; then
@@ -46,7 +49,6 @@ pipeline {
                     echo 'Ejecutando pruebas unitarias con PHPUnit...'
                     sh '''
                         mkdir -p reports
-                        # Especificar la carpeta tests o el archivo phpunit.xml
                         if [ -d "tests" ]; then
                             phpunit --log-junit reports/junit.xml tests || true
                         elif [ -f "phpunit.xml" ]; then
@@ -68,7 +70,7 @@ pipeline {
             }
         }
 
-        stage('Sonarqube') {
+        stage('SonarQube') {
             steps {
                 dir('microservicios/gestion-departamentos') {
                     echo 'Ejecutando SonarQube Scanner nativo...'
@@ -91,27 +93,24 @@ pipeline {
             }
         }
 
-        //E2E
         stage('Package') {
             steps {
-                script {
-                    def imageName = "${SERVICE_NAME}"
-                    def imageTag = "${env.BUILD_NUMBER}"
-                    sh "docker build -t ${imageName}:${imageTag} -t ${imageName}:latest ."
-                    echo "✅ Imagen construida: ${imageName}:${imageTag}"
+                dir('microservicios/gestion-departamentos') {
+                    sh "docker build -t ${SERVICE_NAME}:${BUILD_NUMBER} -t ${SERVICE_NAME}:latest ."
+                    echo "✅ Imagen construida: ${SERVICE_NAME}:${BUILD_NUMBER}"
                 }
             }
         }
 
         stage('Publish') {
             steps {
-                script {
-                    def imageName = "localhost:5000/${SERVICE_NAME}"
-                    def imageTag = "${env.BUILD_NUMBER}"
-                    sh "docker tag ${SERVICE_NAME}:${imageTag} ${imageName}:${imageTag}"
-                    sh "docker push ${imageName}:${imageTag}"
-                    echo "📤 Imagen publicada en registry: ${imageName}:${imageTag}"
-                }
+                sh """
+                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
+                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${REGISTRY}/${SERVICE_NAME}:latest
+                    docker push ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
+                    docker push ${REGISTRY}/${SERVICE_NAME}:latest
+                """
+                echo "📤 Imagen publicada en registry: ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}"
             }
         }
     }
