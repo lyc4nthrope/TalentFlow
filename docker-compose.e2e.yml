@@ -58,14 +58,13 @@ services:
     networks:
       - microservices-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_AUTH_USER:-user_auth} -d ${DB_AUTH_NAME:-db_auth}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 10
-      start_period: 10s
+      start_period: 15s
 
   # Microservicio Autenticación
-  # Microservicio Autenticación (Reto 5)
   auth-service:
     build:
       context: ./microservicios/auth-service
@@ -98,9 +97,9 @@ services:
     healthcheck:
       test: ["CMD", "/auth-service", "-salud"]
       interval: 5s
-      timeout: 3s
-      retries: 15          # <--- Ampliado de 5 a 15 reintentos
-      start_period: 30s    # <--- Ampliado de 10s a 30s de periodo de gracia inicial
+      timeout: 5s
+      retries: 20
+      start_period: 40s
     networks:
       - microservices-network
 
@@ -120,7 +119,7 @@ services:
     networks:
       - microservices-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_EMPLEADOS_USER:-user_empleados} -d ${DB_EMPLEADOS_NAME:-db_empleados}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -230,7 +229,7 @@ services:
     networks:
       - microservices-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_NOTIF_USER:-user_notificaciones} -d ${DB_NOTIF_NAME:-db_notificaciones}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -286,7 +285,7 @@ services:
     networks:
       - microservices-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_PERFILES_USER:-user_perfiles} -d ${DB_PERFILES_NAME:-db_perfiles}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -341,7 +340,7 @@ services:
     networks:
       - microservices-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_VACACIONES_USER:-user_vacaciones} -d ${DB_VACACIONES_NAME:-db_vacaciones}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 10
