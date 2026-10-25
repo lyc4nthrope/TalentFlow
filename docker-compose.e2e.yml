@@ -2,20 +2,48 @@ x-jwt: &jwt
   JWT_SECRET: ${JWT_SECRET:-talentflow_super_secret_2026}
   JWT_ISSUER: ${JWT_ISSUER:-auth-service}
 
-networks:
-  microservices-network:
-    driver: bridge
-
-volumes:
-  vol-auth:
-  vol-empleados:
-  vol-departamentos:
-  vol-notificaciones:
-  vol-perfiles:
-  vol-vacaciones:
-
 services:
-  # Base de Datos Autenticación
+  # Message Broker (RabbitMQ)
+  message-broker:
+    image: rabbitmq:3.13-management-alpine
+    hostname: message-broker
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-admin}
+    expose:
+      - "5672"
+    ports:
+      - "15672:15672"
+    volumes:
+      - vol-rabbitmq-e2e:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  # Inicialización de la topología de RabbitMQ
+  broker-init:
+    image: rabbitmq:3.13-management-alpine
+    entrypoint: ["sh", "/importar-definiciones.sh"]
+    restart: "no"
+    environment:
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+    volumes:
+      - ./infra/rabbitmq/importar-definiciones.sh:/importar-definiciones.sh:ro
+      - ./infra/rabbitmq/definitions.json:/definitions.json:ro
+    depends_on:
+      message-broker:
+        condition: service_healthy
+    networks:
+      - microservices-network
+
+  # Base de Datos Autenticación (PostgreSQL)
   database-auth:
     image: postgres:16-alpine
     restart: always
@@ -26,7 +54,7 @@ services:
     expose:
       - "5432"
     volumes:
-      - vol-auth:/var/lib/postgresql/data
+      - vol-auth-e2e:/var/lib/postgresql/data
       - ./microservicios/auth-service/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     networks:
       - microservices-network
@@ -35,10 +63,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
 
   # Microservicio Autenticación
   auth-service:
-    image: localhost:5000/auth-service:latest
+    build:
+      context: ./microservicios/auth-service
+      dockerfile: Dockerfile
+      target: runner
     restart: on-failure
     expose:
       - "8086"
@@ -50,8 +82,14 @@ services:
       DB_NAME: ${DB_AUTH_NAME:-db_auth}
       DB_USER: ${DB_AUTH_USER:-user_auth}
       DB_PASS: ${DB_AUTH_PASS:-pass_auth}
-      ADMIN_EMAIL: admin@empresa.com
-      ADMIN_PASSWORD: Admin123*
+      JWT_VIGENCIA: ${JWT_VIGENCIA:-1h}
+      TOKEN_ACTIVACION_VIGENCIA: ${TOKEN_ACTIVACION_VIGENCIA:-24h}
+      TOKEN_RECUPERACION_VIGENCIA: ${TOKEN_RECUPERACION_VIGENCIA:-1h}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@empresa.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123*}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
     depends_on:
       database-auth:
         condition: service_healthy
@@ -61,8 +99,8 @@ services:
       test: ["CMD", "/auth-service", "-salud"]
       interval: 5s
       timeout: 3s
-      retries: 10          # Aumentado de 5 a 10
-      start_period: 30s    # Aumentado de 10s a 30s
+      retries: 10
+      start_period: 30s
     networks:
       - microservices-network
 
@@ -77,7 +115,7 @@ services:
     expose:
       - "5432"
     volumes:
-      - vol-empleados:/var/lib/postgresql/data
+      - vol-empleados-e2e:/var/lib/postgresql/data
       - ./microservicios/gestion-empleados/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     networks:
       - microservices-network
@@ -86,10 +124,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
 
   # Microservicio Empleados
   empleados-service:
-    image: localhost:5000/gestion-empleados:latest
+    build:
+      context: ./microservicios/gestion-empleados
+      dockerfile: Dockerfile
+      target: runner
     restart: on-failure
     expose:
       - "8081"
@@ -101,9 +143,23 @@ services:
       DB_USER: ${DB_EMPLEADOS_USER:-user_empleados}
       DB_PASS: ${DB_EMPLEADOS_PASS:-pass_empleados}
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+      ZONA_HORARIA: America/Bogota
     depends_on:
       database-empleados:
         condition: service_healthy
+      departamentos-service:
+        condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     networks:
       - microservices-network
 
@@ -119,7 +175,7 @@ services:
     expose:
       - "3306"
     volumes:
-      - vol-departamentos:/var/lib/mysql
+      - vol-departamentos-e2e:/var/lib/mysql
       - ./microservicios/gestion-departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     networks:
       - microservices-network
@@ -128,11 +184,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-      start_period: 20s
+      start_period: 30s
 
   # Microservicio Departamentos
   departamentos-service:
-    image: localhost:5000/gestion-departamentos:latest
+    build:
+      context: ./microservicios/gestion-departamentos
+      dockerfile: Dockerfile
+      target: runner
     restart: on-failure
     expose:
       - "8082"
@@ -146,10 +205,72 @@ services:
     depends_on:
       database-departamentos:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1:8082/health\") === false ? 1 : 0);'"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     networks:
       - microservices-network
 
-  # Microservicio Perfiles
+  # Base de Datos Notificaciones
+  database-notificaciones:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NOTIF_NAME:-db_notificaciones}
+      POSTGRES_USER: ${DB_NOTIF_USER:-user_notificaciones}
+      POSTGRES_PASSWORD: ${DB_NOTIF_PASS:-pass_notificaciones}
+    expose:
+      - "5432"
+    volumes:
+      - vol-notificaciones-e2e:/var/lib/postgresql/data
+      - ./microservicios/notificaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_NOTIF_USER:-user_notificaciones} -d ${DB_NOTIF_NAME:-db_notificaciones}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Microservicio Notificaciones
+  notificaciones-service:
+    build:
+      context: ./microservicios/notificaciones
+      dockerfile: Dockerfile
+      target: runner
+    restart: on-failure
+    expose:
+      - "8084"
+    environment:
+      PORT: 8084
+      DB_HOST: database-notificaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_NOTIF_NAME:-db_notificaciones}
+      DB_USER: ${DB_NOTIF_USER:-user_notificaciones}
+      DB_PASS: ${DB_NOTIF_PASS:-pass_notificaciones}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+      RABBITMQ_COLA: notificaciones.eventos
+    depends_on:
+      database-notificaciones:
+        condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/notificaciones", "-healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - microservices-network
+
+  # Base de Datos Perfiles
   database-perfiles:
     image: postgres:16-alpine
     restart: always
@@ -160,7 +281,7 @@ services:
     expose:
       - "5432"
     volumes:
-      - vol-perfiles:/var/lib/postgresql/data
+      - vol-perfiles-e2e:/var/lib/postgresql/data
       - ./microservicios/gestion-perfiles/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     networks:
       - microservices-network
@@ -169,9 +290,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
 
+  # Microservicio Perfiles
   perfiles-service:
-    image: localhost:5000/gestion-perfiles:latest
+    build:
+      context: ./microservicios/gestion-perfiles
+      dockerfile: Dockerfile
+      target: runner
     restart: on-failure
     expose:
       - "8083"
@@ -181,9 +307,21 @@ services:
       DB_NAME: ${DB_PERFILES_NAME:-db_perfiles}
       DB_USER: ${DB_PERFILES_USER:-user_perfiles}
       DB_PASS: ${DB_PERFILES_PASS:-pass_perfiles}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+      RABBITMQ_COLA: perfiles.eventos
     depends_on:
       database-perfiles:
         condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8083/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     networks:
       - microservices-network
 
@@ -198,7 +336,7 @@ services:
     expose:
       - "5432"
     volumes:
-      - vol-vacaciones:/var/lib/postgresql/data
+      - vol-vacaciones-e2e:/var/lib/postgresql/data
       - ./microservicios/gestion-vacaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     networks:
       - microservices-network
@@ -207,10 +345,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
 
   # Microservicio Vacaciones
   vacaciones-service:
-    image: localhost:5000/gestion-vacaciones:latest
+    build:
+      context: ./microservicios/gestion-vacaciones
+      dockerfile: Dockerfile
+      target: runner
     restart: on-failure
     expose:
       - "8085"
@@ -221,65 +363,86 @@ services:
       DB_NAME: ${DB_VACACIONES_NAME:-db_vacaciones}
       DB_USER: ${DB_VACACIONES_USER:-user_vacaciones}
       DB_PASS: ${DB_VACACIONES_PASS:-pass_vacaciones}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
+      RABBITMQ_COLA: vacaciones.eventos
       ZONA_HORARIA: America/Bogota
-      VACACIONES_CRON: "*/5 * * * * *"
+      VACACIONES_CRON: ${VACACIONES_CRON:-0 * * * * *}
     depends_on:
       database-vacaciones:
         condition: service_healthy
+      broker-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8085/health || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10
-      start_period: 20s
+      start_period: 30s
     networks:
       - microservices-network
 
-  # API Gateway (se construye desde su carpeta para evitar error al hacer pull de localhost:5000)
+  # API Gateway
   api-gateway:
     build:
       context: ./microservicios/api-gateway
       dockerfile: Dockerfile
     restart: unless-stopped
-    expose:
-      - "8080"
+    ports:
+      - "8080:8080"
     environment:
       <<: *jwt
       PORT: 8080
       AUTH_SERVICE_URL: http://auth-service:8086
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
+      NOTIFICACIONES_SERVICE_URL: http://notificaciones-service:8084
       PERFILES_SERVICE_URL: http://perfiles-service:8083
       VACACIONES_SERVICE_URL: http://vacaciones-service:8085
     depends_on:
       - auth-service
       - empleados-service
       - departamentos-service
+      - notificaciones-service
       - perfiles-service
       - vacaciones-service
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+      interval: 10s
+      timeout: 5s
+      retries: 3
       start_period: 10s
     networks:
       - microservices-network
 
-  # Suite BDD / Cucumber
+  # Contenedor para ejecutar los Test BDD
   bdd-tests:
-    build: ./e2e-tests
-    profiles: ["e2e"]
-    user: "root"
+    build:
+      context: ./e2e-tests
+      dockerfile: Dockerfile
     environment:
+      <<: *jwt
       BASE_URL: http://api-gateway:8080
-      E2E_SCHEDULER_SEGUNDOS: 5
+    volumes:
+      - ./e2e-tests/reports:/app/reports
     depends_on:
       auth-service:
         condition: service_healthy
       api-gateway:
-        condition: service_started
-    volumes:
-      - ./e2e-tests/reports:/app/reports
+        condition: service_healthy
     networks:
       - microservices-network
+
+networks:
+  microservices-network:
+    driver: bridge
+
+volumes:
+  vol-auth-e2e:
+  vol-empleados-e2e:
+  vol-departamentos-e2e:
+  vol-rabbitmq-e2e:
+  vol-notificaciones-e2e:
+  vol-perfiles-e2e:
+  vol-vacaciones-e2e:
