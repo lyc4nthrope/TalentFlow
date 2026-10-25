@@ -87,16 +87,14 @@ pipeline {
                 }
             }
         }
-
         stage('E2E Tests') {
             steps {
                 sh '''
                     set -e
                     echo "WORKSPACE=${WORKSPACE}"
-                    ls -la "${WORKSPACE}"
                     test -f "${WORKSPACE}/docker-compose.e2e.yml"
 
-                    # Limpiar y preparar permisos de la carpeta reports
+                    # Permisos para reportes
                     rm -rf "${WORKSPACE}/e2e-tests/reports"
                     mkdir -p "${WORKSPACE}/e2e-tests/reports"
                     chmod -R 777 "${WORKSPACE}/e2e-tests/reports"
@@ -106,12 +104,12 @@ pipeline {
                     elif command -v docker-compose >/dev/null 2>&1; then
                         COMPOSE_CMD='docker-compose'
                     else
-                        echo "Docker Compose no está disponible dentro de Jenkins. Se omite la ejecución E2E."
+                        echo "Docker Compose no está disponible."
                         exit 0
                     fi
 
                     echo "==> Levantando infraestructura E2E..."
-                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --remove-orphans"
+                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --build --remove-orphans"
 
                     echo "==> Ejecutando suite BDD dentro de su contenedor..."
                     sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" run --rm bdd-tests || true"
@@ -126,11 +124,8 @@ pipeline {
 
                         if docker compose version >/dev/null 2>&1; then
                             COMPOSE_CMD='docker compose'
-                        elif command -v docker-compose >/dev/null 2>&1; then
-                            COMPOSE_CMD='docker-compose'
                         else
-                            echo "No hay Docker Compose disponible en Jenkins." > "${WORKSPACE}/docker-logs.txt"
-                            exit 0
+                            COMPOSE_CMD='docker-compose'
                         fi
 
                         sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" logs > \"${WORKSPACE}/docker-logs.txt\" || true"
@@ -159,10 +154,8 @@ pipeline {
                         set +e
                         if docker compose version >/dev/null 2>&1; then
                             COMPOSE_CMD='docker compose'
-                        elif command -v docker-compose >/dev/null 2>&1; then
-                            COMPOSE_CMD='docker-compose'
                         else
-                            exit 0
+                            COMPOSE_CMD='docker-compose'
                         fi
 
                         sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" down --remove-orphans || true"

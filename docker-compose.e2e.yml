@@ -1,14 +1,185 @@
-version: '3.8'
+x-jwt: &jwt
+  JWT_SECRET: ${JWT_SECRET:-talentflow_super_secret_2026}
+  JWT_ISSUER: ${JWT_ISSUER:-auth-service}
 
 networks:
   microservices-network:
     driver: bridge
 
 volumes:
+  vol-auth:
+  vol-empleados:
+  vol-departamentos:
+  vol-notificaciones:
+  vol-perfiles:
   vol-vacaciones:
 
 services:
-  # 1. Base de Datos
+  # Base de Datos Autenticación
+  database-auth:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_AUTH_NAME:-db_auth}
+      POSTGRES_USER: ${DB_AUTH_USER:-user_auth}
+      POSTGRES_PASSWORD: ${DB_AUTH_PASS:-pass_auth}
+    expose:
+      - "5432"
+    volumes:
+      - vol-auth:/var/lib/postgresql/data
+      - ./microservicios/auth-service/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_AUTH_USER:-user_auth} -d ${DB_AUTH_NAME:-db_auth}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Microservicio Autenticación
+  auth-service:
+    image: localhost:5000/auth-service:latest
+    restart: on-failure
+    expose:
+      - "8086"
+    environment:
+      <<: *jwt
+      PORT: 8086
+      DB_HOST: database-auth
+      DB_PORT: 5432
+      DB_NAME: ${DB_AUTH_NAME:-db_auth}
+      DB_USER: ${DB_AUTH_USER:-user_auth}
+      DB_PASS: ${DB_AUTH_PASS:-pass_auth}
+      ADMIN_EMAIL: admin@empresa.com
+      ADMIN_PASSWORD: Admin123*
+    depends_on:
+      database-auth:
+        condition: service_healthy
+    networks:
+      - microservices-network
+
+  # Base de Datos Empleados
+  database-empleados:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_EMPLEADOS_NAME:-db_empleados}
+      POSTGRES_USER: ${DB_EMPLEADOS_USER:-user_empleados}
+      POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASS:-pass_empleados}
+    expose:
+      - "5432"
+    volumes:
+      - vol-empleados:/var/lib/postgresql/data
+      - ./microservicios/gestion-empleados/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_EMPLEADOS_USER:-user_empleados} -d ${DB_EMPLEADOS_NAME:-db_empleados}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Microservicio Empleados
+  empleados-service:
+    image: localhost:5000/gestion-empleados:latest
+    restart: on-failure
+    expose:
+      - "8081"
+    environment:
+      PORT: 8081
+      DB_HOST: database-empleados
+      DB_PORT: 5432
+      DB_NAME: ${DB_EMPLEADOS_NAME:-db_empleados}
+      DB_USER: ${DB_EMPLEADOS_USER:-user_empleados}
+      DB_PASS: ${DB_EMPLEADOS_PASS:-pass_empleados}
+      DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
+    depends_on:
+      database-empleados:
+        condition: service_healthy
+    networks:
+      - microservices-network
+
+  # Base de Datos Departamentos
+  database-departamentos:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_DATABASE: ${DB_DEPTO_NAME:-db_deptos}
+      MYSQL_USER: ${DB_DEPTO_USER:-user_deptos}
+      MYSQL_PASSWORD: ${DB_DEPTO_PASS:-pass_deptos}
+      MYSQL_ROOT_PASSWORD: ${DB_DEPTO_ROOT_PASS:-root_pass}
+    expose:
+      - "3306"
+    volumes:
+      - vol-departamentos:/var/lib/mysql
+      - ./microservicios/gestion-departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  # Microservicio Departamentos
+  departamentos-service:
+    image: localhost:5000/gestion-departamentos:latest
+    restart: on-failure
+    expose:
+      - "8082"
+    environment:
+      PORT: 8082
+      DB_HOST: database-departamentos
+      DB_PORT: 3306
+      DB_NAME: ${DB_DEPTO_NAME:-db_deptos}
+      DB_USER: ${DB_DEPTO_USER:-user_deptos}
+      DB_PASS: ${DB_DEPTO_PASS:-pass_deptos}
+    depends_on:
+      database-departamentos:
+        condition: service_healthy
+    networks:
+      - microservices-network
+
+  # Microservicio Perfiles
+  database-perfiles:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_PERFILES_NAME:-db_perfiles}
+      POSTGRES_USER: ${DB_PERFILES_USER:-user_perfiles}
+      POSTGRES_PASSWORD: ${DB_PERFILES_PASS:-pass_perfiles}
+    expose:
+      - "5432"
+    volumes:
+      - vol-perfiles:/var/lib/postgresql/data
+      - ./microservicios/gestion-perfiles/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_PERFILES_USER:-user_perfiles} -d ${DB_PERFILES_NAME:-db_perfiles}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  perfiles-service:
+    image: localhost:5000/gestion-perfiles:latest
+    restart: on-failure
+    expose:
+      - "8083"
+    environment:
+      DB_HOST: database-perfiles
+      DB_PORT: 5432
+      DB_NAME: ${DB_PERFILES_NAME:-db_perfiles}
+      DB_USER: ${DB_PERFILES_USER:-user_perfiles}
+      DB_PASS: ${DB_PERFILES_PASS:-pass_perfiles}
+    depends_on:
+      database-perfiles:
+        condition: service_healthy
+    networks:
+      - microservices-network
+
+  # Base de Datos Vacaciones
   database-vacaciones:
     image: postgres:16-alpine
     restart: always
@@ -29,25 +200,7 @@ services:
       timeout: 3s
       retries: 10
 
-  # 2. Servicio de Autenticación
-  auth-service:
-    image: localhost:5000/auth-service:latest
-    restart: on-failure
-    expose:
-      - "8086"
-    networks:
-      - microservices-network
-
-  # 3. Servicio de Empleados
-  gestion-empleados:
-    image: localhost:5000/gestion-empleados:latest
-    restart: on-failure
-    expose:
-      - "8081"
-    networks:
-      - microservices-network
-
-  # 4. Servicio de Vacaciones
+  # Microservicio Vacaciones
   vacaciones-service:
     image: localhost:5000/gestion-vacaciones:latest
     restart: on-failure
@@ -65,28 +218,56 @@ services:
     depends_on:
       database-vacaciones:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8085/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
     networks:
       - microservices-network
 
-  # 5. API Gateway (Si existe en la solución)
+  # API Gateway (se construye desde su carpeta para evitar error al hacer pull de localhost:5000)
   api-gateway:
-    image: localhost:5000/api-gateway:latest
-    restart: on-failure
-    ports:
-      - "8080:8080"
+    build:
+      context: ./microservicios/api-gateway
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8080"
+    environment:
+      <<: *jwt
+      PORT: 8080
+      AUTH_SERVICE_URL: http://auth-service:8086
+      EMPLEADOS_SERVICE_URL: http://empleados-service:8081
+      DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
+      PERFILES_SERVICE_URL: http://perfiles-service:8083
+      VACACIONES_SERVICE_URL: http://vacaciones-service:8085
+    depends_on:
+      - auth-service
+      - empleados-service
+      - departamentos-service
+      - perfiles-service
+      - vacaciones-service
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     networks:
       - microservices-network
 
-  # 6. Contenedor de Pruebas BDD
+  # Suite BDD / Cucumber
   bdd-tests:
     build: ./e2e-tests
     profiles: ["e2e"]
     user: "root"
     environment:
-      BASE_URL: http://api-gateway:8080  # Apuntar al Gateway que sabe redirigir /auth y /empleados
+      BASE_URL: http://api-gateway:8080
       E2E_SCHEDULER_SEGUNDOS: 5
     depends_on:
-      vacaciones-service:
+      api-gateway:
         condition: service_healthy
     volumes:
       - ./e2e-tests/reports:/app/reports
