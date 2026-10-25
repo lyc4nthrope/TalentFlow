@@ -57,6 +57,12 @@ services:
         condition: service_healthy
     networks:
       - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"] # O la ruta de healthcheck de tu servicio
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # Base de Datos Empleados
   database-empleados:
@@ -267,8 +273,10 @@ services:
       BASE_URL: http://api-gateway:8080
       E2E_SCHEDULER_SEGUNDOS: 5
     depends_on:
-      api-gateway:
+      auth-service:
         condition: service_healthy
+      api-gateway:
+        condition: service_started
     volumes:
       - ./e2e-tests/reports:/app/reports
     networks:
