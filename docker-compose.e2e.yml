@@ -54,7 +54,7 @@ services:
     expose:
       - "5432"
     volumes:
-      - vol-auth:/var/lib/postgresql/data
+      - vol-auth-e2e:/var/lib/postgresql/data
       - ./microservicios/auth-service/schema.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     networks:
       - microservices-network
@@ -180,7 +180,7 @@ services:
     expose:
       - "3306"
     volumes:
-      - vol-departamentos:/var/lib/mysql
+      - vol-departamentos-e2e:/var/lib/mysql
       - ./microservicios/gestion-departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     networks:
       - microservices-network
