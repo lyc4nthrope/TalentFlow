@@ -3,6 +3,16 @@ x-jwt: &jwt
   JWT_ISSUER: ${JWT_ISSUER:-auth-service}
 
 services:
+  # Servicio MailHog para la captura y verificación de emails
+  mailhog:
+    image: mailhog/mailhog:latest
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # UI y API REST
+    networks:
+      - microservices-network
+
   # Message Broker (RabbitMQ) - Carga directa de la topologia
   message-broker:
     image: rabbitmq:3.13-management-alpine
@@ -26,7 +36,6 @@ services:
       - microservices-network
 
   # Paso de inicialización del broker: importa la topología de eventos
-  # (exchange, colas y bindings) después de que RabbitMQ esté arrancado.
   broker-init:
     image: rabbitmq:3.13-management-alpine
     entrypoint: ["sh", "/importar-definiciones.sh"]
@@ -262,6 +271,8 @@ services:
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
       RABBITMQ_COLA: notificaciones.eventos
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
     depends_on:
       database-notificaciones:
         condition: service_healthy
@@ -269,6 +280,8 @@ services:
         condition: service_healthy
       broker-init:
         condition: service_completed_successfully
+      mailhog:
+        condition: service_started
     healthcheck:
       test: ["CMD", "/notificaciones", "-healthcheck"]
       interval: 5s
@@ -373,12 +386,10 @@ services:
       DB_NAME: ${DB_VACACIONES_NAME:-db_vacaciones}
       DB_USER: ${DB_VACACIONES_USER:-user_vacaciones}
       DB_PASS: ${DB_VACACIONES_PASS:-pass_vacaciones}
-      # Propiedades nativas de Spring Boot para RabbitMQ
       SPRING_RABBITMQ_HOST: message-broker
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASS:-admin}
-      # Variables del servicio
       RABBITMQ_HOST: message-broker
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
@@ -451,6 +462,7 @@ services:
     environment:
       <<: *jwt
       BASE_URL: http://api-gateway:8080
+      MAILHOG_URL: http://mailhog:8025
     volumes:
       - ./e2e-tests/reports:/app/reports
     depends_on:
@@ -458,6 +470,8 @@ services:
         condition: service_healthy
       api-gateway:
         condition: service_healthy
+      mailhog:
+        condition: service_started
     networks:
       - microservices-network
 
