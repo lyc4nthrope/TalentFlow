@@ -85,7 +85,8 @@ services:
     restart: always
     environment:
       <<: *jwt
-      PORT: 8086                               
+      PORT: 8086       
+      BCRYPT_COST: "4"                        
       DB_HOST: database-auth
       DB_PORT: 5432
       DB_NAME: ${DB_AUTH_NAME:-db_auth}
