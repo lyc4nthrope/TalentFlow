@@ -170,7 +170,7 @@ pipeline {
                     sh '''
                         set +e
                         if docker compose version >/dev/null 2>&1; then
-                            COMPOSE_CMD='docker compose'head -9 Jenkinsfile
+                            COMPOSE_CMD='docker compose'
                         else
                             COMPOSE_CMD='docker-compose'
                         fi
