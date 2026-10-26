@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        node {
+            label ''
+            customWorkspace '/Users/valeria/Documents/GitHub/TalentFlow/.jenkins-workspace'
+        }
+    }
 
     environment {
         REGISTRY  = "localhost:5000"
@@ -110,7 +115,7 @@ pipeline {
                     fi
 
                     echo "==> Limpiando estado previo para evitar volúmenes stale del broker y BD..."
-                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" down -v --remove-orphans || true"
+                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" down -v --remove-orphans --rmi local || true"
 
                     echo "==> Levantando infraestructura E2E..."
                     sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --build --remove-orphans"
@@ -138,6 +143,7 @@ pipeline {
                             COMPOSE_CMD='docker-compose'
                         fi
 
+                        # Guardar logs antes del apagado
                         sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" logs > \"${WORKSPACE}/docker-logs.txt\" || true"
                     '''
 
@@ -160,6 +166,7 @@ pipeline {
 
                     archiveArtifacts artifacts: 'docker-logs.txt', allowEmptyArchive: true
 
+                    // Limpieza agresiva post-ejecución
                     sh '''
                         set +e
                         if docker compose version >/dev/null 2>&1; then
@@ -168,7 +175,12 @@ pipeline {
                             COMPOSE_CMD='docker-compose'
                         fi
 
-                        sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" down --remove-orphans || true"
+                        echo "==> Apagando contenedores, borrando volúmenes e imágenes locales del compose..."
+                        sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" down -v --remove-orphans --rmi local || true"
+
+                        echo "==> Eliminando imágenes colgadas (dangling) y liberando caché de Docker..."
+                        docker image prune -f || true
+                        docker volume prune -f || true
                     '''
                 }
             }

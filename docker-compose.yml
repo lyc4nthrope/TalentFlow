@@ -63,6 +63,7 @@ services:
       - ./jenkins:/var/jenkins_home/casc_configs #Monta la carpeta del casc
       # Volumen para caché de Maven/dependencias
       - npm_cache:/root/.npm
+      - ${PWD}:${PWD}
     environment:
       - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
       - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
