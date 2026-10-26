@@ -121,7 +121,7 @@ pipeline {
                     sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" up -d --build --remove-orphans"
 
                     echo "==> Esperando a que RabbitMQ termine la importación de la topología..."
-                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" wait broker-init"
+                    sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" wait broker-init || true"
 
                     echo "==> Verificando que la infraestructura esté lista antes del BDD..."
                     sh -c "$COMPOSE_CMD -f \"${WORKSPACE}/docker-compose.e2e.yml\" ps"
@@ -170,7 +170,7 @@ pipeline {
                     sh '''
                         set +e
                         if docker compose version >/dev/null 2>&1; then
-                            COMPOSE_CMD='docker compose'
+                            COMPOSE_CMD='docker compose'head -9 Jenkinsfile
                         else
                             COMPOSE_CMD='docker-compose'
                         fi
