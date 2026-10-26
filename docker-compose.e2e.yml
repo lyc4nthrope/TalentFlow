@@ -55,6 +55,7 @@ services:
   # Base de Datos Autenticación
   database-auth:
     image: postgres:16-alpine
+    command: postgres -c max_connections=300 -c shared_buffers=128MB
     restart: always
     environment:
       POSTGRES_DB: ${DB_AUTH_NAME:-db_auth}
@@ -395,7 +396,7 @@ services:
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin}
       RABBITMQ_COLA: vacaciones.eventos
       ZONA_HORARIA: America/Bogota
-      VACACIONES_CRON: ${VACACIONES_CRON:-0 * * * * *}
+      VACACIONES_CRON: "*/2 * * * * *"
     depends_on:
       database-vacaciones:
         condition: service_healthy
