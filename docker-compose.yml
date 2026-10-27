@@ -67,6 +67,8 @@ services:
     environment:
       - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
       - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
+      - REGISTRY_URL=registry:5000
+      - SONAR_HOST_URL=http://sonarqube:9000
     networks:
       - microservices-network
 

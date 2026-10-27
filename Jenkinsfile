@@ -7,7 +7,7 @@ pipeline {
     }
 
     environment {
-        REGISTRY  = "localhost:5000"
+        REGISTRY  = "localhost:5000" //corregir
         IMAGE_TAG = "${env.BUILD_NUMBER}"
     }
 
