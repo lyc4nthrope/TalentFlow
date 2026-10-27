@@ -15,9 +15,10 @@ jobs:
                 branches('*/Vale292005')
               }
             }
-            scriptPath('Jenkinsfile') // <-- Apunta al Jenkinsfile de la raíz del proyecto
+            scriptPath('Jenkinsfile')
           }
         }
+        queue('pipeline-orquestador-e2e') // <-- Dispara la ejecución al crear/actualizar el job
       }
 
       // 1. Gestión Empleados (Node.js)
@@ -35,6 +36,7 @@ jobs:
             scriptPath('microservicios/gestion-empleados/Jenkinsfile')
           }
         }
+        queue('gestion-empleados')
       }
 
       // 2. Auth Service (Go)
@@ -52,6 +54,7 @@ jobs:
             scriptPath('microservicios/auth-service/Jenkinsfile')
           }
         }
+        queue('auth-service')
       }
 
       // 3. Gestión Departamentos (PHP)
@@ -69,6 +72,7 @@ jobs:
             scriptPath('microservicios/gestion-departamentos/Jenkinsfile')
           }
         }
+        queue('gestion-departamentos')
       }
 
       // 4. Gestión Vacaciones (Java)
@@ -86,6 +90,7 @@ jobs:
             scriptPath('microservicios/gestion-vacaciones/Jenkinsfile')
           }
         }
+        queue('gestion-vacaciones')
       }
 
       // 5. Gestión Perfiles (Python)
@@ -103,4 +108,5 @@ jobs:
             scriptPath('microservicios/gestion-perfiles/Jenkinsfile')
           }
         }
+        queue('gestion-perfiles')
       }
