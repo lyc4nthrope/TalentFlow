@@ -3,7 +3,8 @@ pipeline {
 
     environment {
         SERVICE_NAME = "gestion-vacaciones"
-        REGISTRY = "localhost:5000"
+        REGISTRY  = "${env.REGISTRY_URL ?: 'registry:5000'}"
+        SONAR_URL = "${env.SONAR_HOST_URL ?: 'http://sonarqube:9000'}"
     }
 
     stages {
