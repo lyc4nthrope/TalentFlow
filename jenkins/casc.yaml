@@ -18,7 +18,9 @@ jobs:
             scriptPath('Jenkinsfile')
           }
         }
-        queue('pipeline-orquestador-e2e') // <-- Dispara la ejecución al crear/actualizar el job
+        triggers {
+          scm('* * * * *') // Polling SCM: revisa cambios y arranca en el inicio
+        }
       }
 
       // 1. Gestión Empleados (Node.js)
@@ -36,7 +38,9 @@ jobs:
             scriptPath('microservicios/gestion-empleados/Jenkinsfile')
           }
         }
-        queue('gestion-empleados')
+        triggers {
+          scm('* * * * *')
+        }
       }
 
       // 2. Auth Service (Go)
@@ -54,7 +58,9 @@ jobs:
             scriptPath('microservicios/auth-service/Jenkinsfile')
           }
         }
-        queue('auth-service')
+        triggers {
+          scm('* * * * *')
+        }
       }
 
       // 3. Gestión Departamentos (PHP)
@@ -72,7 +78,9 @@ jobs:
             scriptPath('microservicios/gestion-departamentos/Jenkinsfile')
           }
         }
-        queue('gestion-departamentos')
+        triggers {
+          scm('* * * * *')
+        }
       }
 
       // 4. Gestión Vacaciones (Java)
@@ -90,7 +98,9 @@ jobs:
             scriptPath('microservicios/gestion-vacaciones/Jenkinsfile')
           }
         }
-        queue('gestion-vacaciones')
+        triggers {
+          scm('* * * * *')
+        }
       }
 
       // 5. Gestión Perfiles (Python)
@@ -108,5 +118,7 @@ jobs:
             scriptPath('microservicios/gestion-perfiles/Jenkinsfile')
           }
         }
-        queue('gestion-perfiles')
+        triggers {
+          scm('* * * * *')
+        }
       }
