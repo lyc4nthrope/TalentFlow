@@ -83,7 +83,9 @@ pipeline {
         stage('Package') {
             steps {
                 dir('microservicios/gestion-perfiles') {
-                    sh "docker build -t ${SERVICE_NAME}:${BUILD_NUMBER} -t ${SERVICE_NAME}:latest ."
+                    sh '''
+                        docker build -t $SERVICE_NAME:$BUILD_NUMBER -t $SERVICE_NAME:latest .
+                    '''
                     echo "✅ Imagen construida: ${SERVICE_NAME}:${BUILD_NUMBER}"
                 }
             }
@@ -91,12 +93,16 @@ pipeline {
 
         stage('Publish') {
             steps {
-                sh """
-                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
-                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${REGISTRY}/${SERVICE_NAME}:latest
-                    docker push ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
-                    docker push ${REGISTRY}/${SERVICE_NAME}:latest
-                """
+                sh '''
+                    # Asegurarse de que el registry no lleve 'http://' o 'https://' para docker tag/push
+                    CLEAN_REGISTRY=$(echo $REGISTRY | sed -e 's|^https://||' -e 's|^http://||')
+
+                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${CLEAN_REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
+                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${CLEAN_REGISTRY}/${SERVICE_NAME}:latest
+                    
+                    docker push ${CLEAN_REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
+                    docker push ${CLEAN_REGISTRY}/${SERVICE_NAME}:latest
+                '''
                 echo "📤 Imagen publicada en registry: ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}"
             }
         }
