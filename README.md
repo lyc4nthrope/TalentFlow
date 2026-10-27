@@ -2,7 +2,7 @@
 
 Sistema de onboarding y offboarding de empleados basado en una arquitectura orientada a microservicios.
 
-**Estado: Retos 1 a 6 completados.** Índice por reto:
+**Estado: Retos 1 a 7 completados.** Índice por reto:
 
 | Reto | Tema | Sección | Manual |
 |---|---|---|---|
@@ -11,6 +11,7 @@ Sistema de onboarding y offboarding de empleados basado en una arquitectura orie
 | 4 | Comunicación asincrónica por eventos | [Comunicación asincrónica](#comunicación-asincrónica-reto-4) | [`docs/reto-04`](docs/reto-04/README.md) |
 | 5 | Seguridad e identidad (JWT, roles, ciclo de vida de la cuenta) | [Seguridad e identidad](#seguridad-e-identidad-reto-5) | [`docs/reto-05`](docs/reto-05/README.md) |
 | 6 | Automatización de pruebas (unitarias, integración y BDD) | [Automatización de pruebas](#automatización-de-pruebas-reto-6) | [`docs/reto-06`](docs/reto-06/README.md) |
+| 7 | Integración continua con Jenkins, SonarQube y registry local | [Integración continua](#integración-continua-reto-7) | [`docs/reto-07`](docs/reto-07/README.md) |
 
 Resumen de todos los retos: [Mapa de retos](#mapa-de-retos).
 
@@ -106,9 +107,11 @@ TalentFlow/
 ├── e2e-tests/                         # Reto 6: suite BDD (Cucumber.js, Gherkin en español) contra el sistema desplegado
 ├── infra/rabbitmq/                    # Reto 4: topología de eventos (exchange, colas, bindings) + su importación
 ├── scripts/cobertura-go.awk           # Reto 6: filtro y umbral de cobertura de la lógica de negocio en Go
-├── docs/                              # Manuales, evidencia y decisiones por reto (reto-03/ … reto-06/, eventos.md…)
-├── docker-compose.yml                 # Orquesta todo el sistema (un solo comando)
+├── docs/                              # Manuales, evidencia y decisiones por reto (reto-03/ … reto-07/, eventos.md…)
+├── docker-compose.yml                 # Orquesta todo el sistema y la infraestructura de CI/CD del reto 7
 ├── docker-compose.e2e.yml             # Reto 6: override solo para la suite BDD (scheduler cada 5 s + contenedor bdd-tests)
+├── Jenkinsfile                        # Reto 7: pipeline maestro de construcción y validación E2E
+├── jenkins/                           # Reto 7: Jenkins, plugins y configuración declarativa
 ├── Makefile                           # Reto 6: comandos únicos de las pruebas (make pruebas, make e2e)
 └── package.json                       # npm workspaces de los servicios Node (solo tooling de desarrollo)
 ```
