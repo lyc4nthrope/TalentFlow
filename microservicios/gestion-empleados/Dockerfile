@@ -2,20 +2,19 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-COPY microservicios/gestion-empleados ./microservicios/gestion-empleados
+# Usar 'package*.json' permite copiar package.json y package-lock.json (si existe) sin fallar
+COPY package*.json ./
 
-RUN npm ci
+COPY . .
+
+# 'npm install' no exige obligatoriamente un package-lock.json
+RUN npm install --only=production
 
 FROM node:22-alpine AS runner
 
 WORKDIR /app
 
-COPY --from=builder /app/package.json /app/package-lock.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/microservicios/gestion-empleados ./microservicios/gestion-empleados
-
-WORKDIR /app/microservicios/gestion-empleados
+COPY --from=builder /app ./
 
 EXPOSE 8081
 

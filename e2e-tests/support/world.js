@@ -73,12 +73,28 @@ class MundoTalentFlow extends World {
     return this.ultimaRespuesta;
   }
 
-  // Login sin cambiar la sesión del escenario; devuelve el JWT.
+// Login sin cambiar la sesión del escenario; devuelve el JWT.
   async iniciarSesion({ email, password }, rol = email) {
-    const respuesta = await this.enviar('POST', '/auth/login', {
-      cuerpo: { email, password },
-      token: null,
-    });
+    let respuesta;
+    const maxIntentos = 3;
+
+    for (let intento = 1; intento <= maxIntentos; intento++) {
+      respuesta = await this.enviar('POST', '/auth/login', {
+        cuerpo: { email, password },
+        token: null,
+      });
+
+      // Si no es 503, salimos del bucle
+      if (respuesta.status !== 503) {
+        break;
+      }
+
+      // Si devolvió 503 y aún quedan intentos, esperamos 1 segundo antes de reintentar
+      if (intento < maxIntentos) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
     if (respuesta.status !== 200 || !respuesta.body?.token) {
       throw new Error(
         `El login de ${rol} (${email}) devolvió ${respuesta.status}: ${extracto(respuesta.body)}`

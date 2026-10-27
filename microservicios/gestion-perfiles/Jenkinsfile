@@ -1,0 +1,122 @@
+pipeline {
+    agent any
+
+    environment {
+        SERVICE_NAME = "gestion-perfiles"
+        REGISTRY  = "${env.REGISTRY_URL ?: 'registry:5000'}"
+        SONAR_URL = "${env.SONAR_HOST_URL ?: 'http://sonarqube:9000'}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Obteniendo código del repositorio...'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                dir('microservicios/gestion-perfiles') {
+                    echo 'Instalando dependencias de Python y herramientas...'
+                    sh '''
+                        python3 -m venv venv
+                        . venv/bin/activate
+                        pip install --upgrade pip
+                        pip install -r requirements.txt pytest pytest-cov httpx
+                    '''
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                dir('microservicios/gestion-perfiles') {
+                    echo 'Ejecutando pruebas unitarias con Pytest y generando reportes...'
+                    sh '''
+                        . venv/bin/activate
+                        pytest --junitxml=reports/junit.xml --cov=. --cov-report=xml:reports/coverage.xml || true
+                    '''
+                }
+            }
+
+            post {
+                always {
+                    dir('microservicios/gestion-perfiles') {
+                        junit allowEmptyResults: true, testResults: 'reports/junit.xml'
+                        recordCoverage(
+                            tools: [[parser: 'COBERTURA', pattern: 'reports/coverage.xml']],
+                            sourceCodeRetention: 'EVERY_BUILD'
+                        )
+                    }
+                }
+            }
+        }
+
+        stage('SonarQube') {
+            steps {
+                dir('microservicios/gestion-perfiles') {
+                    echo 'Ejecutando análisis de SonarQube...'
+                    withSonarQubeEnv('SonarQubeServer') { 
+                        sh '''
+                            if [ ! -d "/tmp/sonar-scanner" ]; then
+                                curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006.zip
+                                unzip -q /tmp/sonar-scanner.zip -d /tmp/
+                                mv /tmp/sonar-scanner-5.0.1.3006 /tmp/sonar-scanner
+                            fi
+                            
+                            /tmp/sonar-scanner/bin/sonar-scanner \
+                              -Dsonar.host.url=${SONAR_URL}
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Package') {
+            steps {
+                dir('microservicios/gestion-perfiles') {
+                    sh '''
+                        docker build -t $SERVICE_NAME:$BUILD_NUMBER -t $SERVICE_NAME:latest .
+                    '''
+                    echo "✅ Imagen construida: ${SERVICE_NAME}:${BUILD_NUMBER}"
+                }
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                sh '''
+                    # Asegurarse de que el registry no lleve 'http://' o 'https://' para docker tag/push
+                    CLEAN_REGISTRY=$(echo $REGISTRY | sed -e 's|^https://||' -e 's|^http://||')
+
+                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${CLEAN_REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
+                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${CLEAN_REGISTRY}/${SERVICE_NAME}:latest
+                    
+                    docker push ${CLEAN_REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
+                    docker push ${CLEAN_REGISTRY}/${SERVICE_NAME}:latest
+                '''
+                echo "📤 Imagen publicada en registry: ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ Pipeline finalizado con éxito.'
+        }
+        unstable {
+            echo '⚠️ El código ejecutó pero hay pruebas fallando. Revisa la pestaña Test Result.'
+        }
+        failure {
+            echo '❌ Error en la instalación o ejecución del pipeline.'
+        }
+    }
+}

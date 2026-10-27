@@ -1,0 +1,124 @@
+jenkins:
+  systemMessage: "Servidor CI/CD - TalentFlow"
+
+jobs:
+  - script: |
+      // Pipeline E2E
+      pipelineJob('pipeline-orquestador-e2e') {
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/lyc4nthrope/TalentFlow.git') 
+                }
+                branches('*/Vale292005')
+              }
+            }
+            scriptPath('Jenkinsfile')
+          }
+        }
+        triggers {
+          scm('* * * * *') // Polling SCM: revisa cambios y arranca en el inicio
+        }
+      }
+
+      // 1. Gestión Empleados (Node.js)
+      pipelineJob('gestion-empleados') {
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/lyc4nthrope/TalentFlow.git')
+                }
+                branches('*/Vale292005')
+              }
+            }
+            scriptPath('microservicios/gestion-empleados/Jenkinsfile')
+          }
+        }
+        triggers {
+          scm('* * * * *')
+        }
+      }
+
+      // 2. Auth Service (Go)
+      pipelineJob('auth-service') {
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/lyc4nthrope/TalentFlow.git')
+                }
+                branches('*/Vale292005')
+              }
+            }
+            scriptPath('microservicios/auth-service/Jenkinsfile')
+          }
+        }
+        triggers {
+          scm('* * * * *')
+        }
+      }
+
+      // 3. Gestión Departamentos (PHP)
+      pipelineJob('gestion-departamentos') {
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/lyc4nthrope/TalentFlow.git')
+                }
+                branches('*/Vale292005')
+              }
+            }
+            scriptPath('microservicios/gestion-departamentos/Jenkinsfile')
+          }
+        }
+        triggers {
+          scm('* * * * *')
+        }
+      }
+
+      // 4. Gestión Vacaciones (Java)
+      pipelineJob('gestion-vacaciones') {
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/lyc4nthrope/TalentFlow.git')
+                }
+                branches('*/Vale292005')
+              }
+            }
+            scriptPath('microservicios/gestion-vacaciones/Jenkinsfile')
+          }
+        }
+        triggers {
+          scm('* * * * *')
+        }
+      }
+
+      // 5. Gestión Perfiles (Python)
+      pipelineJob('gestion-perfiles') {
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/lyc4nthrope/TalentFlow.git')
+                }
+                branches('*/Vale292005')
+              }
+            }
+            scriptPath('microservicios/gestion-perfiles/Jenkinsfile')
+          }
+        }
+        triggers {
+          scm('* * * * *')
+        }
+      }

@@ -24,3 +24,4 @@ target/
 # Reportes de pruebas (Reto 6): se generan en cada ejecución, no se versionan
 reports/
 reports-unidad/
+.jenkins-workspace/
