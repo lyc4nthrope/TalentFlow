@@ -82,6 +82,8 @@ services:
       # Cada trabajo trabaja en <HOST_WORKSPACE>/<nombre del trabajo> (D16).
       - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Djenkins.model.Jenkins.workspacesDir=${HOST_WORKSPACE:-${PWD}/.jenkins-workspace}/$${ITEM_FULL_NAME}
       - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
+      # URL con la que Jenkins arma sus enlaces (puerto publicado en el host).
+      - JENKINS_URL=${JENKINS_URL:-http://localhost:9090/}
       - HOST_WORKSPACE=${HOST_WORKSPACE:-${PWD}/.jenkins-workspace}
       # Repo y rama que leen los trabajos de casc.yaml (por defecto, main en GitHub).
       - CI_REPO_URL=${CI_REPO_URL:-https://github.com/lyc4nthrope/TalentFlow.git}

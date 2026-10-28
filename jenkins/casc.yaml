@@ -13,6 +13,11 @@ jenkins:
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false
 
+# URL pública de Jenkins (enlaces de los builds y aviso de "URL vacía" en Manage Jenkins).
+unclassified:
+  location:
+    url: "${JENKINS_URL:-http://localhost:9090/}"
+
 # Trabajos como código (D2). JCasC reemplaza ${CI_REPO_URL} y ${CI_BRANCH} con las
 # variables de entorno del contenedor (docker-compose.yml) ANTES de que Job DSL lea el
 # script, así que Groovy recibe el texto ya resuelto. Si en el script hiciera falta un
