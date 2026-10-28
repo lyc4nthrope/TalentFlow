@@ -43,6 +43,24 @@ services:
     networks:
       - microservices-network
     
+  # Configuración de SonarQube como código (Reto 7, D15 y D19): contraseña de admin,
+  # usuario y token de Jenkins, quality gate "TalentFlow" (>= 70 %) y webhook. Corre y
+  # termina; Jenkins arranca solo si terminó bien y lee el token del volumen sonar_token.
+  sonar-init:
+    container_name: sonar-init
+    profiles: ["ci"]
+    build:
+      context: ./sonar
+    environment:
+      # Valor académico para arrancar con un solo comando; .env lo sobrescribe.
+      - SONAR_ADMIN_PASSWORD=${SONAR_ADMIN_PASSWORD:-talentflow_sonar_2026}
+    volumes:
+      - sonar_token:/sonar-token
+    depends_on:
+      - sonarqube
+    networks:
+      - microservices-network
+
   sonar-db:
     container_name: sonar-db
     profiles: ["ci"]
@@ -75,6 +93,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock   # Docker del host (Docker-outside-of-Docker)
       - ./jenkins:/var/jenkins_home/casc_configs    # casc.yaml
       - npm_cache:/root/.npm                        # caché de npm entre builds
+      - sonar_token:/sonar-token:ro                 # token de SonarQube (lo escribe sonar-init)
       # Workspaces en la MISMA ruta en el host y en el contenedor (D16): los bind mounts
       # que lanzan los pipelines los resuelve el daemon del host. Ejecutar desde la raíz del repo.
       - ${HOST_WORKSPACE:-${PWD}/.jenkins-workspace}:${HOST_WORKSPACE:-${PWD}/.jenkins-workspace}
@@ -96,8 +115,11 @@ services:
       # puerto publicado localhost:5000 (y localhost no exige TLS).
       - REGISTRY_URL=${REGISTRY_URL:-localhost:5000}
       - SONAR_HOST_URL=http://sonarqube:9000
-      # Stages SonarQube y Quality Gate de los pipelines: apagados hasta F4.
-      - SONAR_HABILITADO=${SONAR_HABILITADO:-false}
+      # Stages SonarQube y Quality Gate de los pipelines (F4); false los salta.
+      - SONAR_HABILITADO=${SONAR_HABILITADO:-true}
+    depends_on:
+      sonar-init:
+        condition: service_completed_successfully
     networks:
       - microservices-network
 
@@ -582,3 +604,4 @@ volumes:
   sonarqube_extensions:
   sonar_db_data:
   registry_data:
+  sonar_token:

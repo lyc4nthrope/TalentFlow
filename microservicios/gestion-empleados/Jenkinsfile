@@ -50,7 +50,9 @@ pipeline {
             }
         }
 
-        // SonarQube y su Quality Gate se activan en F4 (SONAR_HABILITADO=true en Compose).
+        // SonarQube (F4, D15): el análisis importa el reporte de cobertura de Test; las
+        // exclusiones de cobertura son las mismas del Reto 6 (D11/D14), así la cobertura de
+        // SonarQube mide la misma lógica de negocio. SONAR_HABILITADO=false salta ambos stages.
         stage('SonarQube') {
             when { environment name: 'SONAR_HABILITADO', value: 'true' }
             steps {
@@ -61,6 +63,7 @@ pipeline {
                           -Dsonar.projectKey=gestion-empleados \\
                           -Dsonar.sources=src \\
                           -Dsonar.tests=tests \\
+                          -Dsonar.coverage.exclusions=src/app.js,src/openapi.js,src/server.js,src/clients/**,src/db/**,src/repository/**,src/routes/**,src/eventos/publicador.js \\
                           -Dsonar.javascript.lcov.reportPaths=reports/lcov.info
                         '''
                     }

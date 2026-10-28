@@ -51,13 +51,24 @@ pipeline {
             }
         }
 
-        // SonarQube y su Quality Gate se activan en F4 (SONAR_HABILITADO=true en Compose).
+        // SonarQube (F4, D15): el análisis importa el reporte de cobertura de Test; las
+        // exclusiones de cobertura son las mismas del Reto 6 (D11/D14), así la cobertura de
+        // SonarQube mide la misma lógica de negocio. SONAR_HABILITADO=false salta ambos stages.
         stage('SonarQube') {
             when { environment name: 'SONAR_HABILITADO', value: 'true' }
             steps {
                 dir(env.SERVICE_DIR) {
                     withSonarQubeEnv('SonarQubeServer') {
-                        sh 'mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=gestion-vacaciones -Dsonar.coverage.jacoco.xmlReportPaths=reports/coverage/jacoco.xml'
+                        sh '''
+                        sonar-scanner \\
+                          -Dsonar.projectKey=gestion-vacaciones \\
+                          -Dsonar.sources=src/main/java \\
+                          -Dsonar.tests=src/test/java \\
+                          -Dsonar.java.binaries=target/classes \\
+                          -Dsonar.java.test.binaries=target/test-classes \\
+                          -Dsonar.coverage.exclusions=src/main/java/com/talentflow/vacaciones/infraestructura/**,src/main/java/com/talentflow/vacaciones/Configuracion*.java,src/main/java/com/talentflow/vacaciones/VacacionesApplication.java \\
+                          -Dsonar.coverage.jacoco.xmlReportPaths=reports/coverage/jacoco.xml
+                        '''
                     }
                 }
             }

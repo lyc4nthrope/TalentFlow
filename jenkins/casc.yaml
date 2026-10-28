@@ -13,10 +13,29 @@ jenkins:
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false
 
-# URL pública de Jenkins (enlaces de los builds y aviso de "URL vacía" en Manage Jenkins).
+# D15: token de SonarQube. Lo genera sonar-init y lo deja en el volumen sonar_token
+# (montado de solo lectura); JCasC lo lee al arrancar. No hay token escrito en el repo.
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "sonar-token"
+              description: "Token del usuario jenkins en SonarQube (sonar-init)"
+              secret: "${readFile:/sonar-token/token}"
+
 unclassified:
+  # URL pública de Jenkins (enlaces de los builds y aviso de "URL vacía" en Manage Jenkins).
   location:
     url: "${JENKINS_URL:-http://localhost:9090/}"
+  # Servidor que usa withSonarQubeEnv('SonarQubeServer') en los Jenkinsfile.
+  sonarGlobalConfiguration:
+    buildWrapperEnabled: false
+    installations:
+      - name: "SonarQubeServer"
+        serverUrl: "${SONAR_HOST_URL}"
+        credentialsId: "sonar-token"
 
 # Trabajos como código (D2). JCasC reemplaza ${CI_REPO_URL} y ${CI_BRANCH} con las
 # variables de entorno del contenedor (docker-compose.yml) ANTES de que Job DSL lea el
