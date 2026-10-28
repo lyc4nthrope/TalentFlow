@@ -1,0 +1,58 @@
+# Override SOLO para la E2E del pipeline raíz (Reto 7, F5). Se aplica encima de
+# docker-compose.yml y docker-compose.e2e.yml (que aporta el cron cada 5 s y bdd-tests):
+#
+#   docker compose -p talentflow-ci-<build> \
+#     -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-e2e.yml up -d
+#
+# Aislamiento: con un nombre de proyecto propio por build, Compose ya separa red y
+# volúmenes (talentflow-ci-<build>_*). Lo que chocaría con un sistema de desarrollo en la
+# misma máquina son los `container_name` fijos y los puertos publicados en el host; aquí
+# se quitan con `!reset` (Compose ≥ 2.24). Nadie de fuera necesita esos puertos: la suite
+# corre dentro de la misma red y llega a los servicios por su nombre.
+#
+# Imágenes: se despliegan las mismas que el pipeline acaba de construir y publicar
+# (${REGISTRY_URL}/<servicio>:${IMAGE_TAG}), no una reconstrucción aparte.
+
+services:
+  api-gateway:
+    container_name: !reset null
+    ports: !reset []
+    image: ${REGISTRY_URL:-localhost:5000}/api-gateway:${IMAGE_TAG:-latest}
+  auth-service:
+    container_name: !reset null
+    image: ${REGISTRY_URL:-localhost:5000}/auth-service:${IMAGE_TAG:-latest}
+  empleados-service:
+    container_name: !reset null
+    image: ${REGISTRY_URL:-localhost:5000}/gestion-empleados:${IMAGE_TAG:-latest}
+  departamentos-service:
+    container_name: !reset null
+    image: ${REGISTRY_URL:-localhost:5000}/gestion-departamentos:${IMAGE_TAG:-latest}
+  notificaciones-service:
+    container_name: !reset null
+    image: ${REGISTRY_URL:-localhost:5000}/notificaciones:${IMAGE_TAG:-latest}
+  perfiles-service:
+    container_name: !reset null
+    image: ${REGISTRY_URL:-localhost:5000}/gestion-perfiles:${IMAGE_TAG:-latest}
+  vacaciones-service:
+    container_name: !reset null
+    image: ${REGISTRY_URL:-localhost:5000}/gestion-vacaciones:${IMAGE_TAG:-latest}
+  message-broker:
+    container_name: !reset null
+    ports: !reset []
+  broker-init:
+    container_name: !reset null
+  mailhog:
+    container_name: !reset null
+    ports: !reset []
+  database-auth:
+    container_name: !reset null
+  database-empleados:
+    container_name: !reset null
+  database-departamentos:
+    container_name: !reset null
+  database-notificaciones:
+    container_name: !reset null
+  database-perfiles:
+    container_name: !reset null
+  database-vacaciones:
+    container_name: !reset null
