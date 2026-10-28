@@ -1,6 +1,6 @@
 // Métricas Prometheus del servicio (Reto 8, D5). Infraestructura (D7): no es lógica de
 // negocio, por eso no entra en el umbral de cobertura; tiene su prueba (tests/metricas.test.js).
-const client = require("prom-client");
+const client = require("@prometheus-io/client");
 
 // Hasta 10 s: el umbral de la alerta de latencia (2 s) cae dentro de un bucket exacto.
 const BUCKETS_SEGUNDOS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10];
