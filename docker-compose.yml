@@ -55,6 +55,8 @@ services:
     environment:
       # Valor académico para arrancar con un solo comando; .env lo sobrescribe.
       - SONAR_ADMIN_PASSWORD=${SONAR_ADMIN_PASSWORD:-talentflow_sonar_2026}
+      # Dirección con la que el navegador llega a SonarQube (enlaces desde Jenkins).
+      - SONAR_PUBLIC_URL=${SONAR_PUBLIC_URL:-http://localhost:9000}
     volumes:
       - sonar_token:/sonar-token
     depends_on:
