@@ -9,6 +9,7 @@ La base del reto es el diseño de Valeria (`Vale292005`): Jenkins con sus plugin
 | **Este README** | Manual: criterios → dónde se demuestran, cómo ejecutar, cómo ver cada reporte, preguntas, problemas comunes |
 | [Sección del README raíz](../../README.md#integración-continua-reto-7) | Lo que el PDF pide en el README: qué es CI, acceso, pasos a-d, etapas, tabla de reportes, interpretación, capturas, decisiones |
 | [`PLAN.md`](PLAN.md) | Diagnóstico, decisiones D1-D20 y aprendizajes de cada fase |
+| [`INTEGRACION.md`](INTEGRACION.md) | Qué aportó Valeria, qué se cambió y por qué, cómo poner al día su rama y checklist para Mac |
 | [`pruebas.md`](pruebas.md) | Evidencia: 3 ejecuciones seguidas de cada pipeline y los 4 fallos simulados |
 | [`sustentacion.md`](sustentacion.md) | Paso a paso para la sustentación |
 | [`capturas/`](capturas/) | Las 5 capturas del PDF y 3 más |
