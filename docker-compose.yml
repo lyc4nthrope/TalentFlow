@@ -27,7 +27,8 @@ services:
   sonarqube:
     container_name: sonarqube
     profiles: ["ci"]
-    image: sonarqube:lts-community
+    # D20: imagen fijada a 9.9.8 con un arranque que pone límites de disco absolutos.
+    build: ./sonar/sonarqube
     ports:
       - "9000:9000"
     environment:
