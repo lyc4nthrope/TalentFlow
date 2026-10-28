@@ -52,7 +52,7 @@ D1 a D8 son las decisiones de Valeria y se conservan. D9 en adelante completan l
 | Fase | Alcance | Verificación | Estado |
 |---|---|---|---|
 | **F0** Integración | D9: merge de `Vale292005`; este plan | Merge sin conflictos; commits de Valeria en la historia | ✅ |
-| **F1** Recuperar el Reto 6 | D11: override de pruebas, `container_name`, Dockerfile de empleados con lockfile; CI con su propio comando | `make pruebas` y `make e2e` en verde, como antes | ⬜ |
+| **F1** Recuperar el Reto 6 | D11: override de pruebas, `container_name`, Dockerfile de empleados con lockfile; CI con su propio comando | `make pruebas` y `make e2e` en verde, como antes | ✅ |
 | **F2** Jenkins portable | D10: sin `/Users/…` ni `host.docker.internal`; rama configurable (por defecto `main`); trabajo de verificación con `docker ps` | Jenkins en `:9090` con sus trabajos; la verificación en verde | ⬜ |
 | **F3** Pipelines por servicio | D12, D14: comandos y rutas del Reto 6, sin `\|\| true`; se suman gateway y notificaciones | Cada trabajo en verde con Test Result y Coverage llenos | ⬜ |
 | **F4** SonarQube | D15: token, gate ≥ 70 %, webhook, `waitForQualityGate`, cobertura de cada lenguaje | El gate pasa; con menos de 70 % se detiene en Quality Gate | ⬜ |
@@ -68,3 +68,4 @@ D1 a D8 son las decisiones de Valeria y se conservan. D9 en adelante completan l
 ## Aprendizajes por fase
 
 - **F0**: el merge de `Vale292005` (142 commits, desde la base del Reto 6) entró sin conflictos. Su plan original tenía D1 a D8 y cuatro fases; se conservaron sus decisiones y se reorganizó en el formato del equipo, con el diagnóstico frente al PDF.
+- **F1**: `docker-compose.yml`, `docker-compose.e2e.yml` y el Dockerfile de empleados vuelven a la versión del Reto 6. Los cuatro servicios de CI de Valeria (registry, sonarqube, sonar-db, jenkins) quedan en el mismo `docker-compose.yml` bajo el perfil `ci`, con sus `container_name`: `docker compose up` levanta solo los 16 servicios del sistema y `docker compose --profile ci up --build -d` suma la CI. Se quitaron los volúmenes de caché que ningún servicio usaba. Se conservan dos cambios de Valeria en la suite: el reintento acotado del login ante un 503 y el `try/catch` al vaciar `reports/`. Verificado: `make pruebas` en verde y `make e2e` 61/61, sin contenedores de CI. Queda para F3/F5: el pipeline raíz todavía apunta a su `docker-compose.e2e.yml` independiente y el de empleados construye la imagen con el contexto de la carpeta del servicio.
