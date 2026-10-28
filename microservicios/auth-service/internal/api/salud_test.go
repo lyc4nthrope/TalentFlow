@@ -22,6 +22,7 @@ type cuerpoSalud struct {
 	Status     string            `json:"status"`
 	Service    string            `json:"service"`
 	Timestamp  string            `json:"timestamp"`
+	Checks     map[string]string `json:"checks"`
 	Components map[string]string `json:"components"`
 }
 
@@ -46,6 +47,9 @@ func TestSaludConBDYBrokerArriba(t *testing.T) {
 	if c.Components["db"] != "UP" || c.Components["broker"] != "UP" || c.Components["app"] != "UP" {
 		t.Fatalf("componentes = %v", c.Components)
 	}
+	if c.Checks["database"] != "UP" || c.Checks["messageBroker"] != "UP" {
+		t.Fatalf("checks = %v", c.Checks)
+	}
 	if c.Timestamp != "2026-10-16T12:00:00Z" {
 		t.Fatalf("timestamp = %q", c.Timestamp)
 	}
@@ -53,7 +57,7 @@ func TestSaludConBDYBrokerArriba(t *testing.T) {
 
 func TestSaludConLaBDCaidaResponde503YLoExplica(t *testing.T) {
 	codigo, c := pedirSalud(t, errors.New("conexión rechazada"), "UP")
-	if codigo != http.StatusServiceUnavailable || c.Status != "DOWN" || c.Components["db"] != "DOWN" {
+	if codigo != http.StatusServiceUnavailable || c.Status != "DOWN" || c.Components["db"] != "DOWN" || c.Checks["database"] != "DOWN" {
 		t.Fatalf("codigo=%d cuerpo=%+v", codigo, c)
 	}
 }
@@ -64,6 +68,14 @@ func TestSaludSinBrokerSigueUPPeroLoReporta(t *testing.T) {
 	codigo, c := pedirSalud(t, nil, "DOWN")
 	if codigo != http.StatusOK || c.Status != "UP" || c.Components["broker"] != "DOWN" {
 		t.Fatalf("codigo=%d cuerpo=%+v", codigo, c)
+	}
+}
+
+// En "checks" (formato del Reto 8) todo lo que no es UP, como RECONNECTING, es DOWN.
+func TestSaludChecksTrataLaReconexionDelBrokerComoDOWN(t *testing.T) {
+	_, c := pedirSalud(t, nil, "RECONNECTING")
+	if c.Checks["messageBroker"] != "DOWN" || c.Components["broker"] != "RECONNECTING" {
+		t.Fatalf("checks=%v componentes=%v", c.Checks, c.Components)
 	}
 }
 

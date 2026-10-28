@@ -43,6 +43,7 @@ func (s *SaludHandler) Salud(w http.ResponseWriter, r *http.Request) {
 	if err := s.bd.Ping(ctx); err != nil {
 		db = "DOWN"
 	}
+	broker := s.broker.Estado()
 	status, codigo := "UP", http.StatusOK
 	if db == "DOWN" {
 		status, codigo = "DOWN", http.StatusServiceUnavailable
@@ -51,10 +52,23 @@ func (s *SaludHandler) Salud(w http.ResponseWriter, r *http.Request) {
 		"status":    status,
 		"service":   "auth-service",
 		"timestamp": s.ahora().UTC().Format(time.RFC3339),
+		// Formato del PDF (Reto 8, D4); "components" se conserva para el Gateway (Reto 3).
+		"checks": map[string]string{
+			"database":      db,
+			"messageBroker": estadoBroker(broker),
+		},
 		"components": map[string]string{
 			"app":    "UP",
 			"db":     db,
-			"broker": s.broker.Estado(),
+			"broker": broker,
 		},
 	})
+}
+
+// estadoBroker: cualquier estado distinto de "UP" (p. ej. "RECONNECTING") cuenta como DOWN.
+func estadoBroker(estado string) string {
+	if estado == "UP" {
+		return "UP"
+	}
+	return "DOWN"
 }

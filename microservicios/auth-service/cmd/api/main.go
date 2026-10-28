@@ -18,6 +18,7 @@ import (
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/infra/amqp"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/infra/jwt"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/infra/postgres"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/metricas"
 )
 
 // tokenAleatorio genera los tokens de activación y recuperación: UUID v4 a partir
@@ -88,7 +89,7 @@ func main() {
 
 	servidor := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.ConfigurarRutas(api.NuevoAuthHandler(servicio), api.NuevoSaludHandler(pool, consumidor)),
+		Handler:           metricas.Nuevas().Instrumentar(api.ConfigurarRutas(api.NuevoAuthHandler(servicio), api.NuevoSaludHandler(pool, consumidor))),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

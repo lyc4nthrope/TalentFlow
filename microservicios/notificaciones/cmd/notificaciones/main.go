@@ -22,6 +22,7 @@ import (
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/amqp"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/api"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/aplicacion"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/metricas"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/postgres"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/smtp"
 )
@@ -71,7 +72,7 @@ func ejecutar(logger *slog.Logger) error {
 
 	servidor := &http.Server{
 		Addr:    ":" + env("PORT", "8084"),
-		Handler: api.NuevoManejador(repositorio, consumidor, logger),
+		Handler: metricas.Nuevas().Instrumentar(api.NuevoManejador(repositorio, consumidor, logger)),
 		// Evita que clientes lentos mantengan conexiones abiertas indefinidamente.
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
