@@ -63,21 +63,36 @@ services:
     build:
       context: ./jenkins
       dockerfile: Dockerfile
+    # Root dentro del contenedor (D17): quien usa el socket de Docker ya controla el host,
+    # así que root aquí no agrega privilegio. Funciona igual en Docker Desktop (socket de
+    # root) y en Linux (root:docker con un GID que cambia entre máquinas), sin chmod en el host.
     user: root
     ports:
-      - "9090:8080"       #Interfaz web
-      - "50000:50000"     #Comunicacion con agentes
-    volumes: 
+      - "9090:8080"       # Interfaz web
+      - "50000:50000"     # Comunicación con agentes
+    volumes:
       - jenkins_data:/var/jenkins_home
-      - /var/run/docker.sock:/var/run/docker.sock   #Acceso al Docker del host
-      - ./jenkins:/var/jenkins_home/casc_configs #Monta la carpeta del casc
-      # Volumen para caché de Maven/dependencias
-      - npm_cache:/root/.npm
-      - ${PWD}:${PWD}
+      - /var/run/docker.sock:/var/run/docker.sock   # Docker del host (Docker-outside-of-Docker)
+      - ./jenkins:/var/jenkins_home/casc_configs    # casc.yaml
+      - npm_cache:/root/.npm                        # caché de npm entre builds
+      # Workspaces en la MISMA ruta en el host y en el contenedor (D16): los bind mounts
+      # que lanzan los pipelines los resuelve el daemon del host. Ejecutar desde la raíz del repo.
+      - ${HOST_WORKSPACE:-${PWD}/.jenkins-workspace}:${HOST_WORKSPACE:-${PWD}/.jenkins-workspace}
     environment:
-      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+      # Cada trabajo trabaja en <HOST_WORKSPACE>/<nombre del trabajo> (D16).
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Djenkins.model.Jenkins.workspacesDir=${HOST_WORKSPACE:-${PWD}/.jenkins-workspace}/$${ITEM_FULL_NAME}
       - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
-      - REGISTRY_URL=localhost:5000
+      - HOST_WORKSPACE=${HOST_WORKSPACE:-${PWD}/.jenkins-workspace}
+      # Repo y rama que leen los trabajos de casc.yaml (por defecto, main en GitHub).
+      - CI_REPO_URL=${CI_REPO_URL:-https://github.com/lyc4nthrope/TalentFlow.git}
+      - CI_BRANCH=${CI_BRANCH:-main}
+      # D18: administrador de Jenkins. Valor académico para que arranque con un solo
+      # comando; para cambiarlo, definir JENKINS_ADMIN_PASSWORD en .env.
+      - JENKINS_ADMIN_USER=${JENKINS_ADMIN_USER:-admin}
+      - JENKINS_ADMIN_PASSWORD=${JENKINS_ADMIN_PASSWORD:-talentflow_ci_2026}
+      # El push lo hace el daemon del host, no el contenedor: para él, el registro es su
+      # puerto publicado localhost:5000 (y localhost no exige TLS).
+      - REGISTRY_URL=${REGISTRY_URL:-localhost:5000}
       - SONAR_HOST_URL=http://sonarqube:9000
     networks:
       - microservices-network

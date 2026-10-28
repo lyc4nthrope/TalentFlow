@@ -24,4 +24,5 @@ target/
 # Reportes de pruebas (Reto 6): se generan en cada ejecución, no se versionan
 reports/
 reports-unidad/
+# Workspaces de Jenkins (Reto 7, D16): misma ruta en el host y en el contenedor
 .jenkins-workspace/

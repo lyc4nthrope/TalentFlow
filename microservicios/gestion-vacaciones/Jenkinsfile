@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         SERVICE_NAME = "gestion-vacaciones"
-        REGISTRY  = "${env.REGISTRY_URL ?: 'registry:5000'}"
+        REGISTRY  = "${env.REGISTRY_URL ?: 'localhost:5000'}"
         SONAR_URL = "${env.SONAR_HOST_URL ?: 'http://sonarqube:9000'}"
     }
 
@@ -51,7 +51,7 @@ pipeline {
                     withSonarQubeEnv('SonarQubeServer') { 
                         sh '''
                             mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-                              -Dsonar.host.url=http://host.docker.internal:9000
+                              -Dsonar.host.url=${SONAR_HOST_URL}
                         '''
                     }
                 }

@@ -1,124 +1,74 @@
 jenkins:
   systemMessage: "Servidor CI/CD - TalentFlow"
+  # D18: Jenkins tiene acceso al Docker de la máquina (socket), así que no puede quedar
+  # abierto. Un único administrador, creado al arrancar con las credenciales que inyecta
+  # Compose (valor académico por defecto en docker-compose.yml; .env lo sobrescribe).
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_USER}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
 
+# Trabajos como código (D2). JCasC reemplaza ${CI_REPO_URL} y ${CI_BRANCH} con las
+# variables de entorno del contenedor (docker-compose.yml) ANTES de que Job DSL lea el
+# script, así que Groovy recibe el texto ya resuelto. Si en el script hiciera falta un
+# "$" literal de Groovy, se escribe ^${...}; por eso el script usa concatenación.
 jobs:
   - script: |
-      // Pipeline E2E
-      pipelineJob('pipeline-orquestador-e2e') {
-        definition {
-          cpsScm {
-            scm {
-              git {
-                remote {
-                  url('https://github.com/lyc4nthrope/TalentFlow.git') 
+      def repo = '${CI_REPO_URL:-https://github.com/lyc4nthrope/TalentFlow.git}'
+      def rama = '*/${CI_BRANCH:-main}'
+
+      def desdeElRepo = { String nombre, String jenkinsfile ->
+        pipelineJob(nombre) {
+          definition {
+            cpsScm {
+              scm {
+                git {
+                  remote { url(repo) }
+                  branches(rama)
                 }
-                branches('*/Vale292005')
               }
+              scriptPath(jenkinsfile)
             }
-            scriptPath('Jenkinsfile')
           }
-        }
-        triggers {
-          scm('* * * * *') // Polling SCM: revisa cambios y arranca en el inicio
+          triggers {
+            scm('* * * * *') // Polling SCM: revisa cambios cada minuto
+          }
         }
       }
 
-      // 1. Gestión Empleados (Node.js)
-      pipelineJob('gestion-empleados') {
-        definition {
-          cpsScm {
-            scm {
-              git {
-                remote {
-                  url('https://github.com/lyc4nthrope/TalentFlow.git')
-                }
-                branches('*/Vale292005')
-              }
-            }
-            scriptPath('microservicios/gestion-empleados/Jenkinsfile')
-          }
-        }
-        triggers {
-          scm('* * * * *')
-        }
-      }
+      desdeElRepo('pipeline-orquestador-e2e', 'Jenkinsfile')
+      desdeElRepo('gestion-empleados', 'microservicios/gestion-empleados/Jenkinsfile')
+      desdeElRepo('auth-service', 'microservicios/auth-service/Jenkinsfile')
+      desdeElRepo('gestion-departamentos', 'microservicios/gestion-departamentos/Jenkinsfile')
+      desdeElRepo('gestion-vacaciones', 'microservicios/gestion-vacaciones/Jenkinsfile')
+      desdeElRepo('gestion-perfiles', 'microservicios/gestion-perfiles/Jenkinsfile')
 
-      // 2. Auth Service (Go)
-      pipelineJob('auth-service') {
+      // Punto 1: comprueba que Jenkins usa el Docker del host a través del socket.
+      pipelineJob('verificacion-docker') {
         definition {
-          cpsScm {
-            scm {
-              git {
-                remote {
-                  url('https://github.com/lyc4nthrope/TalentFlow.git')
+          cps {
+            sandbox(true)
+            script('''
+              pipeline {
+                agent any
+                stages {
+                  stage('Verificación') {
+                    steps {
+                      echo 'Jenkins está correctamente configurado'
+                      sh 'whoami'
+                      sh 'docker --version'
+                      sh 'docker compose version'
+                      sh 'docker ps'
+                    }
+                  }
                 }
-                branches('*/Vale292005')
               }
-            }
-            scriptPath('microservicios/auth-service/Jenkinsfile')
+            '''.stripIndent())
           }
-        }
-        triggers {
-          scm('* * * * *')
-        }
-      }
-
-      // 3. Gestión Departamentos (PHP)
-      pipelineJob('gestion-departamentos') {
-        definition {
-          cpsScm {
-            scm {
-              git {
-                remote {
-                  url('https://github.com/lyc4nthrope/TalentFlow.git')
-                }
-                branches('*/Vale292005')
-              }
-            }
-            scriptPath('microservicios/gestion-departamentos/Jenkinsfile')
-          }
-        }
-        triggers {
-          scm('* * * * *')
-        }
-      }
-
-      // 4. Gestión Vacaciones (Java)
-      pipelineJob('gestion-vacaciones') {
-        definition {
-          cpsScm {
-            scm {
-              git {
-                remote {
-                  url('https://github.com/lyc4nthrope/TalentFlow.git')
-                }
-                branches('*/Vale292005')
-              }
-            }
-            scriptPath('microservicios/gestion-vacaciones/Jenkinsfile')
-          }
-        }
-        triggers {
-          scm('* * * * *')
-        }
-      }
-
-      // 5. Gestión Perfiles (Python)
-      pipelineJob('gestion-perfiles') {
-        definition {
-          cpsScm {
-            scm {
-              git {
-                remote {
-                  url('https://github.com/lyc4nthrope/TalentFlow.git')
-                }
-                branches('*/Vale292005')
-              }
-            }
-            scriptPath('microservicios/gestion-perfiles/Jenkinsfile')
-          }
-        }
-        triggers {
-          scm('* * * * *')
         }
       }

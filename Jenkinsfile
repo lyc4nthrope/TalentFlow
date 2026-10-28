@@ -1,13 +1,11 @@
 pipeline {
-    agent {
-        node {
-            label ''
-            customWorkspace '/Users/valeria/Documents/GitHub/TalentFlow/.jenkins-workspace'
-        }
-    }
+    // El workspace ya está en la misma ruta en el host y en el contenedor (D16), así que
+    // los bind mounts de docker compose resuelven bien sin customWorkspace propio.
+    agent any
 
     environment {
-        REGISTRY  = "localhost:5000" //corregir
+        // El push lo hace el daemon del host: para él, el registro es localhost:5000.
+        REGISTRY  = "${env.REGISTRY_URL ?: 'localhost:5000'}"
         IMAGE_TAG = "${env.BUILD_NUMBER}"
     }
 

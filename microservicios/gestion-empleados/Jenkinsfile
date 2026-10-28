@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         SERVICE_NAME = "gestion-empleados"
-        REGISTRY  = "${env.REGISTRY_URL ?: 'registry:5000'}"
+        REGISTRY  = "${env.REGISTRY_URL ?: 'localhost:5000'}"
         SONAR_URL = "${env.SONAR_HOST_URL ?: 'http://sonarqube:9000'}"
     }
 
@@ -61,7 +61,7 @@ pipeline {
                             fi
                             
                             /tmp/sonar-scanner/bin/sonar-scanner \
-                              -Dsonar.host.url=http://host.docker.internal:9000
+                              -Dsonar.host.url=${SONAR_HOST_URL}
                         '''
                     }  
                 }
