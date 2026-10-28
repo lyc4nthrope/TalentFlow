@@ -1,0 +1,45 @@
+# Promtail de TalentFlow (Reto 8, F1): descubre los contenedores por el socket de Docker
+# y envía sus logs a Loki. Lee los logs por la API de Docker (no por archivos en
+# /var/lib/docker/containers), por eso basta el socket y funciona igual en Linux y en
+# Docker Desktop (Mac/Windows).
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+# Hasta dónde leyó cada contenedor. En un volumen: al recrear Promtail no reenvía logs viejos.
+positions:
+  filename: /var/lib/promtail/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # Solo los proyectos de Compose de TalentFlow: el de desarrollo ("talentflow") y
+      # los de la E2E de la CI ("talentflow-ci-<build>"). Otros contenedores de la máquina
+      # no entran a Loki.
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        regex: 'talentflow.*'
+        action: keep
+      # Docker antepone "/" al nombre del contenedor.
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'service'
+      # Permite separar el sistema de desarrollo de las E2E de la CI: {project="talentflow"}.
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: 'project'
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'stream'
+    pipeline_stages:
+      # La primera vez Promtail lee el log completo de cada contenedor; lo de más de un día
+      # se descarta aquí en lugar de que Loki lo rechace por viejo (reject_old_samples).
+      - drop:
+          older_than: 24h
+          drop_counter_reason: log_demasiado_viejo

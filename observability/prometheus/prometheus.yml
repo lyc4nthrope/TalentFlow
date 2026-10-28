@@ -1,0 +1,61 @@
+# Prometheus de TalentFlow (Reto 8, F1). Modelo pull: cada 15 s pide las métricas a
+# cada microservicio por su nombre de servicio en Docker (nunca IPs ni localhost),
+# dentro de la red microservices-network. Los puertos son los internos de cada servicio.
+#
+# Hasta que cada servicio exponga sus métricas (F2 a F5), su target aparece DOWN: es
+# lo esperado.
+#
+# Ruta de las métricas según el lenguaje (PDF, sección 3):
+#   Node (Express, prom-client)         /metrics           api-gateway, empleados-service
+#   PHP (promphp/prometheus_client_php) /metrics           departamentos-service
+#   Python (FastAPI)                    /metrics           perfiles-service
+#   Go (client_golang)                  /metrics           notificaciones-service, auth-service
+#   Java (Spring Boot Actuator)         /actuator/prometheus  vacaciones-service
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # El Gateway va primero (PDF): es la entrada única y su latencia y tasa de error son
+  # las que ve el cliente.
+  - job_name: 'api-gateway'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['api-gateway:8080']
+
+  - job_name: 'empleados-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['empleados-service:8081']
+
+  - job_name: 'departamentos-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['departamentos-service:8082']
+
+  - job_name: 'perfiles-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['perfiles-service:8083']
+
+  - job_name: 'notificaciones-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['notificaciones-service:8084']
+
+  # Spring Boot publica las métricas de Micrometer en Actuator, no en /metrics.
+  - job_name: 'vacaciones-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['vacaciones-service:8085']
+
+  - job_name: 'auth-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['auth-service:8086']
+
+  # El propio Prometheus.
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
