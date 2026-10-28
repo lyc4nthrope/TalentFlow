@@ -2,7 +2,7 @@
 
 Sistema de onboarding y offboarding de empleados basado en una arquitectura orientada a microservicios.
 
-**Estado: Retos 1 a 6 completados.** Índice por reto:
+**Estado: Retos 1 a 7 completados.** Índice por reto:
 
 | Reto | Tema | Sección | Manual |
 |---|---|---|---|
@@ -11,6 +11,7 @@ Sistema de onboarding y offboarding de empleados basado en una arquitectura orie
 | 4 | Comunicación asincrónica por eventos | [Comunicación asincrónica](#comunicación-asincrónica-reto-4) | [`docs/reto-04`](docs/reto-04/README.md) |
 | 5 | Seguridad e identidad (JWT, roles, ciclo de vida de la cuenta) | [Seguridad e identidad](#seguridad-e-identidad-reto-5) | [`docs/reto-05`](docs/reto-05/README.md) |
 | 6 | Automatización de pruebas (unitarias, integración y BDD) | [Automatización de pruebas](#automatización-de-pruebas-reto-6) | [`docs/reto-06`](docs/reto-06/README.md) |
+| 7 | Integración continua con Jenkins, SonarQube y registry local | [Integración continua](#integración-continua-reto-7) | [`docs/reto-07`](docs/reto-07/README.md) |
 
 Resumen de todos los retos: [Mapa de retos](#mapa-de-retos).
 
@@ -103,12 +104,17 @@ TalentFlow/
 │   ├── gestion-perfiles/              # Reto 4 (Python + FastAPI + Postgres) — consume eventos + REST
 │   ├── notificaciones/                # Reto 4 (Go + Postgres) — solo consume eventos
 │   └── gestion-vacaciones/            # Reto 4 (Java + Spring Boot + Postgres) — REST + productor de eventos
+│                                      # Reto 7: cada servicio tiene su Jenkinsfile junto a su código
 ├── e2e-tests/                         # Reto 6: suite BDD (Cucumber.js, Gherkin en español) contra el sistema desplegado
 ├── infra/rabbitmq/                    # Reto 4: topología de eventos (exchange, colas, bindings) + su importación
 ├── scripts/cobertura-go.awk           # Reto 6: filtro y umbral de cobertura de la lógica de negocio en Go
-├── docs/                              # Manuales, evidencia y decisiones por reto (reto-03/ … reto-06/, eventos.md…)
-├── docker-compose.yml                 # Orquesta todo el sistema (un solo comando)
+├── docs/                              # Manuales, evidencia y decisiones por reto (reto-03/ … reto-07/, eventos.md…)
+├── docker-compose.yml                 # Orquesta el sistema; la CI del Reto 7 va en el perfil `ci`
 ├── docker-compose.e2e.yml             # Reto 6: override solo para la suite BDD (scheduler cada 5 s + contenedor bdd-tests)
+├── docker-compose.ci-e2e.yml          # Reto 7: override de la E2E del pipeline (sin container_name ni puertos, imágenes del registro)
+├── Jenkinsfile                        # Reto 7: pipeline orquestador (imágenes versionadas + E2E aislada)
+├── jenkins/                           # Reto 7: Dockerfile de Jenkins (plugins + herramientas) y casc.yaml (JCasC + Job DSL)
+├── sonar/                             # Reto 7: sonar-init (token, quality gate, webhook) y la imagen de SonarQube
 ├── Makefile                           # Reto 6: comandos únicos de las pruebas (make pruebas, make e2e)
 └── package.json                       # npm workspaces de los servicios Node (solo tooling de desarrollo)
 ```
@@ -117,7 +123,7 @@ TalentFlow/
 
 ## Flujo de trabajo con ramas (Git)
 
-> Esto es únicamente la **estructura de ramas en Git** del equipo, no una implementación de DevOps completa — todavía no hay integración continua (CI), despliegue automático ni entornos separados por rama. Esa parte se evaluará e implementará más adelante en el proyecto final, si el curso lo requiere.
+> Esto es la **estructura de ramas en Git** del equipo. Desde el Reto 7 hay integración continua (Jenkins vigila una rama y ejecuta los pipelines en cada push, ver [Integración continua](#integración-continua-reto-7)); todavía no hay despliegue automático ni entornos separados por rama.
 
 | Rama | Rol |
 |---|---|
@@ -781,6 +787,222 @@ Solo hay tres exclusiones de líneas, en `auth-service/internal/aplicacion/servi
 
 **Reutilización de pasos.** Se reutilizan sin cambios `Dado que existe un empleado activo con credenciales establecidas` (alta → token por correo → contraseña → login), `Dado que estoy autenticado como {string}`, `la respuesta debe tener código {int}`, `el error debe señalar el campo {string}` y, en offboarding, los pasos del ciclo de vacaciones. Se parametrizaron las operaciones (`{operación}`: la misma frase prueba el 403 de USER y el 200/201 de ADMIN), las fechas incoherentes, los avisos (`el empleado debe recibir el aviso {string}`) y el estado (`el empleado debe quedar en estado {string}`).
 
+## Integración continua (Reto 7)
+
+> Manual paso a paso, criterios del PDF y problemas comunes: [`docs/reto-07/README.md`](docs/reto-07/README.md). Evidencia (3 ejecuciones seguidas y 4 fallos simulados): [`docs/reto-07/pruebas.md`](docs/reto-07/pruebas.md). Decisiones (D1-D20) y aprendizajes por fase: [`docs/reto-07/PLAN.md`](docs/reto-07/PLAN.md). Guion de la sustentación: [`docs/reto-07/sustentacion.md`](docs/reto-07/sustentacion.md). La base del reto (Jenkins en Docker, JCasC + Job DSL, SonarQube, registro y pipelines por servicio, D1-D8) es el diseño de Valeria.
+
+### Qué es CI y por qué se integra
+
+La **integración continua** ejecuta, en cada cambio que llega al repositorio, los mismos pasos que hasta ahora se corrían a mano: compilar, correr las pruebas del Reto 6, medir la calidad, empaquetar la imagen y probar el sistema completo. Si un paso falla, el pipeline se detiene ahí y el reporte publicado dice qué falló (la prueba o el escenario, con su mensaje).
+
+Por qué en TalentFlow: son 7 servicios en 5 lenguajes; nadie corre todas las suites antes de cada merge. Con CI, una prueba rota o una imagen que no construye se detecta en minutos y no llega a `dev` ni a `main`.
+
+| Pieza | Qué hace |
+|---|---|
+| **Jenkins** (`:9090`) | Un pipeline por servicio (Checkout → Build → Test → SonarQube → Quality Gate → Package → Publish) y un orquestador que construye las 7 imágenes y corre la suite BDD contra el sistema desplegado |
+| **SonarQube** (`:9000`) | Análisis estático e importación de la cobertura del Reto 6; quality gate "TalentFlow" (cobertura ≥ 70 %) que detiene el pipeline |
+| **Registro local** (`:5000`) | Guarda las imágenes `localhost:5000/<servicio>:<BUILD_NUMBER>` y `:latest` (sin depender de Docker Hub) |
+
+```mermaid
+flowchart LR
+    push[git push] -->|polling SCM cada minuto| J[Jenkins]
+    J --> S1[Checkout] --> S2[Build] --> S3[Test<br/>junit + recordCoverage]
+    S3 --> S4[SonarQube] --> S5[Quality Gate<br/>cobertura ≥ 70 %] --> S6[Package<br/>docker build] --> S7[Publish<br/>registro :5000]
+    J --> O[Orquestador] --> E[Deploy aislado + E2E BDD<br/>junit + Cucumber + HTML + logs] --> L[down -v]
+```
+
+### Acceso
+
+| Servicio | URL | Usuario / contraseña por defecto | Dónde se define |
+|---|---|---|---|
+| Jenkins | `http://localhost:9090` | `admin` / `talentflow_ci_2026` | `JENKINS_ADMIN_USER` / `JENKINS_ADMIN_PASSWORD` en `docker-compose.yml` (servicio `jenkins`) |
+| SonarQube | `http://localhost:9000` | `admin` / `talentflow_sonar_2026` | `SONAR_ADMIN_PASSWORD` en `docker-compose.yml` (servicio `sonar-init`) |
+| Registro | `http://localhost:5000/v2/_catalog` | sin autenticación (solo `localhost`) | servicio `registry` |
+
+Los valores por defecto son académicos, para arrancar con un solo comando (el mismo criterio que el secreto del JWT del Reto 5). Para cambiarlos, definirlos en `.env` (no se versiona) **antes del primer arranque**:
+
+```bash
+JENKINS_ADMIN_USER=admin
+JENKINS_ADMIN_PASSWORD=<otra>
+SONAR_ADMIN_PASSWORD=<otra>
+```
+
+Ningún Jenkinsfile tiene credenciales: Jenkins analiza con un usuario propio de SonarQube (`jenkins`, solo permisos de análisis) y su token llega como la credencial `sonar-token` de Jenkins (D15, D19). Los anónimos no ven nada en Jenkins (403), porque Jenkins controla el Docker de la máquina (D18).
+
+### Configuración
+
+**a. Levantar el sistema con Jenkins incluido.** Desde la **raíz del repo** (la ruta de los workspaces sale de `${PWD}`, D16):
+
+```bash
+docker compose --profile ci up --build -d
+```
+
+Levanta los 16 servicios del sistema y los 5 de CI (`registry`, `sonarqube`, `sonar-db`, `sonar-init`, `jenkins`). Jenkins arranca cuando `sonar-init` terminó bien. Un `docker compose up` sin el perfil sigue levantando solo el sistema (D11), porque los Retos 1 a 6 ya se calificaron con ese comando: es una desviación de la consideración del PDF ("el sistema completo debe levantarse con `docker compose up --build`") y se eligió para no cambiar lo ya entregado.
+
+Los trabajos leen la rama `main` de GitHub. Para probar otra rama: `CI_BRANCH=<rama> docker compose --profile ci up -d`. El valor se toma al arrancar: si se vuelve a ejecutar `up` sin él, Jenkins vuelve a `main`.
+
+**b. Cómo obtener la contraseña inicial de Jenkins.** No hay contraseña inicial: el asistente de instalación está desactivado (`-Djenkins.install.runSetupWizard=false` en `JAVA_OPTS`) y no existe `/var/jenkins_home/secrets/initialAdminPassword`. El administrador lo crea JCasC al arrancar ([`jenkins/casc.yaml`](jenkins/casc.yaml), `securityRealm`) con las variables de la tabla de acceso. Para ver las que está usando el contenedor:
+
+```bash
+docker exec jenkins printenv JENKINS_ADMIN_USER JENKINS_ADMIN_PASSWORD
+```
+
+SonarQube tampoco se configura a mano: `sonar-init` ([`sonar/init.sh`](sonar/init.sh)) cambia `admin/admin` por `SONAR_ADMIN_PASSWORD` solo si sigue la de fábrica (`docker logs sonar-init` lo registra).
+
+**c. Cómo crear o importar los pipelines.** No se crean a mano. Al arrancar, JCasC lee [`jenkins/casc.yaml`](jenkins/casc.yaml) y su script Job DSL crea los 9 trabajos, cada uno apuntando al Jenkinsfile versionado junto al código:
+
+| Trabajo | Jenkinsfile | Lenguaje |
+|---|---|---|
+| `pipeline-orquestador-e2e` | [`Jenkinsfile`](Jenkinsfile) | — (las 7 imágenes + E2E) |
+| `gestion-empleados` | [`microservicios/gestion-empleados/Jenkinsfile`](microservicios/gestion-empleados/Jenkinsfile) | Node.js |
+| `api-gateway` | [`microservicios/api-gateway/Jenkinsfile`](microservicios/api-gateway/Jenkinsfile) | Node.js |
+| `auth-service` | [`microservicios/auth-service/Jenkinsfile`](microservicios/auth-service/Jenkinsfile) | Go |
+| `notificaciones` | [`microservicios/notificaciones/Jenkinsfile`](microservicios/notificaciones/Jenkinsfile) | Go |
+| `gestion-perfiles` | [`microservicios/gestion-perfiles/Jenkinsfile`](microservicios/gestion-perfiles/Jenkinsfile) | Python |
+| `gestion-vacaciones` | [`microservicios/gestion-vacaciones/Jenkinsfile`](microservicios/gestion-vacaciones/Jenkinsfile) | Java |
+| `gestion-departamentos` | [`microservicios/gestion-departamentos/Jenkinsfile`](microservicios/gestion-departamentos/Jenkinsfile) | PHP |
+| `verificacion-docker` | en línea en `casc.yaml` | Pipeline de verificación (Punto 1): `whoami`, `docker --version`, `docker compose version`, `docker ps` |
+
+Para agregar un trabajo: una línea `desdeElRepo('<nombre>', '<ruta del Jenkinsfile>')` en `casc.yaml` y `docker compose --profile ci up -d --force-recreate jenkins`. Cada trabajo hace *polling* del repositorio cada minuto (`scm('* * * * *')`) y se dispara solo con cada push a la rama vigilada.
+
+**d. Cómo ejecutar un pipeline manualmente.** En la interfaz: entrar al trabajo → **Build Now** → el build aparece en la vista de etapas. Por REST (las peticiones POST con usuario y contraseña piden *crumb*):
+
+```bash
+JAR=$(mktemp)
+CRUMB=$(curl -s -u admin:talentflow_ci_2026 -c "$JAR" \
+  'http://localhost:9090/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,":",//crumb)')
+curl -s -u admin:talentflow_ci_2026 -b "$JAR" -H "$CRUMB" -X POST \
+  http://localhost:9090/job/verificacion-docker/build            # responde 201
+curl -s -u admin:talentflow_ci_2026 \
+  'http://localhost:9090/job/verificacion-docker/lastBuild/api/json?tree=number,result'
+```
+
+### Etapas de los pipelines
+
+**Pipeline por servicio** (los seis con pruebas; mismo orden y forma en todos, `agent any`):
+
+| Etapa | Qué hace | Qué verifica |
+|---|---|---|
+| Checkout | `checkout scm` | Que la rama vigilada se descarga |
+| Build | `npm ci` · `go build ./...` · `pip install` en un `.venv` · `mvn clean compile` | Que el código compila y las dependencias resuelven |
+| Test | El comando exacto de la [tabla de reportes del Reto 6](#tabla-de-reportes) (`npm test`, `make test`, `mvn verify`) | Las pruebas unitarias (y las de integración de vacaciones, con Testcontainers) y el umbral del 100 % de la lógica de negocio. Publica JUnit y cobertura en `post { always }` |
+| SonarQube | `sonar-scanner` dentro de `withSonarQubeEnv('SonarQubeServer')`, importando la cobertura de Test | Calidad estática y cobertura con las mismas exclusiones del Reto 6 |
+| Quality Gate | `waitForQualityGate abortPipeline: true` (tope 5 min) | Que el gate "TalentFlow" pasa (cobertura ≥ 70 %); si no, el pipeline termina en FAILURE |
+| Package | `docker build -t localhost:5000/<servicio>:<BUILD_NUMBER> -t …:latest` | Que el Dockerfile construye |
+| Publish | `docker push` de las dos etiquetas | Que la imagen llega al registro |
+
+`gestion-departamentos` (PHP) no tiene pruebas desde el Reto 6: su pipeline es Checkout → Build (`php -l` de cada archivo) → Package → Publish. Un Test vacío sería un verde falso.
+
+**Pipeline orquestador** ([`Jenkinsfile`](Jenkinsfile), trabajo `pipeline-orquestador-e2e`):
+
+| Etapa | Qué hace | Qué verifica |
+|---|---|---|
+| Checkout | `checkout scm` | — |
+| Build & Package | Las 7 imágenes en paralelo, `:<BUILD_NUMBER>` y `:latest` | Que todos los Dockerfiles construyen |
+| Publish | Push de las 14 etiquetas | Que el registro las recibe |
+| Deploy | `docker compose -p talentflow-ci-<build>` con [`docker-compose.e2e.yml`](docker-compose.e2e.yml) y [`docker-compose.ci-e2e.yml`](docker-compose.ci-e2e.yml) (las imágenes recién publicadas, sin `container_name` ni puertos en el host); espera con `esperar-sistema` (polling a `GET /health` hasta `"sistema":"OK"`, tope `timeout 600`) | Que el sistema completo arranca y queda sano |
+| E2E Tests | `run --rm bdd-tests` (la suite BDD del Reto 6, 61 escenarios), sin `\|\| true` | Los flujos de punta a punta. Publica JUnit, Cucumber y el HTML en `post { always }` |
+| post (siempre) | `docker-logs.txt` archivado; `down -v --remove-orphans --rmi local` solo de ese proyecto; se quitan las etiquetas `:<build>` locales | Que no quedan contenedores, volúmenes ni redes del build |
+
+### Tabla de reportes publicados
+
+| Etapa | Reporte | Paso que lo publica | Dónde se consulta en Jenkins |
+|---|---|---|---|
+| Test (6 servicios) | `reports/junit.xml` (vacaciones: `reports/junit/*.xml`) | `junit` en `post { always }` de Test | Build → **Tests**; gráfica de tendencia en la página del trabajo |
+| Test (6 servicios) | Cobertura: LCOV (`lcov.info`: empleados, gateway), Cobertura XML (`coverage.xml`: auth, notificaciones, perfiles), JaCoCo (`reports/coverage/jacoco.xml`: vacaciones) | `recordCoverage` en `post { always }` de Test | Build → **Coverage**; tendencia en la página del trabajo |
+| SonarQube | Análisis y cobertura en SonarQube | `withSonarQubeEnv` + `sonar-scanner` | Página del trabajo → bloque **SonarQube Quality Gate**; detalle en `http://localhost:9000/dashboard?id=<servicio>` |
+| Quality Gate | Estado del gate (OK / ERROR) | `waitForQualityGate abortPipeline: true` | Vista de etapas (Quality Gate en rojo si falla) y consola: `Quality gate is 'OK'` |
+| E2E Tests | `e2e-tests/reports/junit.xml` | `junit` | Build → **Tests** (escenario fallido con su mensaje) |
+| E2E Tests | `e2e-tests/reports/cucumber.json` | `cucumber` (plugin cucumber-reports) | Build → **Cucumber reports** (características y escenarios en español, pasos, fallos) |
+| E2E Tests | `e2e-tests/reports/cucumber.html` | `publishHTML` | Build → **Reporte BDD** |
+| post del orquestador | `docker-logs.txt` (logs de todos los contenedores del build) | `archiveArtifacts` | Build → **Build Artifacts** |
+| Package / Publish | Imágenes en el registro | `docker push` | Fuera de Jenkins: `curl -s localhost:5000/v2/<servicio>/tags/list` |
+
+### Cómo interpretar los resultados
+
+| Color | Resultado | Qué significa aquí |
+|---|---|---|
+| Verde | SUCCESS | Todas las etapas pasaron: pruebas, cobertura, gate, imagen publicada (y E2E en el orquestador) |
+| Amarillo | UNSTABLE | El build terminó pero algo quedó marcado como inestable. Por convención, pruebas que fallan sin detener el build. **En este proyecto no se usa** (D12) |
+| Rojo | FAILURE | Una etapa falló y las siguientes se saltaron (`Stage "…" skipped due to earlier failure(s)`). La etapa en rojo de la vista de etapas dice dónde; Tests, Coverage o Cucumber reports dicen qué |
+| Gris | ABORTED / NOT_BUILT | Cancelado a mano o por un `timeout` |
+
+**FAILURE vs. UNSTABLE.** Por convención, un build que no compila es FAILURE (rojo) y uno con pruebas fallidas es UNSTABLE (amarillo) y sigue. Aquí **cualquier prueba que falla es FAILURE y detiene el pipeline** (D12): un servicio con pruebas rotas no debe llegar a empaquetarse ni publicarse, y el PDF pide que el pipeline se detenga en Test. Los reportes se publican igual, porque `junit` y `recordCoverage` están en `post { always }`.
+
+### Capturas
+
+Tomadas de las ejecuciones de [`docs/reto-07/pruebas.md`](docs/reto-07/pruebas.md).
+
+**Pipeline exitoso (vista de etapas)** — `pipeline-orquestador-e2e` #9 a #14 en verde:
+
+![Vista de etapas del orquestador en verde](docs/reto-07/capturas/01-pipeline-exitoso-etapas.png)
+
+**Test Result** — `gestion-empleados` #14, 86 pruebas, 0 fallidas:
+
+![Test Result de gestion-empleados](docs/reto-07/capturas/02-test-result.png)
+
+**Coverage** — `gestion-empleados` #14, 100 % de líneas (476/476) y tendencia:
+
+![Coverage de gestion-empleados](docs/reto-07/capturas/03-coverage.png)
+
+**Reporte BDD navegable** — Cucumber reports, 8 características y 61 escenarios en español:
+
+![Cucumber reports del orquestador](docs/reto-07/capturas/04-reporte-bdd.png)
+
+**Build fallido con la prueba identificada** — `api-gateway` #14, la prueba `aplana los componentes del /health del servicio` con su mensaje:
+
+![Prueba fallida de api-gateway en Tests](docs/reto-07/capturas/05-build-fallido.png)
+
+Capturas adicionales de los otros fallos simulados:
+
+| Captura | Qué muestra |
+|---|---|
+| [Quality Gate fallido](docs/reto-07/capturas/06-quality-gate.png) | SonarQube `gestion-empleados`: gate Failed, cobertura 69.8 % < 70 % |
+| [Escenario BDD fallido](docs/reto-07/capturas/07-escenario-bdd-fallido.png) | Cucumber reports → Failures: el escenario y el paso que fallaron, con el mensaje |
+| [Etapa E2E fallida](docs/reto-07/capturas/08-etapa-fallida-e2e.png) | Vista de etapas del orquestador con #15 detenido en E2E Tests |
+
+### Decisiones técnicas
+
+| Pregunta del PDF | Respuesta | Por qué |
+|---|---|---|
+| Plugins pre-instalados | `junit`, `coverage`, `cucumber-reports`, `htmlpublisher`, `sonar`, `configuration-as-code`, `job-dsl`, `docker-workflow`, `pipeline-stage-view`, `workflow-aggregator`, `git` ([`jenkins/Dockerfile`](jenkins/Dockerfile)) | Los cuatro de reportes que pide el PDF, SonarQube, y los de "configuración como código" |
+| ¿Socket o DinD? Permisos | Socket del host montado (*Docker-outside-of-Docker*, no Docker-in-Docker); Jenkins corre como `root` en su contenedor (D17) | Quien usa el socket ya controla el Docker del host: root dentro no agrega privilegio. El GID de `docker` cambia entre equipos Linux y en Docker Desktop el socket es de root; `chmod 666` abriría Docker a todo proceso del equipo |
+| ¿Setup Wizard? | Desactivado; el administrador lo crea JCasC (D18) | Configuración reproducible sin pasos manuales, y Jenkins nunca queda abierto |
+| Aprovisionamiento de trabajos | JCasC + Job DSL (D2, Valeria) | Los trabajos quedan versionados en `casc.yaml` y se recrean en cada arranque. `init.groovy.d` es código imperativo que nadie revisa; un volumen local depende de la máquina donde se configuró |
+| FAILURE vs. UNSTABLE | Toda prueba fallida es FAILURE (D12) | Ver arriba: no se empaqueta código con pruebas rotas |
+| Agente | `agent any`: la imagen de Jenkins trae Node 24.14.0, Go, Python, Java/Maven, PHP y SonarScanner (D13) | Desviación de la recomendación del PDF (imágenes como agentes): los agentes efímeros agregan otra capa de montajes (workspace y socket dentro del agente) sin mejorar el resultado; la imagen es multiarquitectura (amd64/arm64) |
+| Token de SonarQube | Credencial `sonar-token` de Jenkins, cargada por JCasC desde un volumen que escribe `sonar-init` (D15, D19) | Sin token en el repo ni pasos manuales; el usuario `jenkins` solo analiza |
+| Quality Gate | Propio, "TalentFlow": una condición, `coverage` < 70 → ERROR, por defecto para todos los proyectos | El umbral del PDF. La lógica de negocio ya exige el 100 % en Test; el gate cubre lo que Test no ve (código sin ninguna prueba que lo importe) |
+| Webhook para `waitForQualityGate` | `sonar-init` crea un único webhook `jenkins` → `http://jenkins:8080/sonarqube-webhook/` | Llega por la red de Compose; repetirlo no duplica (idempotente) |
+| `sonar-scanner` en Go, Node, Python | Instalado en la imagen de Jenkins (zip, usa su Java) | Una sola instalación para los seis servicios; vacaciones también lo usa con `sonar.java.binaries` |
+| Nombres de imágenes | `localhost:5000/<servicio>:<BUILD_NUMBER>` y `:latest` | `BUILD_NUMBER` liga cada imagen a su build y su reporte; sin versionado semántico porque no hay *releases* |
+| Multi-stage | 5 de 7 Dockerfiles (auth, notificaciones, empleados, perfiles, vacaciones); gateway y departamentos de una etapa | El pipeline solo llama a `docker build`; las etapas viven en el Dockerfile |
+| Registro | Local (`registry:2`, D3), sin autenticación | Opcional en el PDF. Con uno externo, el `docker login` iría en `withCredentials` con una credencial de Jenkins |
+| Health check antes de E2E | `depends_on: service_healthy` de Compose + `esperar-sistema` (polling a `/health`) con `timeout 600` | Espera real al estado, sin `sleep` fijos, con tope |
+| Aislamiento de la E2E | Proyecto de Compose propio por build (`talentflow-ci-<build>`) y `down -v` al terminar; override sin `container_name` ni puertos | Cada build parte de bases vacías y no choca con el sistema de desarrollo de la misma máquina |
+| Rescate de los reportes | Volumen montado `./e2e-tests/reports` (workspace en la misma ruta en host y contenedor, D16) | El daemon del host resuelve el montaje con la ruta del host |
+| ¿`allowEmptyResults`? | No se usa | Si el sistema no levanta, no hay reporte y `junit` falla: el build debe quedar en rojo, no en un verde vacío |
+| Portabilidad (Mac y Linux) | Sin rutas propias, servicios por nombre (`sonarqube:9000`), socket en `/var/run/docker.sock` (igual en ambos), imágenes amd64/arm64 (D10) | Valeria usa Mac y Cristhian Linux |
+| Disco de SonarQube | Límites de Elasticsearch en espacio libre absoluto (2 GB / 1.5 GB / 1 GB) (D20) | Por defecto bloquea los índices sobre el 95 % de uso, que en un disco de 80 GB son 4 GB libres |
+
+### Limitaciones conocidas
+
+- **El polling dispara todos los trabajos en cada push.** No hay filtro por carpeta: un cambio en un servicio construye los nueve trabajos. Aceptable con un equipo de dos; un filtro por ruta o un webhook por servicio queda para después.
+- **Disco.** Cada build agrega capas al caché de Docker (`docker system df`). Con menos de 1 GiB libre Jenkins deja el nodo fuera de línea y Elasticsearch bloquea los índices de SonarQube (D20); sin el ajuste de D20 bastaría pasar del 95 % de uso. `docker builder prune` libera el caché de construcción.
+- **El enlace de SonarQube en Jenkins** apunta a `http://sonarqube:9000/...` (el nombre de la red de Compose, que el navegador no resuelve). Abrir `http://localhost:9000` en su lugar.
+- **Avisos de Jenkins**: la página de administración muestra el fin de soporte de Java 21 (septiembre de 2027) y la recomendación de activar CSP; son informativos.
+- **Jenkins corre como `root`** en su contenedor por diseño (D17). En producción se usarían agentes separados sin el socket del host.
+- **Los trabajos leen `main`**: hasta que el reto llegue a `main` (F8), se prueba con `CI_BRANCH=lyc4nthrope`.
+
+### Cómo probarlo
+
+```bash
+docker compose --profile ci up --build -d
+# Jenkins: http://localhost:9090 (admin / talentflow_ci_2026) → verificacion-docker → Build Now
+```
+
+Evidencia: [`docs/reto-07/pruebas.md`](docs/reto-07/pruebas.md). Manual: [`docs/reto-07`](docs/reto-07/README.md).
+
 ## Circuit Breaker (Reto 3) — `empleados-service → departamentos-service`
 
 ### Por qué
@@ -945,6 +1167,7 @@ Tras la clase "Introducción a APIs RESTful" se auditó el proyecto contra sus d
 | 4 | + message-broker + gestion-perfiles + notificaciones + gestion-vacaciones | ✅ Completado | RabbitMQ (fan-out por exchange topic), empleados publica `empleado.creado/actualizado/retirado` (+ `PUT`, baja lógica `DELETE` y auditoría), perfiles (Python), notificaciones (Go) y vacaciones (Java, publica `vacaciones.programadas`), deduplicación por id de mensaje en todos los consumidores, 5 lenguajes, Swagger de todos los servicios por el Gateway. Bonus: correo real por SMTP (Mailhog) | `docker compose up --build` + `bash docs/reto-04/demo.sh` |
 | 5 | + auth-service + api-gateway + gestion-vacaciones + notificaciones | ✅ Completado | `auth-service` (Go): JWT HS256, activación y recuperación con token de un solo uso, ciclo de vida de la cuenta por eventos (`usuario.creado`, `usuario.recuperacion`, `cuenta.activada`, `cuenta.desactivada`); Gateway valida el JWT y aplica ADMIN / USER / propiedad; scheduler de vacaciones (`vacaciones.iniciadas` / `vacaciones.finalizadas`) con fechas y hora reales; caso borde del retiro durante las vacaciones; `bearerAuth` en el Swagger de los 6 servicios | `docker compose up --build` + `bash docs/reto-05/demo.sh` |
 | 6 | todos (+ `e2e-tests/`) | ✅ Completado | Reportes JUnit XML y de cobertura en `reports/` de cada servicio con la lógica de negocio al 100 % (el build falla si baja); integración contra PostgreSQL con Testcontainers; suite BDD en español (61 escenarios: seguridad, onboarding, vacaciones, offboarding) con JUnit XML + Cucumber JSON + HTML; comandos únicos y contenedor `bdd-tests` — ver [Automatización de pruebas](#automatización-de-pruebas-reto-6) | `make pruebas` + `make e2e` |
+| 7 | todos (+ Jenkins, SonarQube, registro) | ✅ Completado | Jenkins en Docker con plugins de reportes y trabajos creados como código (JCasC + Job DSL); un Jenkinsfile por servicio (7, en 5 lenguajes) con Test, JUnit, cobertura, SonarQube y Quality Gate (cobertura ≥ 70 %), imagen versionada y publicada en un registro local; pipeline orquestador con E2E aislada, reporte Cucumber navegable y logs archivados; 3 ejecuciones seguidas y 4 fallos simulados — ver [Integración continua](#integración-continua-reto-7) | `docker compose --profile ci up --build -d` |
 
 Cada microservicio tiene su propio README con sus endpoints y configuración: [`auth-service`](microservicios/auth-service/README.md), [`api-gateway`](microservicios/api-gateway/README.md), [`gestion-empleados`](microservicios/gestion-empleados/README.md), [`gestion-departamentos`](microservicios/gestion-departamentos/README.md), [`gestion-perfiles`](microservicios/gestion-perfiles/README.md), [`notificaciones`](microservicios/notificaciones/README.md), [`gestion-vacaciones`](microservicios/gestion-vacaciones/README.md).
 
@@ -969,9 +1192,15 @@ Correr todos los servicios (Docker):
 docker compose up --build
 ```
 
+Sumar la integración continua (Jenkins, SonarQube y el registro; ver [Integración continua](#integración-continua-reto-7)):
+
+```bash
+docker compose --profile ci up --build -d
+```
+
 ## Stack del semestre
 
-Implementado hasta el Reto 6 (5 lenguajes; el proyecto final exige al menos 4):
+Implementado hasta el Reto 7 (5 lenguajes; el proyecto final exige al menos 4):
 
 - **Node.js + Express** — `empleados-service` y `api-gateway`
 - **PHP** — `departamentos-service` (diversidad tecnológica desde el Reto 2)
@@ -980,4 +1209,5 @@ Implementado hasta el Reto 6 (5 lenguajes; el proyecto final exige al menos 4):
 - **Java + Spring Boot** — `vacaciones-service`
 - **RabbitMQ** (mensajería), **PostgreSQL** y **MySQL** (bases de datos por servicio), **Mailhog** (servidor SMTP de pruebas)
 - **Pruebas (Reto 6)**: JUnit 5 + JaCoCo + Testcontainers (Java), `node:test` (Node), `gotestsum` + `gocover-cobertura` (Go), `pytest-cov` (Python) y **Cucumber.js** para la suite BDD — ver [herramientas](#herramientas-y-frameworks)
+- **Integración continua (Reto 7)**: **Jenkins** 2.580.1 LTS (JCasC + Job DSL, plugins `junit`, `coverage`, `cucumber-reports`, `htmlpublisher`, `sonar`), **SonarQube** 9.9.8 Community y un registro local `registry:2` — ver [Integración continua](#integración-continua-reto-7)
 - Previsto: **TypeScript + React** para el frontend del proyecto final

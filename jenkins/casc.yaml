@@ -1,0 +1,100 @@
+jenkins:
+  systemMessage: "Servidor CI/CD - TalentFlow"
+  # D18: Jenkins tiene acceso al Docker de la máquina (socket), así que no puede quedar
+  # abierto. Un único administrador, creado al arrancar con las credenciales que inyecta
+  # Compose (valor académico por defecto en docker-compose.yml; .env lo sobrescribe).
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_USER}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+# D15: token de SonarQube. Lo genera sonar-init y lo deja en el volumen sonar_token
+# (montado de solo lectura); JCasC lo lee al arrancar. No hay token escrito en el repo.
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "sonar-token"
+              description: "Token del usuario jenkins en SonarQube (sonar-init)"
+              secret: "${readFile:/sonar-token/token}"
+
+unclassified:
+  # URL pública de Jenkins (enlaces de los builds y aviso de "URL vacía" en Manage Jenkins).
+  location:
+    url: "${JENKINS_URL:-http://localhost:9090/}"
+  # Servidor que usa withSonarQubeEnv('SonarQubeServer') en los Jenkinsfile.
+  sonarGlobalConfiguration:
+    buildWrapperEnabled: false
+    installations:
+      - name: "SonarQubeServer"
+        serverUrl: "${SONAR_HOST_URL}"
+        credentialsId: "sonar-token"
+
+# Trabajos como código (D2). JCasC reemplaza ${CI_REPO_URL} y ${CI_BRANCH} con las
+# variables de entorno del contenedor (docker-compose.yml) ANTES de que Job DSL lea el
+# script, así que Groovy recibe el texto ya resuelto. Si en el script hiciera falta un
+# "$" literal de Groovy, se escribe ^${...}; por eso el script usa concatenación.
+jobs:
+  - script: |
+      def repo = '${CI_REPO_URL:-https://github.com/lyc4nthrope/TalentFlow.git}'
+      def rama = '*/${CI_BRANCH:-main}'
+
+      def desdeElRepo = { String nombre, String jenkinsfile ->
+        pipelineJob(nombre) {
+          definition {
+            cpsScm {
+              scm {
+                git {
+                  remote { url(repo) }
+                  branches(rama)
+                }
+              }
+              scriptPath(jenkinsfile)
+            }
+          }
+          triggers {
+            scm('* * * * *') // Polling SCM: revisa cambios cada minuto
+          }
+        }
+      }
+
+      desdeElRepo('pipeline-orquestador-e2e', 'Jenkinsfile')
+      desdeElRepo('gestion-empleados', 'microservicios/gestion-empleados/Jenkinsfile')
+      desdeElRepo('auth-service', 'microservicios/auth-service/Jenkinsfile')
+      desdeElRepo('gestion-departamentos', 'microservicios/gestion-departamentos/Jenkinsfile')
+      desdeElRepo('gestion-vacaciones', 'microservicios/gestion-vacaciones/Jenkinsfile')
+      desdeElRepo('gestion-perfiles', 'microservicios/gestion-perfiles/Jenkinsfile')
+      desdeElRepo('api-gateway', 'microservicios/api-gateway/Jenkinsfile')
+      desdeElRepo('notificaciones', 'microservicios/notificaciones/Jenkinsfile')
+
+      // Punto 1: comprueba que Jenkins usa el Docker del host a través del socket.
+      pipelineJob('verificacion-docker') {
+        definition {
+          cps {
+            sandbox(true)
+            script('''
+              pipeline {
+                agent any
+                stages {
+                  stage('Verificación') {
+                    steps {
+                      echo 'Jenkins está correctamente configurado'
+                      sh 'whoami'
+                      sh 'docker --version'
+                      sh 'docker compose version'
+                      sh 'docker ps'
+                    }
+                  }
+                }
+              }
+            '''.stripIndent())
+          }
+        }
+      }

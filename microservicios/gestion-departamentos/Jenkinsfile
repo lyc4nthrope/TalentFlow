@@ -1,0 +1,50 @@
+// Pipeline de gestion-departamentos (Reto 7, F3).
+// Solo Build (sintaxis PHP) y Package/Publish: el servicio no tiene pruebas unitarias,
+// quedó fuera del alcance de pruebas del Reto 6 (no aparece en la tabla de reportes del
+// README). Un stage Test con un reporte vacío o con "|| true" mostraría un verde falso;
+// por eso no hay Test, ni cobertura, ni SonarQube con un gate de cobertura.
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout()
+    }
+
+    environment {
+        SERVICE_NAME = 'gestion-departamentos'
+        SERVICE_DIR  = 'microservicios/gestion-departamentos'
+        // El push lo hace el daemon del host: para él, el registro es localhost:5000.
+        REGISTRY     = "${env.REGISTRY_URL ?: 'localhost:5000'}"
+        IMAGE        = "${REGISTRY}/${SERVICE_NAME}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                // php -l de cada archivo: un error de sintaxis detiene el pipeline.
+                dir(env.SERVICE_DIR) {
+                    sh 'find . -name "*.php" -print0 | xargs -0 -n1 php -l'
+                }
+            }
+        }
+
+        stage('Package') {
+            steps {
+                sh "docker build -t ${IMAGE}:${BUILD_NUMBER} -t ${IMAGE}:latest ${SERVICE_DIR}"
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                sh "docker push ${IMAGE}:${BUILD_NUMBER}"
+                sh "docker push ${IMAGE}:latest"
+            }
+        }
+    }
+}

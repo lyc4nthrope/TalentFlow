@@ -1,0 +1,96 @@
+// Pipeline de gestion-empleados (Reto 7, F3).
+// Test ejecuta el mismo comando del Reto 6 y publica las mismas rutas (D14: tabla de
+// reportes del README). Una prueba que falla, o la cobertura por debajo del umbral del
+// Reto 6, hace fallar Test: el pipeline termina en FAILURE y no empaqueta (D12).
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout()
+    }
+
+    environment {
+        SERVICE_NAME = 'gestion-empleados'
+        SERVICE_DIR  = 'microservicios/gestion-empleados'
+        // El push lo hace el daemon del host: para él, el registro es localhost:5000.
+        REGISTRY     = "${env.REGISTRY_URL ?: 'localhost:5000'}"
+        IMAGE        = "${REGISTRY}/${SERVICE_NAME}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                // Las dependencias vienen de los workspaces de la raíz (npm ci en la raíz).
+                sh 'npm ci'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                // cd microservicios/gestion-empleados && npm test
+                dir(env.SERVICE_DIR) {
+                    sh 'npm test'
+                }
+            }
+            post {
+                always {
+                    junit testResults: 'microservicios/gestion-empleados/reports/junit.xml'
+                    recordCoverage(
+                        tools: [[parser: 'LCOV', pattern: 'microservicios/gestion-empleados/reports/lcov.info']],
+                        sourceCodeRetention: 'EVERY_BUILD',
+                        failOnError: true
+                    )
+                }
+            }
+        }
+
+        // SonarQube (F4, D15): el análisis importa el reporte de cobertura de Test; las
+        // exclusiones de cobertura son las mismas del Reto 6 (D11/D14), así la cobertura de
+        // SonarQube mide la misma lógica de negocio. SONAR_HABILITADO=false salta ambos stages.
+        stage('SonarQube') {
+            when { environment name: 'SONAR_HABILITADO', value: 'true' }
+            steps {
+                dir(env.SERVICE_DIR) {
+                    withSonarQubeEnv('SonarQubeServer') {
+                        sh '''
+                        sonar-scanner \\
+                          -Dsonar.projectKey=gestion-empleados \\
+                          -Dsonar.sources=src \\
+                          -Dsonar.tests=tests \\
+                          -Dsonar.coverage.exclusions=src/app.js,src/openapi.js,src/server.js,src/clients/**,src/db/**,src/repository/**,src/routes/**,src/eventos/publicador.js \\
+                          -Dsonar.javascript.lcov.reportPaths=reports/lcov.info
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            when { environment name: 'SONAR_HABILITADO', value: 'true' }
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Package') {
+            steps {
+                sh "docker build -t ${IMAGE}:${BUILD_NUMBER} -t ${IMAGE}:latest -f ${SERVICE_DIR}/Dockerfile ."  // contexto: la raíz (usa el package-lock.json de los workspaces)
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                sh "docker push ${IMAGE}:${BUILD_NUMBER}"
+                sh "docker push ${IMAGE}:latest"
+            }
+        }
+    }
+}

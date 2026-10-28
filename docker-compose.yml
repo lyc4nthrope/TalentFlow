@@ -7,6 +7,123 @@ x-jwt: &jwt
   JWT_ISSUER: ${JWT_ISSUER:-auth-service}
 
 services:
+  # ---------------------------------------------------------------------------
+  # Integración continua (Reto 7). Perfil "ci" (D11): `docker compose up` sigue
+  # levantando solo el sistema; la CI se levanta con
+  #   docker compose --profile ci up --build -d
+  # ---------------------------------------------------------------------------
+  # Registro local de imágenes (Reto 7, D3).
+  registry:
+    container_name: docker-registry
+    profiles: ["ci"]
+    image: registry:2
+    ports:
+    - "5000:5000"
+    volumes:
+    - registry_data:/var/lib/registry
+    networks:
+    - microservices-network
+  # SonarQube y su base de datos (Reto 7, D4).
+  sonarqube:
+    container_name: sonarqube
+    profiles: ["ci"]
+    # D20: imagen fijada a 9.9.8 con un arranque que pone límites de disco absolutos.
+    build: ./sonar/sonarqube
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_JDBC_URL=jdbc:postgresql://sonar-db:5432/sonar
+      - SONAR_JDBC_USERNAME=sonar
+      - SONAR_JDBC_PASSWORD=sonar
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions
+    depends_on:
+      - sonar-db
+    networks:
+      - microservices-network
+    
+  # Configuración de SonarQube como código (Reto 7, D15 y D19): contraseña de admin,
+  # usuario y token de Jenkins, quality gate "TalentFlow" (>= 70 %) y webhook. Corre y
+  # termina; Jenkins arranca solo si terminó bien y lee el token del volumen sonar_token.
+  sonar-init:
+    container_name: sonar-init
+    profiles: ["ci"]
+    build:
+      context: ./sonar
+    environment:
+      # Valor académico para arrancar con un solo comando; .env lo sobrescribe.
+      - SONAR_ADMIN_PASSWORD=${SONAR_ADMIN_PASSWORD:-talentflow_sonar_2026}
+    volumes:
+      - sonar_token:/sonar-token
+    depends_on:
+      - sonarqube
+    networks:
+      - microservices-network
+
+  sonar-db:
+    container_name: sonar-db
+    profiles: ["ci"]
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=sonar
+      - POSTGRES_USER=sonar
+      - POSTGRES_PASSWORD=sonar
+    volumes:
+      - sonar_db_data:/var/lib/postgresql/data
+    networks:
+      - microservices-network
+
+  # Jenkins (Reto 7, D1/D2): imagen propia con plugins y herramientas; trabajos por JCasC.
+  jenkins:
+    container_name: jenkins
+    profiles: ["ci"]
+    build:
+      context: ./jenkins
+      dockerfile: Dockerfile
+    # Root dentro del contenedor (D17): quien usa el socket de Docker ya controla el host,
+    # así que root aquí no agrega privilegio. Funciona igual en Docker Desktop (socket de
+    # root) y en Linux (root:docker con un GID que cambia entre máquinas), sin chmod en el host.
+    user: root
+    ports:
+      - "9090:8080"       # Interfaz web
+      - "50000:50000"     # Comunicación con agentes
+    volumes:
+      - jenkins_data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock   # Docker del host (Docker-outside-of-Docker)
+      - ./jenkins:/var/jenkins_home/casc_configs    # casc.yaml
+      - npm_cache:/root/.npm                        # caché de npm entre builds
+      - sonar_token:/sonar-token:ro                 # token de SonarQube (lo escribe sonar-init)
+      # Workspaces en la MISMA ruta en el host y en el contenedor (D16): los bind mounts
+      # que lanzan los pipelines los resuelve el daemon del host. Ejecutar desde la raíz del repo.
+      - ${HOST_WORKSPACE:-${PWD}/.jenkins-workspace}:${HOST_WORKSPACE:-${PWD}/.jenkins-workspace}
+    environment:
+      # Cada trabajo trabaja en <HOST_WORKSPACE>/<nombre del trabajo> (D16).
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Djenkins.model.Jenkins.workspacesDir=${HOST_WORKSPACE:-${PWD}/.jenkins-workspace}/$${ITEM_FULL_NAME}
+      - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
+      # URL con la que Jenkins arma sus enlaces (puerto publicado en el host).
+      - JENKINS_URL=${JENKINS_URL:-http://localhost:9090/}
+      - HOST_WORKSPACE=${HOST_WORKSPACE:-${PWD}/.jenkins-workspace}
+      # Repo y rama que leen los trabajos de casc.yaml (por defecto, main en GitHub).
+      - CI_REPO_URL=${CI_REPO_URL:-https://github.com/lyc4nthrope/TalentFlow.git}
+      - CI_BRANCH=${CI_BRANCH:-main}
+      # D18: administrador de Jenkins. Valor académico para que arranque con un solo
+      # comando; para cambiarlo, definir JENKINS_ADMIN_PASSWORD en .env.
+      - JENKINS_ADMIN_USER=${JENKINS_ADMIN_USER:-admin}
+      - JENKINS_ADMIN_PASSWORD=${JENKINS_ADMIN_PASSWORD:-talentflow_ci_2026}
+      # El push lo hace el daemon del host, no el contenedor: para él, el registro es su
+      # puerto publicado localhost:5000 (y localhost no exige TLS).
+      - REGISTRY_URL=${REGISTRY_URL:-localhost:5000}
+      - SONAR_HOST_URL=http://sonarqube:9000
+      # Stages SonarQube y Quality Gate de los pipelines (F4); false los salta.
+      - SONAR_HABILITADO=${SONAR_HABILITADO:-true}
+    depends_on:
+      sonar-init:
+        condition: service_completed_successfully
+    networks:
+      - microservices-network
+
 
   # Base de Datos Autenticación (PostgreSQL) — Reto 5
   database-auth:
@@ -480,3 +597,12 @@ volumes:
   vol-notificaciones:
   vol-perfiles:
   vol-vacaciones:
+  # Reto 7 (perfil "ci")
+  jenkins_data:
+  npm_cache:
+  sonarqube_data:
+  sonarqube_logs:
+  sonarqube_extensions:
+  sonar_db_data:
+  registry_data:
+  sonar_token:

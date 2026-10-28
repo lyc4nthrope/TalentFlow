@@ -1,0 +1,99 @@
+// Pipeline de gestion-vacaciones (Reto 7, F3).
+// Test ejecuta el mismo comando del Reto 6 y publica las mismas rutas (D14: tabla de
+// reportes del README). Una prueba que falla, o la cobertura por debajo del umbral del
+// Reto 6, hace fallar Test: el pipeline termina en FAILURE y no empaqueta (D12).
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout()
+    }
+
+    environment {
+        SERVICE_NAME = 'gestion-vacaciones'
+        SERVICE_DIR  = 'microservicios/gestion-vacaciones'
+        // El push lo hace el daemon del host: para él, el registro es localhost:5000.
+        REGISTRY     = "${env.REGISTRY_URL ?: 'localhost:5000'}"
+        IMAGE        = "${REGISTRY}/${SERVICE_NAME}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                dir(env.SERVICE_DIR) {
+                    sh 'mvn -B -q clean compile'
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                // cd microservicios/gestion-vacaciones && mvn verify (unitarias + integración con Testcontainers)
+                dir(env.SERVICE_DIR) {
+                    sh 'mvn -B verify'
+                }
+            }
+            post {
+                always {
+                    junit testResults: 'microservicios/gestion-vacaciones/reports/junit/*.xml'
+                    recordCoverage(
+                        tools: [[parser: 'JACOCO', pattern: 'microservicios/gestion-vacaciones/reports/coverage/jacoco.xml']],
+                        sourceCodeRetention: 'EVERY_BUILD',
+                        failOnError: true
+                    )
+                }
+            }
+        }
+
+        // SonarQube (F4, D15): el análisis importa el reporte de cobertura de Test; las
+        // exclusiones de cobertura son las mismas del Reto 6 (D11/D14), así la cobertura de
+        // SonarQube mide la misma lógica de negocio. SONAR_HABILITADO=false salta ambos stages.
+        stage('SonarQube') {
+            when { environment name: 'SONAR_HABILITADO', value: 'true' }
+            steps {
+                dir(env.SERVICE_DIR) {
+                    withSonarQubeEnv('SonarQubeServer') {
+                        sh '''
+                        sonar-scanner \\
+                          -Dsonar.projectKey=gestion-vacaciones \\
+                          -Dsonar.sources=src/main/java \\
+                          -Dsonar.tests=src/test/java \\
+                          -Dsonar.java.binaries=target/classes \\
+                          -Dsonar.java.test.binaries=target/test-classes \\
+                          -Dsonar.coverage.exclusions=src/main/java/com/talentflow/vacaciones/infraestructura/**,src/main/java/com/talentflow/vacaciones/Configuracion*.java,src/main/java/com/talentflow/vacaciones/VacacionesApplication.java \\
+                          -Dsonar.coverage.jacoco.xmlReportPaths=reports/coverage/jacoco.xml
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            when { environment name: 'SONAR_HABILITADO', value: 'true' }
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Package') {
+            steps {
+                sh "docker build -t ${IMAGE}:${BUILD_NUMBER} -t ${IMAGE}:latest ${SERVICE_DIR}"
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                sh "docker push ${IMAGE}:${BUILD_NUMBER}"
+                sh "docker push ${IMAGE}:latest"
+            }
+        }
+    }
+}
