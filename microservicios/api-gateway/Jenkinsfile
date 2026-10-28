@@ -1,0 +1,94 @@
+// Pipeline de api-gateway (Reto 7, F3).
+// Test ejecuta el mismo comando del Reto 6 y publica las mismas rutas (D14: tabla de
+// reportes del README). Una prueba que falla, o la cobertura por debajo del umbral del
+// Reto 6, hace fallar Test: el pipeline termina en FAILURE y no empaqueta (D12).
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout()
+    }
+
+    environment {
+        SERVICE_NAME = 'api-gateway'
+        SERVICE_DIR  = 'microservicios/api-gateway'
+        // El push lo hace el daemon del host: para él, el registro es localhost:5000.
+        REGISTRY     = "${env.REGISTRY_URL ?: 'localhost:5000'}"
+        IMAGE        = "${REGISTRY}/${SERVICE_NAME}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                // Las dependencias vienen de los workspaces de la raíz (npm ci en la raíz).
+                sh 'npm ci'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                // cd microservicios/api-gateway && npm test
+                dir(env.SERVICE_DIR) {
+                    sh 'npm test'
+                }
+            }
+            post {
+                always {
+                    junit testResults: 'microservicios/api-gateway/reports/junit.xml'
+                    recordCoverage(
+                        tools: [[parser: 'LCOV', pattern: 'microservicios/api-gateway/reports/lcov.info']],
+                        sourceCodeRetention: 'EVERY_BUILD',
+                        failOnError: true
+                    )
+                }
+            }
+        }
+
+        // SonarQube y su Quality Gate se activan en F4 (SONAR_HABILITADO=true en Compose).
+        stage('SonarQube') {
+            when { environment name: 'SONAR_HABILITADO', value: 'true' }
+            steps {
+                dir(env.SERVICE_DIR) {
+                    withSonarQubeEnv('SonarQubeServer') {
+                        sh '''
+                        sonar-scanner \\
+                          -Dsonar.projectKey=api-gateway \\
+                          -Dsonar.sources=. \\
+                          -Dsonar.exclusions=tests/**,reports/**,node_modules/** \\
+                          -Dsonar.tests=tests \\
+                          -Dsonar.javascript.lcov.reportPaths=reports/lcov.info
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            when { environment name: 'SONAR_HABILITADO', value: 'true' }
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Package') {
+            steps {
+                sh "docker build -t ${IMAGE}:${BUILD_NUMBER} -t ${IMAGE}:latest ${SERVICE_DIR}"
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                sh "docker push ${IMAGE}:${BUILD_NUMBER}"
+                sh "docker push ${IMAGE}:latest"
+            }
+        }
+    }
+}

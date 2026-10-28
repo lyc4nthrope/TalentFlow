@@ -1,74 +1,75 @@
+// Pipeline de gestion-empleados (Reto 7, F3).
+// Test ejecuta el mismo comando del Reto 6 y publica las mismas rutas (D14: tabla de
+// reportes del README). Una prueba que falla, o la cobertura por debajo del umbral del
+// Reto 6, hace fallar Test: el pipeline termina en FAILURE y no empaqueta (D12).
 pipeline {
     agent any
 
+    options {
+        skipDefaultCheckout()
+    }
+
     environment {
-        SERVICE_NAME = "gestion-empleados"
-        REGISTRY  = "${env.REGISTRY_URL ?: 'localhost:5000'}"
-        SONAR_URL = "${env.SONAR_HOST_URL ?: 'http://sonarqube:9000'}"
+        SERVICE_NAME = 'gestion-empleados'
+        SERVICE_DIR  = 'microservicios/gestion-empleados'
+        // El push lo hace el daemon del host: para él, el registro es localhost:5000.
+        REGISTRY     = "${env.REGISTRY_URL ?: 'localhost:5000'}"
+        IMAGE        = "${REGISTRY}/${SERVICE_NAME}"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                echo 'Obteniendo código del repositorio...'
+                checkout scm
             }
         }
 
         stage('Build') {
             steps {
-                dir('microservicios/gestion-empleados') {
-                    echo 'Compilando e instalando dependencias...'
-                    sh 'npm ci'
-                }
+                // Las dependencias vienen de los workspaces de la raíz (npm ci en la raíz).
+                sh 'npm ci'
             }
         }
 
         stage('Test') {
             steps {
-                dir('microservicios/gestion-empleados') {
-                    echo 'Ejecutando pruebas unitarias e integración...'
-                    sh 'npm test || true'
+                // cd microservicios/gestion-empleados && npm test
+                dir(env.SERVICE_DIR) {
+                    sh 'npm test'
                 }
             }
-
             post {
                 always {
-                    dir('microservicios/gestion-empleados') {
-                        junit allowEmptyResults: true, testResults: '**/reports/junit.xml'
-                        recordCoverage(
-                            tools: [[parser: 'LCOV', pattern: 'reports/lcov.info']],
-                            sourceCodeRetention: 'EVERY_BUILD'
-                        )
+                    junit testResults: 'microservicios/gestion-empleados/reports/junit.xml'
+                    recordCoverage(
+                        tools: [[parser: 'LCOV', pattern: 'microservicios/gestion-empleados/reports/lcov.info']],
+                        sourceCodeRetention: 'EVERY_BUILD',
+                        failOnError: true
+                    )
+                }
+            }
+        }
+
+        // SonarQube y su Quality Gate se activan en F4 (SONAR_HABILITADO=true en Compose).
+        stage('SonarQube') {
+            when { environment name: 'SONAR_HABILITADO', value: 'true' }
+            steps {
+                dir(env.SERVICE_DIR) {
+                    withSonarQubeEnv('SonarQubeServer') {
+                        sh '''
+                        sonar-scanner \\
+                          -Dsonar.projectKey=gestion-empleados \\
+                          -Dsonar.sources=src \\
+                          -Dsonar.tests=tests \\
+                          -Dsonar.javascript.lcov.reportPaths=reports/lcov.info
+                        '''
                     }
                 }
             }
         }
 
-        stage('SonarQube') {
-            steps {
-                dir('microservicios/gestion-empleados') {
-                    echo 'Ejecutando análisis de SonarQube...'
-                    withSonarQubeEnv('SonarQubeServer') { 
-                        sh '''
-                            if ! command -v unzip >/dev/null 2>&1; then
-                                apt-get update && apt-get install -y unzip
-                            fi
-
-                            if [ ! -d "/tmp/sonar-scanner" ]; then
-                                curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006.zip
-                                unzip -q /tmp/sonar-scanner.zip -d /tmp/
-                                mv /tmp/sonar-scanner-5.0.1.3006 /tmp/sonar-scanner
-                            fi
-                            
-                            /tmp/sonar-scanner/bin/sonar-scanner \
-                              -Dsonar.host.url=${SONAR_HOST_URL}
-                        '''
-                    }  
-                }
-            }
-        }
-
         stage('Quality Gate') {
+            when { environment name: 'SONAR_HABILITADO', value: 'true' }
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
@@ -78,35 +79,15 @@ pipeline {
 
         stage('Package') {
             steps {
-                dir('microservicios/gestion-empleados') {
-                    sh "docker build -t ${SERVICE_NAME}:${BUILD_NUMBER} -t ${SERVICE_NAME}:latest ."
-                    echo "✅ Imagen construida: ${SERVICE_NAME}:${BUILD_NUMBER}"
-                }
+                sh "docker build -t ${IMAGE}:${BUILD_NUMBER} -t ${IMAGE}:latest -f ${SERVICE_DIR}/Dockerfile ."  // contexto: la raíz (usa el package-lock.json de los workspaces)
             }
         }
 
         stage('Publish') {
             steps {
-                sh """
-                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
-                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${REGISTRY}/${SERVICE_NAME}:latest
-                    docker push ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
-                    docker push ${REGISTRY}/${SERVICE_NAME}:latest
-                """
-                echo "📤 Imagen publicada en registry: ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}"
+                sh "docker push ${IMAGE}:${BUILD_NUMBER}"
+                sh "docker push ${IMAGE}:latest"
             }
-        }
-    }
-
-    post {
-        success {
-            echo '✅ Pipeline finalizado con éxito.'
-        }
-        unstable {
-            echo '⚠️ El código compiló pero hay pruebas fallando. Revisa la pestaña Test Result.'
-        }
-        failure {
-            echo '❌ Error de compilación o del pipeline.'
         }
     }
 }

@@ -1,116 +1,50 @@
+// Pipeline de gestion-departamentos (Reto 7, F3).
+// Solo Build (sintaxis PHP) y Package/Publish: el servicio no tiene pruebas unitarias,
+// quedó fuera del alcance de pruebas del Reto 6 (no aparece en la tabla de reportes del
+// README). Un stage Test con un reporte vacío o con "|| true" mostraría un verde falso;
+// por eso no hay Test, ni cobertura, ni SonarQube con un gate de cobertura.
 pipeline {
     agent any
 
+    options {
+        skipDefaultCheckout()
+    }
+
     environment {
-        SERVICE_NAME = "gestion-departamentos"
-        REGISTRY  = "${env.REGISTRY_URL ?: 'localhost:5000'}"
-        SONAR_URL = "${env.SONAR_HOST_URL ?: 'http://sonarqube:9000'}"
+        SERVICE_NAME = 'gestion-departamentos'
+        SERVICE_DIR  = 'microservicios/gestion-departamentos'
+        // El push lo hace el daemon del host: para él, el registro es localhost:5000.
+        REGISTRY     = "${env.REGISTRY_URL ?: 'localhost:5000'}"
+        IMAGE        = "${REGISTRY}/${SERVICE_NAME}"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                echo 'Obteniendo código del repositorio...'
+                checkout scm
             }
         }
 
-        stage('Build / Lint') {
+        stage('Build') {
             steps {
-                dir('microservicios/gestion-departamentos') {
-                    echo 'Instalando herramientas, PHP, Java y verificando sintaxis...'
-                    sh 'find . -name "*.php" -exec php -l {} +'
-                }
-            }
-        }
-
-        stage('Test') {
-            steps {
-                dir('microservicios/gestion-departamentos') {
-                    echo 'Ejecutando pruebas unitarias con PHPUnit...'
-                    sh '''
-                        mkdir -p reports
-                        if [ -d "tests" ]; then
-                            phpunit --log-junit reports/junit.xml tests || true
-                        elif [ -f "phpunit.xml" ]; then
-                            phpunit --log-junit reports/junit.xml || true
-                        else
-                            echo "No se encontraron pruebas unitarias, generando reporte vacío..."
-                            echo '<?xml version="1.0" encoding="UTF-8"?><testsuites></testsuites>' > reports/junit.xml
-                        fi
-                    '''
-                }
-            }
-
-            post {
-                always {
-                    dir('microservicios/gestion-departamentos') {
-                        junit allowEmptyResults: true, testResults: 'reports/junit.xml'
-                    }
-                }
-            }
-        }
-
-        stage('SonarQube') {
-            steps {
-                dir('microservicios/gestion-departamentos') {
-                    echo 'Ejecutando SonarQube Scanner nativo...'
-                    withSonarQubeEnv('SonarQubeServer') {
-                        sh '''
-                            if [ ! -f /tmp/sonar-scanner/bin/sonar-scanner ]; then
-                                echo "Descargando e instalando SonarScanner..."
-                                curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-                                unzip -q /tmp/sonar-scanner.zip -d /tmp/
-                                mv /tmp/sonar-scanner-5.0.1.3006-linux /tmp/sonar-scanner
-                            fi
-
-                            /tmp/sonar-scanner/bin/sonar-scanner \
-                            -Dsonar.host.url=${SONAR_HOST_URL} \
-                            -Dsonar.sources=.
-                        '''
-                    }
-                }
-            }
-        }
-
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
+                // php -l de cada archivo: un error de sintaxis detiene el pipeline.
+                dir(env.SERVICE_DIR) {
+                    sh 'find . -name "*.php" -print0 | xargs -0 -n1 php -l'
                 }
             }
         }
 
         stage('Package') {
             steps {
-                dir('microservicios/gestion-departamentos') {
-                    sh "docker build -t ${SERVICE_NAME}:${BUILD_NUMBER} -t ${SERVICE_NAME}:latest ."
-                    echo "✅ Imagen construida: ${SERVICE_NAME}:${BUILD_NUMBER}"
-                }
+                sh "docker build -t ${IMAGE}:${BUILD_NUMBER} -t ${IMAGE}:latest ${SERVICE_DIR}"
             }
         }
 
         stage('Publish') {
             steps {
-                sh """
-                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
-                    docker tag ${SERVICE_NAME}:${BUILD_NUMBER} ${REGISTRY}/${SERVICE_NAME}:latest
-                    docker push ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}
-                    docker push ${REGISTRY}/${SERVICE_NAME}:latest
-                """
-                echo "📤 Imagen publicada en registry: ${REGISTRY}/${SERVICE_NAME}:${BUILD_NUMBER}"
+                sh "docker push ${IMAGE}:${BUILD_NUMBER}"
+                sh "docker push ${IMAGE}:latest"
             }
-        }
-    }
-
-    post {
-        success {
-            echo '✅ Pipeline finalizado con éxito.'
-        }
-        unstable {
-            echo '⚠️ Hay pruebas fallando. Revisa la pestaña Test Result.'
-        }
-        failure {
-            echo '❌ Error de sintaxis, compilación o ejecución en PHP.'
         }
     }
 }

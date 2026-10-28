@@ -68,7 +68,17 @@ RUN mkdir -p $GOPATH && \
     GOSUMDB=off go install github.com/boumenot/gocover-cobertura@v1.2.0 && \
     chmod -R 777 $GOPATH
 
-# 7. Asignar usuario al grupo docker
+# 7. Node.js de la tabla de herramientas del README (24.14.0). El de apt (20.x) no
+#    reconoce --test-coverage-include ni los umbrales que usa `npm test` (Reto 6), así
+#    que el Test de empleados y del Gateway fallaría. Se instala en /usr/local, que va
+#    antes que /usr/bin en el PATH. x64 o arm64 según la máquina (Linux o Mac).
+ARG NODE_VERSION=24.14.0
+RUN ARCH=$(uname -m | sed -e 's/x86_64/x64/' -e 's/aarch64/arm64/') && \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${ARCH}.tar.xz" \
+    | tar -xJ -C /usr/local --strip-components=1 --exclude='*.md' --exclude=LICENSE && \
+    node --version
+
+# 8. Asignar usuario al grupo docker
 RUN groupadd -f docker && usermod -aG docker jenkins
 
 USER jenkins

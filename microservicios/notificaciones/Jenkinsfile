@@ -1,0 +1,96 @@
+// Pipeline de notificaciones (Reto 7, F3).
+// Test ejecuta el mismo comando del Reto 6 y publica las mismas rutas (D14: tabla de
+// reportes del README). Una prueba que falla, o la cobertura por debajo del umbral del
+// Reto 6, hace fallar Test: el pipeline termina en FAILURE y no empaqueta (D12).
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout()
+    }
+
+    environment {
+        SERVICE_NAME = 'notificaciones'
+        SERVICE_DIR  = 'microservicios/notificaciones'
+        // El push lo hace el daemon del host: para él, el registro es localhost:5000.
+        REGISTRY     = "${env.REGISTRY_URL ?: 'localhost:5000'}"
+        IMAGE        = "${REGISTRY}/${SERVICE_NAME}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                // Mismo toolchain que fija su Makefile (go1.25.0 no trae covdata): así Go lo
+                // descarga una sola vez para Build y Test.
+                dir(env.SERVICE_DIR) {
+                    sh 'GOTOOLCHAIN=go1.25.14 go build ./...'
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                // make -C microservicios/notificaciones test
+                sh 'make -C ${SERVICE_DIR} test'
+            }
+            post {
+                always {
+                    junit testResults: 'microservicios/notificaciones/reports/junit.xml'
+                    recordCoverage(
+                        tools: [[parser: 'COBERTURA', pattern: 'microservicios/notificaciones/reports/coverage.xml']],
+                        sourceCodeRetention: 'EVERY_BUILD',
+                        failOnError: true
+                    )
+                }
+            }
+        }
+
+        // SonarQube y su Quality Gate se activan en F4 (SONAR_HABILITADO=true en Compose).
+        stage('SonarQube') {
+            when { environment name: 'SONAR_HABILITADO', value: 'true' }
+            steps {
+                dir(env.SERVICE_DIR) {
+                    withSonarQubeEnv('SonarQubeServer') {
+                        sh '''
+                        sonar-scanner \\
+                          -Dsonar.projectKey=notificaciones \\
+                          -Dsonar.sources=. \\
+                          -Dsonar.exclusions=**/*_test.go,reports/** \\
+                          -Dsonar.tests=. \\
+                          -Dsonar.test.inclusions=**/*_test.go \\
+                          -Dsonar.go.coverage.reportPaths=reports/coverage.out
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            when { environment name: 'SONAR_HABILITADO', value: 'true' }
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Package') {
+            steps {
+                sh "docker build -t ${IMAGE}:${BUILD_NUMBER} -t ${IMAGE}:latest ${SERVICE_DIR}"
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                sh "docker push ${IMAGE}:${BUILD_NUMBER}"
+                sh "docker push ${IMAGE}:latest"
+            }
+        }
+    }
+}

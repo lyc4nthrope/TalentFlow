@@ -47,6 +47,8 @@ jobs:
       desdeElRepo('gestion-departamentos', 'microservicios/gestion-departamentos/Jenkinsfile')
       desdeElRepo('gestion-vacaciones', 'microservicios/gestion-vacaciones/Jenkinsfile')
       desdeElRepo('gestion-perfiles', 'microservicios/gestion-perfiles/Jenkinsfile')
+      desdeElRepo('api-gateway', 'microservicios/api-gateway/Jenkinsfile')
+      desdeElRepo('notificaciones', 'microservicios/notificaciones/Jenkinsfile')
 
       // Punto 1: comprueba que Jenkins usa el Docker del host a través del socket.
       pipelineJob('verificacion-docker') {
