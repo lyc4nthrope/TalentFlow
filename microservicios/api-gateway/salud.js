@@ -51,7 +51,12 @@ async function saludDelSistema(servicios, opciones) {
         timestamp: new Date().toISOString(),
         sistema: problemas.length === 0 ? 'OK' : 'DEGRADADO',
         problemas,
-        servicios: porServicio
+        servicios: porServicio,
+        // Formato del PDF (Reto 8, D4): cada servicio de atrás, UP o DOWN. El Gateway sigue
+        // UP (y 200) aunque alguno caiga: su propia salud no depende de ellos.
+        checks: Object.fromEntries(
+            Object.entries(porServicio).map(([nombre, estado]) => [nombre, estado.status === 'UP' ? 'UP' : 'DOWN'])
+        )
     };
 }
 

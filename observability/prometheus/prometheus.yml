@@ -18,11 +18,12 @@ global:
 
 scrape_configs:
   # El Gateway va primero (PDF): es la entrada única y su latencia y tasa de error son
-  # las que ve el cliente.
+  # las que ve el cliente. Puerto 9464 y no 8080 como en el ejemplo del PDF (D13): el 8080
+  # está publicado en el host y no debe exponer las métricas.
   - job_name: 'api-gateway'
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['api-gateway:8080']
+      - targets: ['api-gateway:9464']
 
   - job_name: 'empleados-service'
     metrics_path: '/metrics'

@@ -249,9 +249,14 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    # Reto 8, D13: las métricas van en un puerto interno aparte, solo en la red de Docker
+    # (Prometheus las lee ahí); el 8080 publicado no las sirve.
+    expose:
+      - "9464"
     environment:
       <<: *jwt
       PORT: 8080
+      METRICS_PORT: 9464
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
       NOTIFICACIONES_SERVICE_URL: http://notificaciones-service:8084

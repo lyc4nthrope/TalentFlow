@@ -4,6 +4,7 @@ const { crearRepositorioEmpleadosPostgres } = require("./repository/empleados.re
 const { crearClienteDepartamentos } = require("./clients/departamentos.client");
 const { crearPublicadorEventos } = require("./eventos/publicador");
 const { crearPool } = require("./db/pool");
+const { crearMetricas } = require("./metricas");
 
 const PUERTO = process.env.PORT || 8080;
 const DEPARTAMENTOS_SERVICE_URL =
@@ -36,7 +37,8 @@ const publicador = crearPublicadorEventos({
 const servicio = crearServicioEmpleados(repositorio, clienteDepartamentos, publicador);
 const app = crearApp(servicio, clienteDepartamentos, {
   verificarBaseDeDatos: () => pool.query("SELECT 1"),
-  publicador
+  publicador,
+  metricas: crearMetricas()
 });
 
 // Cuando el Circuit Breaker vuelve a CERRAR (departamentos-service se restableció),

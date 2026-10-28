@@ -3,6 +3,7 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const { saludDelSistema } = require('./salud');
 const { verificarToken, leerBearer } = require('./autenticacion');
 const { analizarRuta, esRutaPublica, decidirAcceso, servicioDeRuta } = require('./autorizacion');
+const { middlewareMetricas } = require('./metricas');
 
 // Cabeceras de identidad que el Gateway propaga a los servicios (Reto 5, D10). Nunca se
 // aceptan del cliente: se borran en toda petición y solo se agregan tras validar el token.
@@ -19,10 +20,14 @@ const errorJson = (res, status, error, message, req) =>
  * @param {string} config.jwtIssuer  emisor esperado del token (claim iss)
  * @param {Array<{nombre: string, prefijo: string, url: string}>} config.servicios
  * @param {Function} [config.salud]  agregador del /health (por defecto, saludDelSistema)
+ * @param {object} [config.metricas]  contadores de crearMetricas(); sin ellos no se mide
  */
-function crearApp({ jwtSecret, jwtIssuer, servicios, salud = saludDelSistema }) {
+function crearApp({ jwtSecret, jwtIssuer, servicios, salud = saludDelSistema, metricas }) {
     const app = express();
     const prefijos = servicios.map((s) => s.prefijo);
+
+    // Reto 8, D5: se mide toda petición, incluidas las rechazadas (400/401/403/404).
+    if (metricas) app.use(middlewareMetricas(metricas, prefijos));
 
     // Salud propia del Gateway + estado de cada servicio, su BD, el Circuit Breaker y la
     // conexión de cada uno con el broker; "problemas" explica por qué el sistema está
