@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "pretest": "node -e \"const fs=require('fs'),path=require('path');fs.mkdirSync('reports',{recursive:true});for(const f of fs.readdirSync('reports'))fs.rmSync(path.join('reports',f),{recursive:true,force:true})\"",
+    "pretest": "node -e \"const fs=require('fs'),path=require('path');fs.mkdirSync('reports',{recursive:true});for(const f of fs.readdirSync('reports')){try{fs.rmSync(path.join('reports',f),{recursive:true,force:true})}catch(e){}}\"",
     "test": "cucumber-js",
     "test:unidad": "node -e \"const fs=require('fs');fs.rmSync('reports-unidad',{recursive:true,force:true});fs.mkdirSync('reports-unidad')\" && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=reports-unidad/junit.xml \"tests/*.test.js\"",
     "esperar-sistema": "node scripts/esperar-sistema.js"
