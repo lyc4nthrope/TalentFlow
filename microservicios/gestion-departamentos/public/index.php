@@ -3,6 +3,7 @@
 require __DIR__ . '/../src/Database.php';
 require __DIR__ . '/../src/DepartamentoRepository.php';
 require __DIR__ . '/../src/OpenApi.php';
+require __DIR__ . '/../src/Metricas.php';
 
 const FRASES_ESTADO = [
     400 => 'Bad Request',
@@ -31,6 +32,22 @@ function responderError(int $status, string $mensaje, array $errores = []): void
 
 $metodo = $_SERVER['REQUEST_METHOD'];
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+
+// --- Métricas (Reto 8, D5): GET /metrics no se cuenta; el resto se mide al terminar ---
+$metricas = Metricas::desdeEntorno();
+if ($metodo === 'GET' && $uri === '/metrics') {
+    header('Content-Type: text/plain; version=0.0.4; charset=utf-8');
+    echo $metricas->exposicion();
+    exit;
+}
+$inicio = hrtime(true);
+// Corre también tras cada exit: registra el código que de verdad se respondió.
+register_shutdown_function(function () use ($metricas, $metodo, $uri, $inicio): void {
+    $error = error_get_last();
+    $fatal = $error !== null && ($error['type'] & (E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR)) !== 0;
+    $estado = $fatal ? 500 : (int) http_response_code();
+    $metricas->registrar($metodo, Metricas::ruta($metodo, $uri), $estado, (hrtime(true) - $inicio) / 1e9);
+});
 
 // --- Documentación (no requieren base de datos) ---
 // Bajo el prefijo del servicio: el Gateway solo enruta /departamentos/*. Van antes de
@@ -63,7 +80,11 @@ if ($metodo === 'GET' && $uri === '/health') {
     http_response_code($statusGeneral === 'UP' ? 200 : 503);
     echo json_encode([
         'status' => $statusGeneral,
+        'service' => 'departamentos-service',
         'timestamp' => gmdate('Y-m-d\TH:i:s\Z'),
+        // Formato del PDF (Reto 8, D4); "components" se conserva para el Gateway (Reto 3).
+        // Este servicio no usa el broker: solo informa la base de datos.
+        'checks' => ['database' => $dbStatus],
         'components' => [
             'app' => 'UP',
             'db' => $dbStatus,
