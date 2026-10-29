@@ -4,6 +4,7 @@ require __DIR__ . '/../src/Database.php';
 require __DIR__ . '/../src/DepartamentoRepository.php';
 require __DIR__ . '/../src/OpenApi.php';
 require __DIR__ . '/../src/Metricas.php';
+require __DIR__ . '/../src/Trazas.php';
 
 const FRASES_ESTADO = [
     400 => 'Bad Request',
@@ -41,12 +42,18 @@ if ($metodo === 'GET' && $uri === '/metrics') {
     exit;
 }
 $inicio = hrtime(true);
+$trazas = Trazas::desdeEntorno($_SERVER['HTTP_TRACEPARENT'] ?? null);
 // Corre también tras cada exit: registra el código que de verdad se respondió.
-register_shutdown_function(function () use ($metricas, $metodo, $uri, $inicio): void {
+register_shutdown_function(function () use ($metricas, $trazas, $metodo, $uri, $inicio): void {
     $error = error_get_last();
     $fatal = $error !== null && ($error['type'] & (E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR)) !== 0;
     $estado = $fatal ? 500 : (int) http_response_code();
-    $metricas->registrar($metodo, Metricas::ruta($metodo, $uri), $estado, (hrtime(true) - $inicio) / 1e9);
+    $ruta = Metricas::ruta($metodo, $uri);
+    $metricas->registrar($metodo, $ruta, $estado, (hrtime(true) - $inicio) / 1e9);
+    // El healthcheck de Docker (cada 5 s) no genera trazas: taparía las de negocio.
+    if ($ruta !== '/health') {
+        $trazas->terminar($metodo, $ruta, $uri, $estado, $_SERVER['REQUEST_TIME_FLOAT'], microtime(true));
+    }
 });
 
 // --- Documentación (no requieren base de datos) ---
