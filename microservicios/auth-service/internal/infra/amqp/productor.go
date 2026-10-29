@@ -9,6 +9,7 @@ import (
 	amqp091 "github.com/rabbitmq/amqp091-go"
 
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/eventos"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/trazas"
 )
 
 // Productor publica en el exchange del ecosistema con routing key = type del evento.
@@ -44,6 +45,15 @@ func (p *Productor) Publicar(ctx context.Context, sobre eventos.Envelope) error 
 		return fmt.Errorf("serializar envelope: %w", err)
 	}
 
+	// Reto 8 (D10): span PRODUCER y su traceparent en las cabeceras del mensaje.
+	cabeceras := amqp091.Table{}
+	ctx, span := trazas.IniciarPublicacion(ctx, cabeceras, sobre.Type)
+	err = p.publicar(ctx, canal, sobre, cuerpo, cabeceras)
+	trazas.Terminar(span, err)
+	return err
+}
+
+func (p *Productor) publicar(ctx context.Context, canal *amqp091.Channel, sobre eventos.Envelope, cuerpo []byte, cabeceras amqp091.Table) error {
 	ctx, cancelar := context.WithTimeout(ctx, 3*time.Second)
 	defer cancelar()
 	confirmacion, err := canal.PublishWithDeferredConfirmWithContext(ctx, p.exchange, sobre.Type, false, false,
@@ -52,6 +62,7 @@ func (p *Productor) Publicar(ctx context.Context, sobre eventos.Envelope) error 
 			DeliveryMode: amqp091.Persistent,
 			MessageId:    sobre.ID,
 			Type:         sobre.Type,
+			Headers:      cabeceras,
 			Body:         cuerpo,
 		})
 	if err != nil {

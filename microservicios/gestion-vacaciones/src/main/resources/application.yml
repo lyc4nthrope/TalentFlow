@@ -19,8 +19,12 @@ spring:
     password: ${RABBITMQ_PASS:guest}
     connection-timeout: 3s
     publisher-confirm-type: simple  # confirmaciones del broker al publicar
+    # Reto 8 (D10): spans al publicar y al consumir, con traceparent en las cabeceras.
+    template:
+      observation-enabled: true
     listener:
       simple:
+        observation-enabled: true
         prefetch: 10
         missing-queues-fatal: false  # la cola la crea broker-init; si falta, reintenta
         default-requeue-rejected: false

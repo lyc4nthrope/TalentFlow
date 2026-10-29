@@ -22,6 +22,7 @@
     "@opentelemetry/instrumentation-http": "0.300.0",
     "@opentelemetry/instrumentation-express": "0.72.0",
     "@opentelemetry/instrumentation-undici": "0.34.0",
-    "@opentelemetry/instrumentation-pg": "0.77.0"
+    "@opentelemetry/instrumentation-pg": "0.77.0",
+    "@opentelemetry/instrumentation-amqplib": "0.71.0"
   }
 }

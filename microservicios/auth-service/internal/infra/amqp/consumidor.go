@@ -12,6 +12,7 @@ import (
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/aplicacion"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/dominio"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/eventos"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/trazas"
 	amqp091 "github.com/rabbitmq/amqp091-go"
 )
 
@@ -148,7 +149,11 @@ func (c *Consumidor) manejar(ctx context.Context, entrega amqp091.Delivery) {
 		return
 	}
 
+	// Reto 8 (D10): continúa la traza de quien publicó; el ctx llega al caso de uso, así lo
+	// que este publique (usuario.creado, cuenta.*) queda en la misma traza.
+	ctx, span := trazas.IniciarConsumo(ctx, entrega.Headers, sobre.Type)
 	err := c.despachar(ctx, sobre)
+	trazas.Terminar(span, err)
 	switch {
 	case err == nil:
 		if err := entrega.Ack(false); err != nil {

@@ -1,5 +1,5 @@
-"""Trazas OpenTelemetry (Reto 8, D1, D7 y D12): spans de cada petición HTTP y de cada
-consulta a Postgres, enviados a Jaeger por OTLP/HTTP. Configuración por entorno
+"""Trazas OpenTelemetry (Reto 8, D1, D7, D10 y D12): spans de cada petición HTTP, de cada
+consulta a Postgres y de cada mensaje de RabbitMQ, enviados a Jaeger por OTLP/HTTP. Configuración por entorno
 (OTEL_SERVICE_NAME, OTEL_EXPORTER_OTLP_ENDPOINT); OTEL_SDK_DISABLED=true lo apaga.
 Infraestructura: fuera del umbral de cobertura, con su prueba (tests/test_trazas.py)."""
 
@@ -8,6 +8,7 @@ import os
 from fastapi import FastAPI
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.aio_pika import AioPikaInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.psycopg import PsycopgInstrumentor
 from opentelemetry.sdk.resources import Resource
@@ -45,4 +46,6 @@ def iniciar(app: FastAPI, exportador: SpanExporter | None = None) -> TracerProvi
     trace.set_tracer_provider(proveedor)
     FastAPIInstrumentor.instrument_app(app, tracer_provider=proveedor, excluded_urls=RUTAS_EXCLUIDAS)
     PsycopgInstrumentor().instrument(tracer_provider=proveedor, enable_commenter=False)
+    # RabbitMQ (D10): cada mensaje consumido continúa la traza del traceparent de sus cabeceras.
+    AioPikaInstrumentor().instrument(tracer_provider=proveedor)
     return proveedor

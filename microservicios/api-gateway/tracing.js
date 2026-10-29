@@ -8,6 +8,7 @@ const { HttpInstrumentation } = require('@opentelemetry/instrumentation-http');
 const { ExpressInstrumentation } = require('@opentelemetry/instrumentation-express');
 const { UndiciInstrumentation } = require('@opentelemetry/instrumentation-undici');
 const { PgInstrumentation } = require('@opentelemetry/instrumentation-pg');
+const { AmqplibInstrumentation } = require('@opentelemetry/instrumentation-amqplib');
 
 // Healthchecks (cada 5 s) y scrapes de Prometheus: sin esto taparían las trazas de negocio.
 const RUTAS_RUIDO = new Set(['/health', '/metrics']);
@@ -24,7 +25,9 @@ const sdk = new NodeSDK({
         new ExpressInstrumentation({ ignoreLayersType: ['middleware'] }),
         // fetch nativo de Node (undici): llamadas a otros servicios, p. ej. a departamentos.
         new UndiciInstrumentation({ ignoreRequestHook: (peticion) => esRuido(peticion.path) }),
-        new PgInstrumentation()
+        new PgInstrumentation(),
+        // RabbitMQ (D10): inyecta traceparent en las cabeceras de cada mensaje publicado.
+        new AmqplibInstrumentation()
     ]
 });
 sdk.start();
