@@ -19,6 +19,7 @@ import (
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/infra/jwt"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/infra/postgres"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/metricas"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/trazas"
 )
 
 // tokenAleatorio genera los tokens de activación y recuperación: UUID v4 a partir
@@ -48,6 +49,13 @@ func main() {
 
 	ctx, cancelar := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancelar()
+
+	apagarTrazas, err := trazas.Iniciar(ctx)
+	if err != nil {
+		log.Printf("auth-service: trazas: %v", err)
+		os.Exit(1)
+	}
+	defer apagarTrazas(context.Background()) //nolint:errcheck
 
 	pool, err := postgres.Conectar(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -89,7 +97,7 @@ func main() {
 
 	servidor := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           metricas.Nuevas().Instrumentar(api.ConfigurarRutas(api.NuevoAuthHandler(servicio), api.NuevoSaludHandler(pool, consumidor))),
+		Handler:           trazas.Envolver(metricas.Nuevas().Instrumentar(api.ConfigurarRutas(api.NuevoAuthHandler(servicio), api.NuevoSaludHandler(pool, consumidor)))),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

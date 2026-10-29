@@ -3,7 +3,8 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const { saludDelSistema } = require('./salud');
 const { verificarToken, leerBearer } = require('./autenticacion');
 const { analizarRuta, esRutaPublica, decidirAcceso, servicioDeRuta } = require('./autorizacion');
-const { middlewareMetricas } = require('./metricas');
+const { trace } = require('@opentelemetry/api');
+const { middlewareMetricas, rutaDelGateway } = require('./metricas');
 
 // Cabeceras de identidad que el Gateway propaga a los servicios (Reto 5, D10). Nunca se
 // aceptan del cliente: se borran en toda petición y solo se agregan tras validar el token.
@@ -28,6 +29,12 @@ function crearApp({ jwtSecret, jwtIssuer, servicios, salud = saludDelSistema, me
 
     // Reto 8, D5: se mide toda petición, incluidas las rechazadas (400/401/403/404).
     if (metricas) app.use(middlewareMetricas(metricas, prefijos));
+    // Reto 8: el span HTTP del Gateway (un proxy sin rutas de Express) se llamaría solo
+    // "GET"; se nombra con el prefijo del servicio, igual que la etiqueta route de las métricas.
+    app.use((req, _res, next) => {
+        trace.getActiveSpan()?.updateName(`${req.method} ${rutaDelGateway(req.path, prefijos)}`);
+        next();
+    });
 
     // Salud propia del Gateway + estado de cada servicio, su BD, el Circuit Breaker y la
     // conexión de cada uno con el broker; "problemas" explica por qué el sistema está

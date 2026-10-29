@@ -25,6 +25,7 @@ import (
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/metricas"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/postgres"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/smtp"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/trazas"
 )
 
 func main() {
@@ -46,6 +47,12 @@ func main() {
 func ejecutar(logger *slog.Logger) error {
 	ctx, detener := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer detener()
+
+	apagarTrazas, err := trazas.Iniciar(ctx)
+	if err != nil {
+		return fmt.Errorf("configurar trazas: %w", err)
+	}
+	defer apagarTrazas(context.Background()) //nolint:errcheck
 
 	pool, err := pgxpool.New(ctx, urlPostgres())
 	if err != nil {
@@ -72,7 +79,7 @@ func ejecutar(logger *slog.Logger) error {
 
 	servidor := &http.Server{
 		Addr:    ":" + env("PORT", "8084"),
-		Handler: metricas.Nuevas().Instrumentar(api.NuevoManejador(repositorio, consumidor, logger)),
+		Handler: trazas.Envolver(metricas.Nuevas().Instrumentar(api.NuevoManejador(repositorio, consumidor, logger))),
 		// Evita que clientes lentos mantengan conexiones abiertas indefinidamente.
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
