@@ -2,6 +2,8 @@ server:
   port: ${PORT:8085}
 
 spring:
+  application:
+    name: ${OTEL_SERVICE_NAME:vacaciones-service}  # service.name de las trazas
   main:
     banner-mode: off
   datasource:
@@ -31,6 +33,15 @@ spring:
 # Reto 8: solo se publica el endpoint de Prometheus (el /health propio sigue en SaludController).
 # El 8085 no está publicado en el host: solo Prometheus, dentro de la red de Docker, lo alcanza.
 management:
+  # Reto 8 (D1, D12): trazas a Jaeger por OTLP/HTTP, 100 % de muestreo, propagación W3C
+  # (la de por defecto). En la copia aislada de la CI no hay Jaeger: allí se apagan.
+  tracing:
+    enabled: ${MANAGEMENT_TRACING_ENABLED:true}
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
   endpoints:
     web:
       exposure:

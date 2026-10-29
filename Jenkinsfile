@@ -40,6 +40,7 @@ pipeline {
         // La copia aislada no levanta Jaeger (perfil "observabilidad"): sin esto, cada servicio
         // intentaría enviarle trazas y llenaría los logs de errores de conexión (Reto 8).
         OTEL_SDK_DISABLED = 'true'
+        MANAGEMENT_TRACING_ENABLED = 'false'
         REPORTES     = 'e2e-tests/reports'
     }
 

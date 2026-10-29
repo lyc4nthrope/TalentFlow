@@ -539,6 +539,8 @@ services:
     environment:
       <<: *otel
       OTEL_SERVICE_NAME: vacaciones-service
+      # Spring no lee OTEL_SDK_DISABLED: usa su propia propiedad (la CI la pone en false).
+      MANAGEMENT_TRACING_ENABLED: ${MANAGEMENT_TRACING_ENABLED:-true}
       PORT: 8085
       DB_HOST: database-vacaciones
       DB_PORT: 5432
