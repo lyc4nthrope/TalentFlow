@@ -2,7 +2,7 @@
 
 Sistema de onboarding y offboarding de empleados basado en una arquitectura orientada a microservicios.
 
-**Estado: Retos 1 a 7 completados.** Índice por reto:
+**Estado: Retos 1 a 8 completados.** Índice por reto:
 
 | Reto | Tema | Sección | Manual |
 |---|---|---|---|
@@ -12,6 +12,7 @@ Sistema de onboarding y offboarding de empleados basado en una arquitectura orie
 | 5 | Seguridad e identidad (JWT, roles, ciclo de vida de la cuenta) | [Seguridad e identidad](#seguridad-e-identidad-reto-5) | [`docs/reto-05`](docs/reto-05/README.md) |
 | 6 | Automatización de pruebas (unitarias, integración y BDD) | [Automatización de pruebas](#automatización-de-pruebas-reto-6) | [`docs/reto-06`](docs/reto-06/README.md) |
 | 7 | Integración continua con Jenkins, SonarQube y registry local | [Integración continua](#integración-continua-reto-7) | [`docs/reto-07`](docs/reto-07/README.md) |
+| 8 | Observabilidad: métricas, trazas, logs y alertas | [Observabilidad](#observabilidad-reto-8) | [`docs/reto-08`](docs/reto-08/README.md) |
 
 Resumen de todos los retos: [Mapa de retos](#mapa-de-retos).
 
@@ -108,13 +109,15 @@ TalentFlow/
 ├── e2e-tests/                         # Reto 6: suite BDD (Cucumber.js, Gherkin en español) contra el sistema desplegado
 ├── infra/rabbitmq/                    # Reto 4: topología de eventos (exchange, colas, bindings) + su importación
 ├── scripts/cobertura-go.awk           # Reto 6: filtro y umbral de cobertura de la lógica de negocio en Go
-├── docs/                              # Manuales, evidencia y decisiones por reto (reto-03/ … reto-07/, eventos.md…)
+├── docs/                              # Manuales, evidencia y decisiones por reto (reto-03/ … reto-08/, eventos.md…)
 ├── docker-compose.yml                 # Orquesta el sistema; la CI del Reto 7 va en el perfil `ci`
 ├── docker-compose.e2e.yml             # Reto 6: override solo para la suite BDD (scheduler cada 5 s + contenedor bdd-tests)
 ├── docker-compose.ci-e2e.yml          # Reto 7: override de la E2E del pipeline (sin container_name ni puertos, imágenes del registro)
 ├── Jenkinsfile                        # Reto 7: pipeline orquestador (imágenes versionadas + E2E aislada)
 ├── jenkins/                           # Reto 7: Dockerfile de Jenkins (plugins + herramientas) y casc.yaml (JCasC + Job DSL)
 ├── sonar/                             # Reto 7: sonar-init (token, quality gate, webhook) y la imagen de SonarQube
+├── observability/                     # Reto 8: prometheus.yml, Loki, Promtail y Grafana (fuentes, dashboard y alertas como código)
+├── docker-compose.caos.yml            # Reto 8: override de la prueba de caos (latencia artificial en departamentos)
 ├── Makefile                           # Reto 6: comandos únicos de las pruebas (make pruebas, make e2e)
 └── package.json                       # npm workspaces de los servicios Node (solo tooling de desarrollo)
 ```
@@ -150,7 +153,7 @@ git merge dev
 
 ## Cómo levantar todo desde cero
 
-Un solo comando, sin pasos manuales: el esquema de cada base de datos se crea desde su `init.sql` la primera vez que el volumen está vacío, y la topología del broker la importa `broker-init`. Levanta 16 contenedores (6 bases de datos, el broker, `broker-init`, que termina tras importar la topología, Mailhog, 6 servicios y el Gateway); tarda ~40 s en quedar todo `healthy` (`docker compose ps`).
+Un solo comando, sin pasos manuales: el esquema de cada base de datos se crea desde su `init.sql` la primera vez que el volumen está vacío, y la topología del broker la importa `broker-init`. Levanta 21 contenedores (6 bases de datos, el broker, `broker-init`, que termina tras importar la topología, Mailhog, 6 servicios, el Gateway y, desde el Reto 8, Prometheus, Grafana, Loki, Promtail y Jaeger); tarda ~40 s en quedar todo `healthy` (`docker compose ps`). Observabilidad: Grafana en `http://localhost:3000`, Prometheus en `:9091`, Jaeger en `:16686` (ver [Observabilidad](#observabilidad-reto-8)).
 
 ```bash
 docker compose up --build
@@ -1003,6 +1006,223 @@ docker compose --profile ci up --build -d
 
 Evidencia: [`docs/reto-07/pruebas.md`](docs/reto-07/pruebas.md). Manual: [`docs/reto-07`](docs/reto-07/README.md).
 
+## Observabilidad (Reto 8)
+
+> Manual paso a paso, criterios del PDF y problemas comunes: [`docs/reto-08/README.md`](docs/reto-08/README.md). Evidencia con las 10 capturas: [`docs/reto-08/pruebas.md`](docs/reto-08/pruebas.md). Decisiones (D1-D16) y aprendizajes por fase: [`docs/reto-08/PLAN.md`](docs/reto-08/PLAN.md). Guion de la sustentación: [`docs/reto-08/sustentacion.md`](docs/reto-08/sustentacion.md).
+
+El sistema ya no se revisa servicio por servicio: un solo Grafana muestra la salud, el tráfico, la latencia y los errores de los 7 microservicios. Una petición se sigue de punta a punta en Jaeger, también a través de RabbitMQ, y sus logs se encuentran en Loki con el mismo `traceId`. Si algo falla o se pone lento, llega un correo sin que nadie esté mirando.
+
+### Conceptos (investigación previa)
+
+**Los tres pilares de la observabilidad.** Cada uno responde una pregunta distinta, y juntos explican un problema que ninguno explica solo:
+
+| Pilar | Responde | En TalentFlow |
+|---|---|---|
+| **Métricas** | ¿Qué pasa y cuánto? Números agregados en el tiempo, baratos de guardar; sirven para dashboards y alertas | Prometheus: peticiones, latencia, errores, CPU y memoria de cada servicio |
+| **Trazas** | ¿Dónde se va el tiempo de una petición? El camino de una petición por todos los servicios, con la duración de cada paso | Jaeger: una traza cruza Gateway, empleados, departamentos, RabbitMQ y los consumidores |
+| **Logs** | ¿Qué pasó exactamente? El detalle de cada evento, con su contexto | Loki: logs JSON de los 7 servicios, correlacionados con la traza por `traceId` |
+
+En la práctica: la métrica avisa que la latencia subió, la traza muestra qué servicio la causa y el log explica por qué.
+
+**Modelo pull vs. push.**
+
+| | Pull (Prometheus) | Push (trazas OTLP) |
+|---|---|---|
+| Quién inicia | Prometheus pide `GET /metrics` a cada servicio cada 15 s (*scraping*) | Cada servicio envía sus spans a Jaeger cuando terminan |
+| Qué viaja | El valor actual de cada contador e histograma; Prometheus calcula las tasas | Cada span, una vez, en lotes |
+| Por qué así | Prometheus sabe si un servicio está vivo (`up` = 0 si no responde) y controla su propio ritmo | Un span es un evento único: si nadie lo recoge al momento, se pierde |
+| Configuración | `observability/prometheus/prometheus.yml` (7 `scrape_job`, por nombre de servicio en la red de Docker) | Variables `OTEL_*` en el ancla `x-otel` de `docker-compose.yml` → `http://jaeger:4318` |
+
+Los logs también van por push: Promtail los lee del socket de Docker y los envía a Loki.
+
+**OpenTelemetry y la CNCF.** La CNCF (*Cloud Native Computing Foundation*, parte de la Linux Foundation) gobierna proyectos abiertos como Kubernetes, Prometheus y Jaeger, para que no dependan de un solo proveedor. OpenTelemetry es su estándar para generar y enviar telemetría: una API, SDK para cada lenguaje y un protocolo, OTLP. Es relevante porque es **agnóstico**: los 7 servicios, en 5 lenguajes, producen trazas con el mismo formato y el mismo protocolo. Cambiar Jaeger por otro backend compatible con OTLP es cambiar una URL, no reinstrumentar el código.
+
+**W3C Trace Context.** Es el estándar que define cómo viaja el contexto de una traza entre servicios: la cabecera `traceparent`.
+
+```
+traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+             │  └─ traceId (32 hex): igual en toda la traza
+             │                       └─ spanId del llamador (16 hex): será el padre
+version ─────┘                                            sampled ─┘
+```
+
+Quien llama inyecta la cabecera; quien recibe la extrae, continúa la misma traza y crea su span como hijo. Como es un estándar, un Gateway en Node, un servicio en Go y otro en PHP se entienden sin acuerdos propios. En TalentFlow viaja por HTTP y también **dentro de las cabeceras de cada mensaje de RabbitMQ**, así que la traza no se corta en el broker (D10).
+
+### Diagrama de arquitectura de observabilidad
+
+Diseñado antes de implementar (fase F0, commit `a6987d1`) y ajustado a lo construido:
+
+```mermaid
+flowchart LR
+    cliente["Cliente HTTP"] -->|"traceparent (W3C)"| gw
+
+    subgraph red["Red Docker: microservices-network"]
+        direction LR
+        subgraph app["Microservicios instrumentados"]
+            gw["api-gateway :8080<br/>Node"]
+            emp["empleados-service :8081<br/>Node"]
+            dep["departamentos-service :8082<br/>PHP"]
+            per["perfiles-service :8083<br/>Python"]
+            notif["notificaciones-service :8084<br/>Go"]
+            vac["vacaciones-service :8085<br/>Java + scheduler"]
+            auth["auth-service :8086<br/>Go"]
+        end
+        broker[("RabbitMQ<br/>traceparent en las<br/>cabeceras del mensaje")]
+
+        subgraph obs["Stack de observabilidad"]
+            prom["Prometheus :9090<br/>(host :9091)"]
+            jaeger["Jaeger :16686<br/>OTLP :4318"]
+            loki["Loki :3100"]
+            promtail["Promtail"]
+            grafana["Grafana :3000"]
+            mailhog["Mailhog :8025"]
+        end
+    end
+
+    gw --> emp --> dep
+    emp -->|"empleado.creado"| broker
+    vac -->|"vacaciones.*<br/>(span raíz del scheduler)"| broker
+    broker --> auth & per & notif & vac
+    auth -->|"usuario.creado / cuenta.*"| broker
+
+    prom -. "1 · PULL GET /metrics cada 15 s<br/>(Gateway :9464, vacaciones /actuator/prometheus)" .-> app
+    app -- "2 · PUSH spans OTLP/HTTP" --> jaeger
+    promtail -. "lee los logs JSON por<br/>el socket de Docker" .-> app
+    promtail -- "PUSH logs" --> loki
+    grafana -- "3 · PromQL" --> prom
+    grafana -- "LogQL" --> loki
+    grafana -- "trazas por traceId" --> jaeger
+    grafana -- "4 · alerta por email (SMTP)" --> mailhog
+```
+
+| Pregunta del PDF | Respuesta |
+|---|---|
+| ¿Qué componentes se levantan? | Prometheus, Grafana, Loki, Promtail y Jaeger, como servicios del mismo `docker-compose.yml` (21 contenedores en total). Mailhog ya existía desde el Reto 4 y es el canal de las alertas |
+| ¿Cómo se conecta Prometheus a cada servicio? | Comparte la red `microservices-network` y hace *scraping* a `http://<servicio>:<puerto>/metrics` por nombre de Docker, nunca por IP ni `localhost`. El Gateway es el primer `scrape_job` y publica sus métricas en el puerto interno 9464, porque su 8080 es público (D13) |
+| ¿Cómo fluyen las trazas? | Cada servicio envía sus spans a `http://jaeger:4318` por OTLP/HTTP; el `traceId` viaja en `traceparent` por HTTP y por RabbitMQ |
+| ¿Cómo consume Grafana los datos? | Con fuentes de datos aprovisionadas desde archivos: Prometheus (PromQL), Loki (LogQL, con enlace del `traceId` a Jaeger) y Jaeger. Evalúa las alertas y avisa por email a Mailhog |
+
+### Stack desplegado y por qué Jaeger
+
+| Servicio | Imagen (versión fija, D11) | Puerto en el host | Rol |
+|---|---|---|---|
+| Prometheus | `prom/prometheus:v3.15.1` | 9091 (9090 es Jenkins desde el Reto 7, D2) | Métricas, modelo pull |
+| Grafana | `grafana/grafana:12.4.14` | 3000 | Dashboard, exploración de logs y trazas, alertas |
+| Loki | `grafana/loki:3.6.19` | 3100 | Almacén de logs |
+| Promtail | `grafana/promtail:3.6.11` | — | Agente que envía los logs de los contenedores a Loki |
+| Jaeger | `jaegertracing/jaeger:2.20.0` | 16686 (UI) | Trazas; recibe OTLP en 4317/4318, solo dentro de la red |
+
+**Jaeger y no Zipkin (D1).** Jaeger recibe OTLP de forma nativa: los SDK de OpenTelemetry le envían las trazas con su exportador por defecto, sin traducir a otro formato. Zipkin necesitaría el exportador de Zipkin en cada uno de los 5 lenguajes. Además, Jaeger 2 está construido sobre el OpenTelemetry Collector, es un proyecto graduado de la CNCF y su UI muestra la cascada de spans y las dependencias entre servicios. Se fijó la 2.20.0 porque la 2.21 quitó el endpoint `/api/services` que usa la fuente de datos Jaeger de Grafana.
+
+Todo se configura como código y se versiona en `observability/`. Al hacer `docker compose up`, Grafana ya trae sus fuentes de datos, el dashboard y las alertas, sin pasos manuales. Sus datos persisten en el volumen `grafana-data`.
+
+### Librerías por microservicio
+
+Todas exponen el mismo contrato de métricas (`http_requests_total` y `http_request_duration_seconds` con `method`, `route` y `status`, D5) y el mismo formato de log. Así, una sola consulta sirve para los 7 servicios.
+
+| Servicio | Métricas (`/metrics`) | Trazas (OpenTelemetry) | Logs JSON |
+|---|---|---|---|
+| api-gateway (Node) | `@prometheus-io/client` 0.16.1 (sucesor oficial de `prom-client`), puerto interno 9464 | `@opentelemetry/sdk-node` 0.300 + instrumentaciones `http`, `express`, `undici`, `pg`, `amqplib` | `logs.js`: `console.*` en JSON |
+| empleados-service (Node) | `@prometheus-io/client` 0.16.1 | Igual que el Gateway | Igual que el Gateway |
+| departamentos-service (PHP) | `src/Metricas.php`: contadores en un archivo JSON con `flock` (D15) | `src/Trazas.php`: exportador OTLP/JSON propio, porque sin Composer no hay SDK (D16) | Una línea JSON por petición |
+| perfiles-service (Python) | `prometheus-client` 0.26.0 | `opentelemetry-sdk` 1.45.2 + FastAPI, psycopg, aio-pika | `app/logs.py` (formateador de `logging`) |
+| notificaciones-service (Go) | `prometheus/client_golang` v1.25.0 | SDK de Go v1.47 + `otelhttp` v0.72; propagación por RabbitMQ en `internal/trazas` | `slog` en JSON con el span del `ctx` |
+| auth-service (Go) | Igual que notificaciones | Igual que notificaciones | Igual que notificaciones |
+| vacaciones-service (Java) | Spring Boot Actuator + Micrometer (`/actuator/prometheus`) y `FiltroMetricas` para el contrato común | Micrometer Tracing + puente a OpenTelemetry + exportador OTLP; observación de Spring AMQP | Logs estructurados nativos de Spring Boot 3.5 (formato `logstash`) |
+
+En todos: `OTEL_SERVICE_NAME` da el nombre del servicio, el exportador apunta a `http://jaeger:4318`, la propagación es W3C (`traceparent`) y el muestreo es del 100 % (D12). `/health` y `/metrics` no generan trazas, para no tapar las de negocio. `/health` responde con el formato del PDF (`status`, `service`, `timestamp`, `checks`).
+
+### Logs centralizados con Loki
+
+Cada línea tiene la misma forma en los 7 servicios:
+
+```json
+{"timestamp":"2026-10-29T22:15:08.355066055Z","level":"INFO","service":"vacaciones-service","message":"réplica de empleados actualizada ...","traceId":"07bd5be95b8275e91d785482e91d295f","spanId":"27594a940f25f623"}
+```
+
+Promtail descubre los contenedores por el socket de Docker, lee el JSON y convierte `level` en etiqueta. El `traceId` **no** es etiqueta: crearía un stream por petición y Loki se volvería lento. Se busca en el texto. En Grafana, cada `traceId` es un enlace a su traza en Jaeger.
+
+Consultas LogQL usadas, con su resultado real:
+
+| Consulta | Para qué | Resultado |
+|---|---|---|
+| `{project="talentflow"} \|= "07bd5be95b8275e91d785482e91d295f"` | Todos los logs de una petición, en todos los servicios | 7 líneas de 6 servicios para la creación de un empleado (captura abajo) |
+| `{service="departamentos-service", level="ERROR"}` | Los errores de un servicio | 304 líneas `GET /departamentos 500` de la prueba con su base de datos apagada, cada una con su `traceId` |
+| `{service="perfiles-service"} \| json \| message=~".*empleado.creado.*"` | Filtrar por un campo del JSON | 91 líneas: cada `empleado.creado` que perfiles aplicó |
+| `sum by (service) (count_over_time({project="talentflow", level="ERROR"}[15m]))` | Cuántos errores hubo por servicio | Encontró el aviso de `http-proxy` que salía como ERROR y se corrigió a WARN (F8) |
+
+![Consulta LogQL por traceId](docs/reto-08/capturas/10-loki-logql-traceid.png)
+
+### Dashboard
+
+*TalentFlow - Observabilidad* (`observability/grafana/dashboards/talentflow.json`), en la carpeta TalentFlow de Grafana:
+
+| Fila | Paneles |
+|---|---|
+| Resumen del sistema | Estado de cada servicio (`up`, UP verde / DOWN rojo); peticiones por segundo, % de 5xx y latencia p95 de todo el sistema |
+| Comportamiento del tráfico | Tasa de peticiones, latencia promedio (`_sum / _count`), errores 4xx/5xx y latencia p95, por servicio |
+| Recursos y logs | CPU y memoria por servicio; logs de ERROR y WARN desde Loki |
+
+Las consultas excluyen `/health`, que el healthcheck de Docker llama cada 5 s. Los colores usan los mismos umbrales que las alertas.
+
+### Alertas y canal de notificación
+
+| Regla | Condición | Severidad |
+|---|---|---|
+| Servicio caído | `up < 1` durante 1 minuto | critical |
+| Alta tasa de errores 5xx | más del 10 % de 5xx durante 2 minutos | warning |
+| Alta latencia | latencia promedio mayor a 2 s durante 2 minutos (sin `/health`) | warning |
+
+Cada regla evalúa los 7 servicios por separado (`by (job)`), así que el correo dice cuál falla. La regla 4 del PDF (*contenedor reiniciado*) queda fuera porque necesita las métricas de Docker (cAdvisor), que no están en el stack.
+
+**Canal elegido: email**, con Mailhog como servidor SMTP de pruebas. Ya existía desde el Reto 4 y no expone ningún token: un webhook de Discord o Telegram es un secreto que no puede ir en el repositorio. Cómo quedó configurado, todo como código:
+
+1. SMTP de Grafana en `docker-compose.yml`: `GF_SMTP_ENABLED=true`, `GF_SMTP_HOST=mailhog:1025`, remitente `alertas@talentflow.local`.
+2. Punto de contacto `Email soporte` → `soporte@talentflow.local` en `observability/grafana/provisioning/alerting/contact-points.yml`.
+3. Política en `policies.yml`: todo va a ese punto de contacto, agrupado por regla y servicio.
+4. Reglas en `rules.yml`.
+
+Los correos se ven en `http://localhost:8025`. Para producción bastaría cambiar el servidor SMTP y la dirección.
+
+### Pruebas de caos
+
+Detalle, horas exactas y las 10 capturas: [`docs/reto-08/pruebas.md`](docs/reto-08/pruebas.md).
+
+| Prueba | Resultado |
+|---|---|
+| Los 7 targets en Prometheus | Todos `UP` |
+| Traza de crear un empleado | 1 traza, 7 servicios, 21 spans: Gateway → empleados → departamentos → RabbitMQ → auth → notificaciones, perfiles y vacaciones |
+| Apagar `departamentos-service` | Target `DOWN`, panel en rojo y correo *Servicio caído* a 1 min 45 s |
+| Inducir 2,5 s de latencia en departamentos | Correo *Alta latencia* de departamentos y del Gateway a los 2 min |
+| Apagar la BD de departamentos | Correo *Alta tasa de errores 5xx* de departamentos y del Gateway |
+
+| Dashboard con métricas reales | Traza distribuida completa | Alerta recibida |
+|---|---|---|
+| ![Dashboard](docs/reto-08/capturas/02-grafana-dashboard.png) | ![Traza](docs/reto-08/capturas/03-jaeger-traza-crear-empleado.png) | ![Alerta](docs/reto-08/capturas/06-caos-alerta-servicio-caido.png) |
+
+La latencia se induce con un interruptor que está **apagado por defecto** (`CAOS_LATENCIA_MS` en departamentos, encendido solo con `docker-compose.caos.yml`). Así no hay que editar el código para repetir la prueba.
+
+### ¿Qué servicio del ecosistema tardó más en responder y cómo lo identificaron?
+
+- **En condiciones normales: empleados-service.** Ocupa 49,5 de los 52,5 ms que el Gateway espera al crear un empleado. Al abrir su span en Jaeger, ese tiempo se reparte entre la llamada a departamentos (11,4 ms), las consultas a Postgres (≈ 7 ms) y la publicación del evento con confirmación del broker (10 ms). El span más largo de la traza es **vacaciones-service** al consumir `empleado.creado` (103 ms), pero ocurre en segundo plano y no retrasa la respuesta al cliente.
+- **Con el caos de latencia: departamentos-service.** De los 2532 ms de la petición, 2510 ms son la espera de empleados a departamentos.
+- **Cómo se identificó.** Se cruzaron los tres pilares:
+  1. **La alerta** dijo qué servicio estaba lento.
+  2. **El panel *Latencia promedio por servicio*** confirmó que solo departamentos, y quienes lo llaman, estaban en segundos.
+  3. **La traza de Jaeger** mostró por qué: la barra de departamentos ocupa casi toda la petición, dentro de las de empleados y el Gateway, que solo lo esperan.
+
+### Cómo probarlo
+
+```bash
+docker compose up --build -d
+# Prometheus: http://localhost:9091/targets · Grafana: http://localhost:3000 (admin / talentflow_grafana_2026)
+# Jaeger: http://localhost:16686 · Correos de las alertas: http://localhost:8025
+docker compose -f docker-compose.yml -f docker-compose.caos.yml up -d departamentos-service   # caos de latencia
+docker compose up -d departamentos-service                                                     # quitarlo
+```
+
+Evidencia: [`docs/reto-08/pruebas.md`](docs/reto-08/pruebas.md). Manual: [`docs/reto-08`](docs/reto-08/README.md).
+
 ## Circuit Breaker (Reto 3) — `empleados-service → departamentos-service`
 
 ### Por qué
@@ -1168,6 +1388,7 @@ Tras la clase "Introducción a APIs RESTful" se auditó el proyecto contra sus d
 | 5 | + auth-service + api-gateway + gestion-vacaciones + notificaciones | ✅ Completado | `auth-service` (Go): JWT HS256, activación y recuperación con token de un solo uso, ciclo de vida de la cuenta por eventos (`usuario.creado`, `usuario.recuperacion`, `cuenta.activada`, `cuenta.desactivada`); Gateway valida el JWT y aplica ADMIN / USER / propiedad; scheduler de vacaciones (`vacaciones.iniciadas` / `vacaciones.finalizadas`) con fechas y hora reales; caso borde del retiro durante las vacaciones; `bearerAuth` en el Swagger de los 6 servicios | `docker compose up --build` + `bash docs/reto-05/demo.sh` |
 | 6 | todos (+ `e2e-tests/`) | ✅ Completado | Reportes JUnit XML y de cobertura en `reports/` de cada servicio con la lógica de negocio al 100 % (el build falla si baja); integración contra PostgreSQL con Testcontainers; suite BDD en español (61 escenarios: seguridad, onboarding, vacaciones, offboarding) con JUnit XML + Cucumber JSON + HTML; comandos únicos y contenedor `bdd-tests` — ver [Automatización de pruebas](#automatización-de-pruebas-reto-6) | `make pruebas` + `make e2e` |
 | 7 | todos (+ Jenkins, SonarQube, registro) | ✅ Completado | Jenkins en Docker con plugins de reportes y trabajos creados como código (JCasC + Job DSL); un Jenkinsfile por servicio (7, en 5 lenguajes) con Test, JUnit, cobertura, SonarQube y Quality Gate (cobertura ≥ 70 %), imagen versionada y publicada en un registro local; pipeline orquestador con E2E aislada, reporte Cucumber navegable y logs archivados; 3 ejecuciones seguidas y 4 fallos simulados — ver [Integración continua](#integración-continua-reto-7) | `docker compose --profile ci up --build -d` |
+| 8 | todos (+ Prometheus, Grafana, Loki, Promtail, Jaeger) | ✅ Completado | Los 7 servicios con `/metrics` (mismo contrato de métricas en 5 lenguajes), `/health` con `checks`, trazas OpenTelemetry con propagación W3C por HTTP y por RabbitMQ (una traza cruza los 7 servicios) y logs JSON con `traceId` en Loki; dashboard, fuentes de datos y 3 alertas por email (Mailhog) aprovisionados como código; pruebas de caos con 10 capturas — ver [Observabilidad](#observabilidad-reto-8) | `docker compose up --build` |
 
 Cada microservicio tiene su propio README con sus endpoints y configuración: [`auth-service`](microservicios/auth-service/README.md), [`api-gateway`](microservicios/api-gateway/README.md), [`gestion-empleados`](microservicios/gestion-empleados/README.md), [`gestion-departamentos`](microservicios/gestion-departamentos/README.md), [`gestion-perfiles`](microservicios/gestion-perfiles/README.md), [`notificaciones`](microservicios/notificaciones/README.md), [`gestion-vacaciones`](microservicios/gestion-vacaciones/README.md).
 
@@ -1192,6 +1413,13 @@ Correr todos los servicios (Docker):
 docker compose up --build
 ```
 
+Observabilidad (Reto 8): se levanta con el sistema. Grafana `http://localhost:3000` (admin / talentflow_grafana_2026), Prometheus `http://localhost:9091`, Jaeger `http://localhost:16686`, correos de las alertas `http://localhost:8025`. Prueba de caos de latencia (y quitarla):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.caos.yml up -d departamentos-service
+docker compose up -d departamentos-service
+```
+
 Sumar la integración continua (Jenkins, SonarQube y el registro; ver [Integración continua](#integración-continua-reto-7)):
 
 ```bash
@@ -1200,7 +1428,7 @@ docker compose --profile ci up --build -d
 
 ## Stack del semestre
 
-Implementado hasta el Reto 7 (5 lenguajes; el proyecto final exige al menos 4):
+Implementado hasta el Reto 8 (5 lenguajes; el proyecto final exige al menos 4):
 
 - **Node.js + Express** — `empleados-service` y `api-gateway`
 - **PHP** — `departamentos-service` (diversidad tecnológica desde el Reto 2)
@@ -1210,4 +1438,5 @@ Implementado hasta el Reto 7 (5 lenguajes; el proyecto final exige al menos 4):
 - **RabbitMQ** (mensajería), **PostgreSQL** y **MySQL** (bases de datos por servicio), **Mailhog** (servidor SMTP de pruebas)
 - **Pruebas (Reto 6)**: JUnit 5 + JaCoCo + Testcontainers (Java), `node:test` (Node), `gotestsum` + `gocover-cobertura` (Go), `pytest-cov` (Python) y **Cucumber.js** para la suite BDD — ver [herramientas](#herramientas-y-frameworks)
 - **Integración continua (Reto 7)**: **Jenkins** 2.580.1 LTS (JCasC + Job DSL, plugins `junit`, `coverage`, `cucumber-reports`, `htmlpublisher`, `sonar`), **SonarQube** 9.9.8 Community y un registro local `registry:2` — ver [Integración continua](#integración-continua-reto-7)
+- **Observabilidad (Reto 8)**: **Prometheus** 3.15, **Grafana** 12.4, **Loki** 3.6 + **Promtail**, **Jaeger** 2.20 y **OpenTelemetry** en los 5 lenguajes — ver [Observabilidad](#observabilidad-reto-8)
 - Previsto: **TypeScript + React** para el frontend del proyecto final

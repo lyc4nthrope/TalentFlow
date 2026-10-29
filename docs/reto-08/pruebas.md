@@ -1,6 +1,6 @@
 # Reto 8 — Evidencia
 
-Cada sección dice qué se comprobó, cómo y qué salió. Las salidas y capturas son reales, del 2026-10-29, con el sistema levantado con `docker compose up -d` (los 7 microservicios más Prometheus, Grafana, Loki, Promtail y Jaeger). Las decisiones están en [`PLAN.md`](PLAN.md).
+Cada sección dice qué se comprobó, cómo y qué salió. Las salidas y las 10 capturas son reales, del 2026-10-29, con el sistema levantado con `docker compose up -d` (los 7 microservicios más Prometheus, Grafana, Loki, Promtail y Jaeger). Las decisiones están en [`PLAN.md`](PLAN.md).
 
 ## 1. Los 7 servicios están en Prometheus (paso 2 del PDF)
 
@@ -33,6 +33,14 @@ Tráfico real por el Gateway: tres tandas de 10 consultas a empleados, departame
 | `receive empleado.creado` | vacaciones-service | **103 ms** |
 
 La traza dura 167 ms en total, pero el cliente recibe su 201 a los 52,5 ms: lo que pasa después del `publish` ocurre en segundo plano, en los consumidores de RabbitMQ.
+
+## 3b. Logs de una petición en Loki (criterio 3)
+
+En Grafana → Explore → Loki, con el `traceId` de la traza anterior: `{project="talentflow"} |= "07bd5be95b8275e91d785482e91d295f" | json`. Aparecen **7 líneas de 6 servicios** (empleados, departamentos, auth, notificaciones, perfiles y vacaciones; el Gateway no loguea las peticiones correctas), todas con el mismo `traceId`. `| json` separa los campos del log (`level`, `service`, `message`, `spanId`...).
+
+![Consulta LogQL por traceId](capturas/10-loki-logql-traceid.png)
+
+Otras consultas, con su resultado: `{service="departamentos-service", level="ERROR"}` devolvió 304 líneas `GET /departamentos 500` de la prueba de la sección 6, y `{service="perfiles-service"} | json | message=~".*empleado.creado.*"` devolvió 91 líneas, una por cada `empleado.creado` que perfiles aplicó.
 
 ## 4. Caos 1: apagar un servicio (paso 5)
 
