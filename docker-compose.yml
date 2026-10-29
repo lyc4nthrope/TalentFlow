@@ -6,6 +6,16 @@ x-jwt: &jwt
   JWT_SECRET: ${JWT_SECRET:-talentflow_super_secret_2026}
   JWT_ISSUER: ${JWT_ISSUER:-auth-service}
 
+# Reto 8, D1 y D12: los 7 servicios envían sus trazas a Jaeger por OTLP/HTTP con las
+# variables estándar de OpenTelemetry (cada SDK les agrega /v1/traces). Solo trazas: las
+# métricas van por Prometheus (pull) y los logs por Promtail. OTEL_SDK_DISABLED=true las apaga.
+x-otel: &otel
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+  OTEL_TRACES_SAMPLER: parentbased_always_on
+  OTEL_METRICS_EXPORTER: none
+  OTEL_LOGS_EXPORTER: none
+  OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-false}
+
 services:
   # ---------------------------------------------------------------------------
   # Integración continua (Reto 7). Perfil "ci" (D11): `docker compose up` sigue
@@ -162,7 +172,8 @@ services:
     expose:
       - "8086"
     environment:
-      <<: *jwt
+      <<: [*jwt, *otel]
+      OTEL_SERVICE_NAME: auth-service
       PORT: 8086
       DB_HOST: database-auth
       DB_PORT: 5432
@@ -256,7 +267,8 @@ services:
     expose:
       - "9464"
     environment:
-      <<: *jwt
+      <<: [*jwt, *otel]
+      OTEL_SERVICE_NAME: api-gateway
       PORT: 8080
       METRICS_PORT: 9464
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
@@ -290,6 +302,8 @@ services:
     expose:
       - "8081"
     environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: empleados-service
       PORT: 8081
       DB_HOST: database-empleados
       DB_PORT: 5432
@@ -330,6 +344,8 @@ services:
     expose:
       - "8082"
     environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: departamentos-service
       PORT: 8082
       DB_HOST: database-departamentos
       DB_PORT: 3306
@@ -382,6 +398,8 @@ services:
     expose:
       - "8084"
     environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: notificaciones-service
       PORT: 8084
       DB_HOST: database-notificaciones
       DB_PORT: 5432
@@ -460,6 +478,8 @@ services:
     expose:
       - "8083"
     environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: perfiles-service
       DB_HOST: database-perfiles
       DB_PORT: 5432
       DB_NAME: ${DB_PERFILES_NAME:-db_perfiles}
@@ -517,6 +537,8 @@ services:
     expose:
       - "8085"
     environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: vacaciones-service
       PORT: 8085
       DB_HOST: database-vacaciones
       DB_PORT: 5432
