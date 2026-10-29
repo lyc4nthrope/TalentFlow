@@ -56,3 +56,19 @@ services:
     container_name: !reset null
   database-vacaciones:
     container_name: !reset null
+
+  # Observabilidad (Reto 8): no se levanta en la E2E de la CI. Usaría los mismos
+  # container_name y puertos del host que el sistema de desarrollo, y no hace falta: el
+  # Promtail del sistema de desarrollo, si está arriba, ya recoge los logs de estos
+  # contenedores con la etiqueta project="talentflow-ci-<build>". Un perfil que nadie
+  # activa los deja fuera de `up`.
+  prometheus:
+    profiles: !override ["observabilidad"]
+  loki:
+    profiles: !override ["observabilidad"]
+  promtail:
+    profiles: !override ["observabilidad"]
+  jaeger:
+    profiles: !override ["observabilidad"]
+  grafana:
+    profiles: !override ["observabilidad"]

@@ -1,5 +1,5 @@
 # Etapa 1: compilación. Solo existe durante el build; no llega a la imagen final.
-FROM golang:1.25-alpine AS builder
+FROM golang:1.27.1-alpine AS builder
 WORKDIR /src
 
 # Dependencias primero: si solo cambia el código, Docker reutiliza esta capa.

@@ -35,9 +35,9 @@ test('con JWT_SECRET de solo espacios tampoco arranca', () => {
     }
 });
 
-test('con JWT_SECRET el Gateway arranca y abre el puerto', async () => {
+test('con JWT_SECRET el Gateway arranca y abre el puerto público y el de métricas', async () => {
     const hijo = spawn(process.execPath, [INDEX], {
-        env: { PATH: process.env.PATH, PORT: '0', JWT_SECRET: 'secreto-de-prueba' },
+        env: { PATH: process.env.PATH, PORT: '0', METRICS_PORT: '0', JWT_SECRET: 'secreto-de-prueba' },
         stdio: ['ignore', 'pipe', 'pipe']
     });
     try {
@@ -46,7 +46,7 @@ test('con JWT_SECRET el Gateway arranca y abre el puerto', async () => {
             let salida = '';
             hijo.stdout.on('data', (trozo) => {
                 salida += trozo;
-                if (/ejecutandose en el puerto/.test(salida)) {
+                if (/ejecutandose en el puerto/.test(salida) && /Métricas del API Gateway/.test(salida)) {
                     clearTimeout(plazo);
                     resolve(true);
                 }

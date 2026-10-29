@@ -22,8 +22,10 @@ import (
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/amqp"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/api"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/aplicacion"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/metricas"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/postgres"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/smtp"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/trazas"
 )
 
 func main() {
@@ -35,7 +37,8 @@ func main() {
 		os.Exit(verificarSalud(env("PORT", "8084")))
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "notificaciones-service")
+	// Reto 8 (F8): JSON con el formato común y el traceId del span de cada evento.
+	logger := trazas.NuevoLogger(os.Stdout, "notificaciones-service")
 	if err := ejecutar(logger); err != nil {
 		logger.Error("el servicio terminó con error", "error", err)
 		os.Exit(1)
@@ -45,6 +48,12 @@ func main() {
 func ejecutar(logger *slog.Logger) error {
 	ctx, detener := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer detener()
+
+	apagarTrazas, err := trazas.Iniciar(ctx)
+	if err != nil {
+		return fmt.Errorf("configurar trazas: %w", err)
+	}
+	defer apagarTrazas(context.Background()) //nolint:errcheck
 
 	pool, err := pgxpool.New(ctx, urlPostgres())
 	if err != nil {
@@ -71,7 +80,7 @@ func ejecutar(logger *slog.Logger) error {
 
 	servidor := &http.Server{
 		Addr:    ":" + env("PORT", "8084"),
-		Handler: api.NuevoManejador(repositorio, consumidor, logger),
+		Handler: trazas.Envolver(metricas.Nuevas().Instrumentar(api.NuevoManejador(repositorio, consumidor, logger))),
 		// Evita que clientes lentos mantengan conexiones abiertas indefinidamente.
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,

@@ -62,7 +62,7 @@ func NuevoProcesador(repo Repositorio, canal Canal, logger *slog.Logger, reloj f
 func (p *Procesador) Procesar(ctx context.Context, cuerpo []byte) Resultado {
 	sobre, err := eventos.Parsear(cuerpo)
 	if err != nil {
-		p.logger.Error("mensaje descartado", "motivo", err.Error())
+		p.logger.ErrorContext(ctx, "mensaje descartado", "motivo", err.Error())
 		return Descartado
 	}
 	log := p.logger.With("eventoId", sobre.ID, "tipo", sobre.Type)
@@ -70,30 +70,30 @@ func (p *Procesador) Procesar(ctx context.Context, cuerpo []byte) Resultado {
 	notificacion, err := dominio.NotificacionDesdeEvento(sobre.Type, sobre.Data, p.reloj())
 	if err != nil {
 		if errors.Is(err, dominio.ErrTipoNoSoportado) {
-			log.Warn("evento ignorado: este servicio no lo consume")
+			log.WarnContext(ctx, "evento ignorado: este servicio no lo consume")
 		} else {
-			log.Error("evento descartado", "motivo", err.Error())
+			log.ErrorContext(ctx, "evento descartado", "motivo", err.Error())
 		}
 		return Descartado
 	}
 
 	guardada, nueva, err := p.repo.RegistrarSiEsNuevo(ctx, sobre.ID, notificacion)
 	if errors.Is(err, ErrRechazoPermanente) {
-		log.Error("evento descartado: la base de datos rechazó sus datos", "error", err.Error())
+		log.ErrorContext(ctx, "evento descartado: la base de datos rechazó sus datos", "error", err.Error())
 		return Descartado
 	}
 	if err != nil {
-		log.Error("no se pudo registrar la notificación; se reintentará", "error", err.Error())
+		log.ErrorContext(ctx, "no se pudo registrar la notificación; se reintentará", "error", err.Error())
 		return ErrorTransitorio
 	}
 	if !nueva {
-		log.Info("evento duplicado descartado: ya se había procesado este id")
+		log.InfoContext(ctx, "evento duplicado descartado: ya se había procesado este id")
 		return Duplicado
 	}
 
 	// Se envía solo después de registrarla: si el envío ocurriera antes y la BD
 	// fallara, el reintento enviaría la notificación dos veces.
 	p.canal.Enviar(guardada)
-	log.Info("notificación registrada", "notificacionId", guardada.ID, "empleadoId", guardada.EmpleadoID)
+	log.InfoContext(ctx, "notificación registrada", "notificacionId", guardada.ID, "empleadoId", guardada.EmpleadoID)
 	return Procesado
 }

@@ -86,11 +86,22 @@ func TestHealthReportaBDYBroker(t *testing.T) {
 	sano := peticion(t, nuevoManejadorDePrueba(consultasFalsas{}), "/health")
 	caido := peticion(t, nuevoManejadorDePrueba(consultasFalsas{errPing: errors.New("sin conexión")}), "/health")
 
-	if sano.Code != http.StatusOK || !strings.Contains(sano.Body.String(), `"broker":"UP"`) {
+	if sano.Code != http.StatusOK || !strings.Contains(sano.Body.String(), `"broker":"UP"`) ||
+		!strings.Contains(sano.Body.String(), `"checks":{"database":"UP","messageBroker":"UP"}`) {
 		t.Fatalf("health sano inesperado: %d %s", sano.Code, sano.Body)
 	}
-	if caido.Code != http.StatusServiceUnavailable || !strings.Contains(caido.Body.String(), `"db":"DOWN"`) {
+	if caido.Code != http.StatusServiceUnavailable || !strings.Contains(caido.Body.String(), `"db":"DOWN"`) ||
+		!strings.Contains(caido.Body.String(), `"database":"DOWN"`) {
 		t.Fatalf("health con BD caída inesperado: %d %s", caido.Code, caido.Body)
+	}
+}
+
+// En "checks" (formato del Reto 8) todo lo que no es UP, como RECONNECTING, es DOWN.
+func TestHealthChecksTrataLaReconexionDelBrokerComoDOWN(t *testing.T) {
+	m := NuevoManejador(consultasFalsas{}, brokerFalso("RECONNECTING"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	cuerpo := peticion(t, m, "/health").Body.String()
+	if !strings.Contains(cuerpo, `"messageBroker":"DOWN"`) || !strings.Contains(cuerpo, `"broker":"RECONNECTING"`) {
+		t.Fatalf("health inesperado: %s", cuerpo)
 	}
 }
 

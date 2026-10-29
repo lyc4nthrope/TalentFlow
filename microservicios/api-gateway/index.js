@@ -1,6 +1,7 @@
 // Punto de entrada: lee la configuración del entorno y abre el puerto. La lógica vive en
 // app.js (construible sin red, para las pruebas).
 const { crearApp } = require('./app');
+const { crearMetricas, crearAppMetricas } = require('./metricas');
 
 const PORT = process.env.PORT || 8080;
 // Reto 5, D11/D21: el secreto es obligatorio y no tiene valor por defecto en el código.
@@ -27,6 +28,14 @@ const SERVICIOS = [
     { nombre: 'vacaciones-service', prefijo: '/vacaciones', url: process.env.VACACIONES_SERVICE_URL || 'http://vacaciones-service:8085' }
 ];
 
-crearApp({ jwtSecret: JWT_SECRET, jwtIssuer: JWT_ISSUER, servicios: SERVICIOS }).listen(PORT, () => {
+const metricas = crearMetricas();
+crearApp({ jwtSecret: JWT_SECRET, jwtIssuer: JWT_ISSUER, servicios: SERVICIOS, metricas }).listen(PORT, () => {
     console.log(`API Gateway ejecutandose en el puerto ${PORT}`);
+});
+
+// Reto 8, D13: /metrics en un puerto interno aparte (solo expose en Compose), nunca en el
+// puerto público: Prometheus lo lee por la red de Docker y el cliente no puede verlo.
+const METRICS_PORT = process.env.METRICS_PORT || 9464;
+crearAppMetricas(metricas.registro).listen(METRICS_PORT, () => {
+    console.log(`Métricas del API Gateway en el puerto interno ${METRICS_PORT}`);
 });

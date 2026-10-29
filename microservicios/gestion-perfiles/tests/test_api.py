@@ -104,11 +104,13 @@ def test_health_reporta_bd_y_broker(repo):
     sano = TestClient(crear_app(repo, lambda: "UP")).get("/health")
     assert sano.status_code == 200
     assert sano.json()["components"] == {"app": "UP", "db": "UP", "broker": "UP"}
+    assert sano.json()["checks"] == {"database": "UP", "messageBroker": "UP"}
 
     repo.fallo = ConnectionError("sin BD")
     caido = TestClient(crear_app(repo, lambda: "DOWN")).get("/health")
     assert caido.status_code == 503
     assert caido.json()["components"]["db"] == "DOWN"
+    assert caido.json()["checks"] == {"database": "DOWN", "messageBroker": "DOWN"}
 
 
 def test_swagger_bajo_el_prefijo_del_servicio(cliente):

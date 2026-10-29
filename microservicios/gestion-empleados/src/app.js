@@ -4,6 +4,7 @@ const swaggerUi = require("swagger-ui-express");
 const { AppError } = require("./errores");
 const { crearRouterEmpleados } = require("./routes/empleados.routes");
 const { openapiSpec } = require("./openapi");
+const { middlewareMetricas, manejadorMetricas } = require("./metricas");
 
 const FRASES_ESTADO = {
   400: "Bad Request",
@@ -18,9 +19,15 @@ const TIMEOUT_HEALTH_DB_MS = 2000;
 function crearApp(
   servicioEmpleados,
   clienteDepartamentos = { estadoActual: () => "DESCONOCIDO" },
-  { verificarBaseDeDatos = async () => {}, publicador = { estadoActual: () => "DESCONOCIDO" } } = {}
+  { verificarBaseDeDatos = async () => {}, publicador = { estadoActual: () => "DESCONOCIDO" }, metricas } = {}
 ) {
   const app = express();
+
+  // Reto 8, D5: /metrics va antes del middleware para no contar los scrapes de Prometheus.
+  if (metricas) {
+    app.get("/metrics", manejadorMetricas(metricas.registro));
+    app.use(middlewareMetricas(metricas));
+  }
 
   app.use(express.json());
 
@@ -37,15 +44,18 @@ function crearApp(
   app.get("/health", async (req, res) => {
     const db = (await responde(verificarBaseDeDatos, TIMEOUT_HEALTH_DB_MS)) ? "UP" : "DOWN";
     const status = db === "UP" ? "UP" : "DOWN";
+    const broker = publicador.estadoActual();
     res.status(status === "UP" ? 200 : 503).json({
       status,
       service: "empleados-service",
       timestamp: new Date().toISOString(),
+      // Formato del PDF (Reto 8, D4); "components" se conserva para el Gateway (Reto 3).
+      checks: { database: db, messageBroker: broker === "UP" ? "UP" : "DOWN" },
       components: {
         app: "UP",
         db,
         circuitoDepartamentos: clienteDepartamentos.estadoActual(),
-        broker: publicador.estadoActual()
+        broker
       }
     });
   });

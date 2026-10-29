@@ -6,6 +6,16 @@ x-jwt: &jwt
   JWT_SECRET: ${JWT_SECRET:-talentflow_super_secret_2026}
   JWT_ISSUER: ${JWT_ISSUER:-auth-service}
 
+# Reto 8, D1 y D12: los 7 servicios envían sus trazas a Jaeger por OTLP/HTTP con las
+# variables estándar de OpenTelemetry (cada SDK les agrega /v1/traces). Solo trazas: las
+# métricas van por Prometheus (pull) y los logs por Promtail. OTEL_SDK_DISABLED=true las apaga.
+x-otel: &otel
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+  OTEL_TRACES_SAMPLER: parentbased_always_on
+  OTEL_METRICS_EXPORTER: none
+  OTEL_LOGS_EXPORTER: none
+  OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-false}
+
 services:
   # ---------------------------------------------------------------------------
   # Integración continua (Reto 7). Perfil "ci" (D11): `docker compose up` sigue
@@ -55,6 +65,8 @@ services:
     environment:
       # Valor académico para arrancar con un solo comando; .env lo sobrescribe.
       - SONAR_ADMIN_PASSWORD=${SONAR_ADMIN_PASSWORD:-talentflow_sonar_2026}
+      # Dirección con la que el navegador llega a SonarQube (enlaces desde Jenkins).
+      - SONAR_PUBLIC_URL=${SONAR_PUBLIC_URL:-http://localhost:9000}
     volumes:
       - sonar_token:/sonar-token
     depends_on:
@@ -160,7 +172,8 @@ services:
     expose:
       - "8086"
     environment:
-      <<: *jwt
+      <<: [*jwt, *otel]
+      OTEL_SERVICE_NAME: auth-service
       PORT: 8086
       DB_HOST: database-auth
       DB_PORT: 5432
@@ -249,9 +262,15 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    # Reto 8, D13: las métricas van en un puerto interno aparte, solo en la red de Docker
+    # (Prometheus las lee ahí); el 8080 publicado no las sirve.
+    expose:
+      - "9464"
     environment:
-      <<: *jwt
+      <<: [*jwt, *otel]
+      OTEL_SERVICE_NAME: api-gateway
       PORT: 8080
+      METRICS_PORT: 9464
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
       NOTIFICACIONES_SERVICE_URL: http://notificaciones-service:8084
@@ -283,6 +302,8 @@ services:
     expose:
       - "8081"
     environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: empleados-service
       PORT: 8081
       DB_HOST: database-empleados
       DB_PORT: 5432
@@ -323,6 +344,8 @@ services:
     expose:
       - "8082"
     environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: departamentos-service
       PORT: 8082
       DB_HOST: database-departamentos
       DB_PORT: 3306
@@ -375,6 +398,8 @@ services:
     expose:
       - "8084"
     environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: notificaciones-service
       PORT: 8084
       DB_HOST: database-notificaciones
       DB_PORT: 5432
@@ -453,6 +478,8 @@ services:
     expose:
       - "8083"
     environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: perfiles-service
       DB_HOST: database-perfiles
       DB_PORT: 5432
       DB_NAME: ${DB_PERFILES_NAME:-db_perfiles}
@@ -510,6 +537,10 @@ services:
     expose:
       - "8085"
     environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: vacaciones-service
+      # Spring no lee OTEL_SDK_DISABLED: usa su propia propiedad (la CI la pone en false).
+      MANAGEMENT_TRACING_ENABLED: ${MANAGEMENT_TRACING_ENABLED:-true}
       PORT: 8085
       DB_HOST: database-vacaciones
       DB_PORT: 5432
@@ -585,6 +616,136 @@ services:
     networks:
       - microservices-network
 
+  # ---------------------------------------------------------------------------
+  # Observabilidad (Reto 8). Sin perfil (D3): `docker compose up` la levanta con el
+  # sistema. Imágenes en versiones exactas (D11); configuración en observability/ (D6).
+  # Los puertos del host se pueden cambiar en .env si ya están ocupados.
+  # ---------------------------------------------------------------------------
+  # Métricas (modelo pull). En el host va en 9091 porque Jenkins (Reto 7) ocupa el 9090
+  # (D2); dentro de la red sigue siendo prometheus:9090.
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    container_name: prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Retención modesta para no llenar el disco en un entorno local.
+      - --storage.tsdb.retention.time=7d
+      # Permite recargar la configuración con POST /-/reload sin reiniciar.
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_PORT:-9091}:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  # Logs: almacén (Loki) y agente que los recolecta de los contenedores (Promtail).
+  # La imagen de Loki es distroless (sin shell ni wget): sin healthcheck; su estado se ve
+  # en http://localhost:3100/ready.
+  loki:
+    image: grafana/loki:3.6.19
+    container_name: loki
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    networks:
+      - microservices-network
+
+  # Promtail 3.6.11 es la última versión publicada (Grafana lo reemplaza por Alloy); el
+  # PDF lo pide y es compatible con Loki 3.6. Lee los logs por la API de Docker: basta el
+  # socket (solo lectura), en Linux y en Docker Desktop. Root para poder leer el socket
+  # (root:docker en Linux), igual que Jenkins (Reto 7, D17).
+  promtail:
+    image: grafana/promtail:3.6.11
+    container_name: promtail
+    restart: unless-stopped
+    user: root
+    command: ["-config.file=/etc/promtail/promtail-config.yml"]
+    volumes:
+      - ./observability/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail-data:/var/lib/promtail
+    depends_on:
+      - loki
+    networks:
+      - microservices-network
+
+  # Trazas (D1): Jaeger v2 en modo all-in-one (colector + almacenamiento en memoria + UI),
+  # recibe OTLP en 4317 (gRPC) y 4318 (HTTP) directamente. Los puertos OTLP solo dentro de
+  # la red: los servicios envían a http://jaeger:4318. Las trazas viven en memoria y se
+  # pierden al recrear el contenedor (entorno local).
+  # Fijado en 2.20.0: desde 2.21 Jaeger quitó la API HTTP v1 (/api/services, /api/traces)
+  # y solo deja /api/v3, pero la fuente de datos Jaeger de Grafana 12 todavía usa la v1.
+  jaeger:
+    image: jaegertracing/jaeger:2.20.0
+    container_name: jaeger
+    restart: unless-stopped
+    expose:
+      - "4317"
+      - "4318"
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686"   # UI
+    healthcheck:
+      # Extensión healthcheckv2 de Jaeger v2.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/status"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  # Visualización y alertas. Fuentes de datos y dashboards aprovisionados desde archivos
+  # (D6); datos persistidos en grafana-data.
+  grafana:
+    image: grafana/grafana:12.4.14
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      # Administrador: valor académico para arrancar con un solo comando; .env lo sobrescribe.
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-talentflow_grafana_2026}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      # Canal de las alertas (D8, F10): email por el SMTP de Mailhog (sin autenticación).
+      - GF_SMTP_ENABLED=true
+      - GF_SMTP_HOST=mailhog:1025
+      - GF_SMTP_FROM_ADDRESS=alertas@talentflow.local
+      - GF_SMTP_FROM_NAME=TalentFlow Alertas
+      - GF_SMTP_SKIP_VERIFY=true
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
 networks:
   microservices-network:
     driver: bridge
@@ -606,3 +767,8 @@ volumes:
   sonar_db_data:
   registry_data:
   sonar_token:
+  # Reto 8 (observabilidad)
+  prometheus-data:
+  grafana-data:
+  loki-data:
+  promtail-data:

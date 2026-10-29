@@ -1,0 +1,10 @@
+# Simulación de caos del Reto 8 (F11): departamentos-service responde con 2,5 s de retardo.
+# Supera el umbral de la alerta de latencia (2 s) sin llegar al timeout de 5 s con que
+# empleados-service lo llama, así que las peticiones funcionan, solo que lentas.
+#   Activar:    docker compose -f docker-compose.yml -f docker-compose.caos.yml up -d departamentos-service
+#   Desactivar: docker compose up -d departamentos-service
+services:
+  departamentos-service:
+    environment:
+      CAOS_LATENCIA_MS: 2500
+      CAOS_PROBABILIDAD: 1

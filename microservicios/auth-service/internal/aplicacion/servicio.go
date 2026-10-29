@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -88,7 +87,7 @@ func (s *AuthService) CrearCuentaDesdeEmpleado(ctx context.Context, eventoID str
 	case empleadoID == dominio.SujetoAdmin:
 		// El "sub" del administrador semilla está reservado: una cuenta de empleado
 		// con ese id compartiría la identidad del administrador en el JWT.
-		log.Printf("auth-service: no se crea la cuenta: el empleadoId %q está reservado para el administrador", empleadoID)
+		registrar(ctx, "no se crea la cuenta: el empleadoId %q está reservado para el administrador", empleadoID)
 		return fmt.Errorf("%w: empleadoId reservado para el administrador", ErrRechazoPermanente)
 	}
 	if err := validarEventoID(eventoID); err != nil {
@@ -122,7 +121,7 @@ func (s *AuthService) CrearCuentaDesdeEmpleado(ctx context.Context, eventoID str
 				if !hecho && err == nil {
 					// El choque no es con la cuenta del empleado ni con su email (p. ej. el
 					// sujeto de otra cuenta): no se puede crear y reintentarlo no cambia nada.
-					log.Printf("auth-service: no se crea la cuenta del empleado %s: choca con una cuenta existente que no es la suya", empleadoID)
+					registrar(ctx, "no se crea la cuenta del empleado %s: choca con una cuenta existente que no es la suya", empleadoID)
 					return fmt.Errorf("%w: el empleadoId choca con otra cuenta", ErrRechazoPermanente)
 				}
 				return err
@@ -138,7 +137,7 @@ func (s *AuthService) CrearCuentaDesdeEmpleado(ctx context.Context, eventoID str
 		return nil
 	})
 	if duplicado {
-		log.Printf("auth-service: evento duplicado descartado: %s ya se había procesado (empleado.creado)", eventoID)
+		registrar(ctx, "evento duplicado descartado: %s ya se había procesado (empleado.creado)", eventoID)
 		return nil
 	}
 	if err != nil {
@@ -146,7 +145,7 @@ func (s *AuthService) CrearCuentaDesdeEmpleado(ctx context.Context, eventoID str
 	}
 	if aPublicar != nil {
 		// Paso 3 del reto5.pdf: el log debe mostrar que se detectó empleado.creado y se generó el usuario.
-		log.Printf("auth-service: empleado.creado recibido (id %s): cuenta del empleado %s creada en %s",
+		registrar(ctx, "empleado.creado recibido (id %s): cuenta del empleado %s creada en %s",
 			eventoID, empleadoID, dominio.EstadoPendienteActivacion)
 		s.publicar(ctx, dominio.EventoUsuarioCreado, *aPublicar)
 	}
@@ -161,7 +160,7 @@ func cuentaYaResuelta(ctx context.Context, repo Repositorio, empleadoID, email s
 		return true, fmt.Errorf("buscar cuenta del empleado: %w", err)
 	}
 	if propia != nil {
-		log.Printf("auth-service: la cuenta del empleado %s ya existe; no se crea otra", empleadoID)
+		registrar(ctx, "la cuenta del empleado %s ya existe; no se crea otra", empleadoID)
 		return true, nil
 	}
 	conEseEmail, err := repo.BuscarPorEmail(ctx, email)
@@ -169,7 +168,7 @@ func cuentaYaResuelta(ctx context.Context, repo Repositorio, empleadoID, email s
 		return true, fmt.Errorf("buscar cuenta por email: %w", err)
 	}
 	if conEseEmail != nil {
-		log.Printf("auth-service: no se crea la cuenta del empleado %s: el email ya pertenece a otra cuenta (%s)",
+		registrar(ctx, "no se crea la cuenta del empleado %s: el email ya pertenece a otra cuenta (%s)",
 			empleadoID, conEseEmail.Sujeto)
 		return true, fmt.Errorf("%w: el email ya pertenece a otra cuenta", ErrRechazoPermanente)
 	}
@@ -332,11 +331,11 @@ func (s *AuthService) CambiarPassword(ctx context.Context, tokenAcceso, actual, 
 func (s *AuthService) SembrarAdmin(ctx context.Context, email, password string) error {
 	email = normalizarEmail(email)
 	if email == "" || password == "" {
-		log.Printf("auth-service: ADMIN_EMAIL/ADMIN_PASSWORD no configurados; no se crea el administrador semilla")
+		registrar(ctx, "ADMIN_EMAIL/ADMIN_PASSWORD no configurados; no se crea el administrador semilla")
 		return nil
 	}
 	if err := dominio.ValidarPassword(password); err != nil {
-		log.Printf("auth-service: ADMIN_PASSWORD no cumple la política de contraseñas; no se crea el administrador semilla")
+		registrar(ctx, "ADMIN_PASSWORD no cumple la política de contraseñas; no se crea el administrador semilla")
 		return nil
 	}
 	existente, err := s.repo.BuscarPorSujeto(ctx, dominio.SujetoAdmin)
@@ -344,7 +343,7 @@ func (s *AuthService) SembrarAdmin(ctx context.Context, email, password string) 
 		return fmt.Errorf("buscar administrador: %w", err)
 	}
 	if existente != nil {
-		log.Printf("auth-service: el administrador semilla ya existe")
+		registrar(ctx, "el administrador semilla ya existe")
 		return nil
 	}
 	conEseEmail, err := s.repo.BuscarPorEmail(ctx, email)
@@ -352,7 +351,7 @@ func (s *AuthService) SembrarAdmin(ctx context.Context, email, password string) 
 		return fmt.Errorf("buscar cuenta por email: %w", err)
 	}
 	if conEseEmail != nil {
-		log.Printf("auth-service: ADMIN_EMAIL ya pertenece a una cuenta que no es el administrador (%s); no se crea el administrador semilla",
+		registrar(ctx, "ADMIN_EMAIL ya pertenece a una cuenta que no es el administrador (%s); no se crea el administrador semilla",
 			conEseEmail.Sujeto)
 		return nil
 	}
@@ -368,13 +367,13 @@ func (s *AuthService) SembrarAdmin(ctx context.Context, email, password string) 
 		Estado:       dominio.EstadoActiva,
 	})
 	if errors.Is(err, ErrUsuarioDuplicado) {
-		log.Printf("auth-service: otra instancia creó una cuenta con ese sujeto o email al mismo tiempo; no se crea el administrador semilla")
+		registrar(ctx, "otra instancia creó una cuenta con ese sujeto o email al mismo tiempo; no se crea el administrador semilla")
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("crear administrador: %w", err)
 	}
-	log.Printf("auth-service: administrador semilla creado (%s)", email)
+	registrar(ctx, "administrador semilla creado (%s)", email)
 	return nil
 }
 
@@ -386,8 +385,8 @@ func (s *AuthService) publicar(ctx context.Context, tipo string, datos any) {
 		err = s.publicador.Publicar(ctx, sobre)
 	}
 	if err != nil {
-		log.Printf("auth-service: no se pudo publicar %s: %v", tipo, err)
+		registrarError(ctx, "no se pudo publicar %s: %v", tipo, err)
 		return
 	}
-	log.Printf("auth-service: evento publicado %s (id %s)", tipo, sobre.ID)
+	registrar(ctx, "evento publicado %s (id %s)", tipo, sobre.ID)
 }

@@ -73,6 +73,7 @@ describe('saludDelSistema', () => {
         assert.equal(salud.sistema, 'OK');
         assert.deepEqual(salud.problemas, []);
         assert.deepEqual(Object.keys(salud.servicios), ['a-service', 'b-service']);
+        assert.deepEqual(salud.checks, { 'a-service': 'UP', 'b-service': 'UP' });
     });
 
     it('DEGRADADO (pero el Gateway sigue UP) si un servicio cae', async () => {
@@ -80,5 +81,6 @@ describe('saludDelSistema', () => {
         assert.equal(salud.status, 'UP');
         assert.equal(salud.sistema, 'DEGRADADO');
         assert.deepEqual(salud.problemas, ['b-service: No responde']);
+        assert.deepEqual(salud.checks, { 'a-service': 'UP', 'b-service': 'DOWN' });
     });
 });

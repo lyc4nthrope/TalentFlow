@@ -8,6 +8,7 @@
 #      el Jenkins que ya está corriendo quedaría con uno revocado.
 #   4. Quality gate "TalentFlow" (cobertura total < 70 % → ERROR), por defecto.
 #   5. Webhook "jenkins" para que waitForQualityGate reciba el resultado.
+#   6. URL pública (localhost:9000) para que el enlace de Jenkins abra en el navegador.
 # Cualquier fallo termina con código distinto de 0 y Jenkins no arranca.
 set -eu
 
@@ -17,6 +18,7 @@ WEBHOOK_URL="${SONAR_WEBHOOK_URL:-http://jenkins:8080/sonarqube-webhook/}"
 COBERTURA_MINIMA="${SONAR_COBERTURA_MINIMA:-70}"
 ARCHIVO_TOKEN=/sonar-token/token
 GATE=TalentFlow
+PUBLIC_URL="${SONAR_PUBLIC_URL:-http://localhost:9000}"
 
 log() { echo "[sonar-init] $*"; }
 
@@ -112,4 +114,10 @@ if [ -z "$primera" ]; then
   api POST /api/webhooks/create --data-urlencode name=jenkins --data-urlencode "url=${WEBHOOK_URL}" >/dev/null
 fi
 log "webhook jenkins → ${WEBHOOK_URL}"
+# 6. URL pública: el scanner la escribe en report-task.txt y Jenkins la usa en su enlace
+#    "SonarQube". Sin ella el enlace apunta a http://sonarqube:9000, que es el nombre
+#    interno de Docker y el navegador no lo resuelve.
+api POST /api/settings/set --data-urlencode key=sonar.core.serverBaseURL \
+  --data-urlencode "value=${PUBLIC_URL}"
+log "URL pública → ${PUBLIC_URL}"
 log "listo"

@@ -183,9 +183,9 @@ describe("API de empleados", () => {
   });
 
   describe("GET /health", () => {
-    async function consultarHealth({ estadoCircuito = "CLOSED", verificarBaseDeDatos }) {
+    async function consultarHealth({ estadoCircuito = "CLOSED", verificarBaseDeDatos, publicador }) {
       const servicio = crearServicioEmpleados(crearRepositorioEmpleadosEnMemoria(), clienteDepartamentosFalso);
-      const app = crearApp(servicio, { estadoActual: () => estadoCircuito }, { verificarBaseDeDatos });
+      const app = crearApp(servicio, { estadoActual: () => estadoCircuito }, { verificarBaseDeDatos, publicador });
       const server = await new Promise((resolve) => {
         const s = app.listen(0, () => resolve(s));
       });
@@ -209,6 +209,18 @@ describe("API de empleados", () => {
         circuitoDepartamentos: "CLOSED",
         broker: "DESCONOCIDO"
       });
+      assert.deepEqual(cuerpo.checks, { database: "UP", messageBroker: "DOWN" });
+    });
+
+    it("checks en el formato del Reto 8: database y messageBroker UP", async () => {
+      const { status, cuerpo } = await consultarHealth({
+        verificarBaseDeDatos: async () => {},
+        publicador: { estadoActual: () => "UP" }
+      });
+
+      assert.equal(status, 200);
+      assert.deepEqual(cuerpo.checks, { database: "UP", messageBroker: "UP" });
+      assert.equal(cuerpo.components.broker, "UP");
     });
 
     it("responde 503 DOWN cuando la base de datos falla", async () => {
@@ -221,6 +233,7 @@ describe("API de empleados", () => {
       assert.equal(status, 503);
       assert.equal(cuerpo.status, "DOWN");
       assert.equal(cuerpo.components.db, "DOWN");
+      assert.equal(cuerpo.checks.database, "DOWN");
     });
 
     it("responde 503 DOWN cuando la base de datos no contesta dentro del plazo", async () => {
