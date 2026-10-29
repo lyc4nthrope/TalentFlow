@@ -34,6 +34,20 @@ spring:
     serialization:
       write-dates-as-timestamps: false  # fechas ISO-8601, no números
 
+# Reto 8 (F8): logs JSON con el formato común de los 7 servicios. Spring ya pone traceId y
+# spanId en el MDC (Micrometer Tracing) y el formato logstash los escribe como campos.
+logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      exclude: "@version,level_value,thread_name"
+      rename:
+        "[@timestamp]": timestamp
+        logger_name: logger
+      add:
+        service: ${OTEL_SERVICE_NAME:vacaciones-service}
+
 # Reto 8: solo se publica el endpoint de Prometheus (el /health propio sigue en SaludController).
 # El 8085 no está publicado en el host: solo Prometheus, dentro de la red de Docker, lo alcanza.
 management:

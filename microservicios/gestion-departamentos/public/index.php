@@ -52,7 +52,14 @@ register_shutdown_function(function () use ($metricas, $trazas, $metodo, $uri, $
     $metricas->registrar($metodo, $ruta, $estado, (hrtime(true) - $inicio) / 1e9);
     // El healthcheck de Docker (cada 5 s) no genera trazas: taparía las de negocio.
     if ($ruta !== '/health') {
-        $trazas->terminar($metodo, $ruta, $uri, $estado, $_SERVER['REQUEST_TIME_FLOAT'], microtime(true));
+        $fin = microtime(true);
+        $trazas->terminar($metodo, $ruta, $uri, $estado, $_SERVER['REQUEST_TIME_FLOAT'], $fin);
+        $duracionMs = round(($fin - $_SERVER['REQUEST_TIME_FLOAT']) * 1000, 1);
+        file_put_contents('php://stderr', $trazas->lineaLog(
+            $estado >= 500 ? 'ERROR' : 'INFO',
+            "$metodo $uri $estado",
+            ['route' => $ruta, 'status' => $estado, 'durationMs' => $duracionMs],
+        ) . "\n");
     }
 });
 

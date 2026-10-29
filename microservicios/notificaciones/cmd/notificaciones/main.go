@@ -37,7 +37,8 @@ func main() {
 		os.Exit(verificarSalud(env("PORT", "8084")))
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "notificaciones-service")
+	// Reto 8 (F8): JSON con el formato común y el traceId del span de cada evento.
+	logger := trazas.NuevoLogger(os.Stdout, "notificaciones-service")
 	if err := ejecutar(logger); err != nil {
 		logger.Error("el servicio terminó con error", "error", err)
 		os.Exit(1)

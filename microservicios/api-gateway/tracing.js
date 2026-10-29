@@ -3,6 +3,7 @@
 // OTEL_SERVICE_NAME y OTEL_EXPORTER_OTLP_ENDPOINT (http://jaeger:4318, OTLP/HTTP);
 // OTEL_SDK_DISABLED=true lo apaga. Muestreo: el de por defecto, 100 % (D12).
 const { NodeSDK } = require('@opentelemetry/sdk-node');
+const { activarLogsJson } = require('./logs');
 const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http');
 const { HttpInstrumentation } = require('@opentelemetry/instrumentation-http');
 const { ExpressInstrumentation } = require('@opentelemetry/instrumentation-express');
@@ -31,3 +32,6 @@ const sdk = new NodeSDK({
     ]
 });
 sdk.start();
+
+// Logs JSON con traceId (F8); también con las trazas apagadas.
+activarLogsJson(process.env.OTEL_SERVICE_NAME || 'servicio');

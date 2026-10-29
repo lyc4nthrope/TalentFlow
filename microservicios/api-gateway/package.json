@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node --require ./tracing.js index.js",
+    "start": "node --no-warnings --require ./tracing.js index.js",
     "pretest": "node -e \"const fs=require('fs');fs.rmSync('reports',{recursive:true,force:true});fs.mkdirSync('reports')\"",
     "test": "node --test --experimental-test-coverage --test-coverage-include=\"autenticacion.js\" --test-coverage-include=\"autorizacion.js\" --test-coverage-include=\"salud.js\" --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=reports/junit.xml --test-reporter=lcov --test-reporter-destination=reports/lcov.info \"tests/*.test.js\""
   },

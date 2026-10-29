@@ -3,7 +3,6 @@ package aplicacion
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/dominio"
@@ -60,14 +59,14 @@ func (s *AuthService) procesarCiclo(ctx context.Context, tipoEvento, eventoID, e
 			return fmt.Errorf("buscar cuenta del empleado: %w", err)
 		}
 		if u == nil {
-			log.Printf("auth-service: %s para el empleado %s sin cuenta; no hay nada que cambiar", tipoEvento, empleadoID)
+			registrar(ctx, "%s para el empleado %s sin cuenta; no hay nada que cambiar", tipoEvento, empleadoID)
 			return nil
 		}
 		tipo, datos, err = aplicar(ctx, repo, u)
 		return err
 	})
 	if duplicado {
-		log.Printf("auth-service: evento duplicado descartado: %s ya se había procesado (%s)", eventoID, tipoEvento)
+		registrar(ctx, "evento duplicado descartado: %s ya se había procesado (%s)", eventoID, tipoEvento)
 		return nil
 	}
 	if err != nil {
@@ -92,11 +91,11 @@ func (s *AuthService) RetirarCuenta(ctx context.Context, eventoID string, e domi
 			cambio, err := repo.Retirar(ctx, u.ID)
 			if err != nil || !cambio {
 				if err == nil {
-					log.Printf("auth-service: la cuenta del empleado %s ya estaba retirada", empleadoID)
+					registrar(ctx, "la cuenta del empleado %s ya estaba retirada", empleadoID)
 				}
 				return "", nil, err
 			}
-			log.Printf("auth-service: cuenta del empleado %s desactivada de forma permanente (retiro)", empleadoID)
+			registrar(ctx, "cuenta del empleado %s desactivada de forma permanente (retiro)", empleadoID)
 			return dominio.EventoCuentaDesactivada, dominio.CuentaDesactivada{
 				EmpleadoID: u.EmpleadoID, Email: u.Email, Motivo: dominio.MotivoRetiro, Permanente: true,
 			}, nil
@@ -125,19 +124,19 @@ func (s *AuthService) SuspenderPorVacaciones(ctx context.Context, eventoID strin
 				if err != nil || !cambio {
 					return "", nil, err
 				}
-				log.Printf("auth-service: cuenta del empleado %s suspendida por las vacaciones %s", empleadoID, vacacionesID)
+				registrar(ctx, "cuenta del empleado %s suspendida por las vacaciones %s", empleadoID, vacacionesID)
 				return dominio.EventoCuentaDesactivada, dominio.CuentaDesactivada{
 					EmpleadoID: u.EmpleadoID, Email: u.Email, Motivo: dominio.MotivoVacaciones, Permanente: false,
 				}, nil
 			case dominio.EstadoSuspendidaTemporal:
 				_, err := repo.CambiarSuspension(ctx, u.ID, vacacionesID)
 				if err == nil {
-					log.Printf("auth-service: la cuenta del empleado %s ya estaba suspendida; ahora la suspensión es de las vacaciones %s",
+					registrar(ctx, "la cuenta del empleado %s ya estaba suspendida; ahora la suspensión es de las vacaciones %s",
 						empleadoID, vacacionesID)
 				}
 				return "", nil, err
 			default:
-				log.Printf("auth-service: vacaciones %s sin efecto: la cuenta del empleado %s está %s",
+				registrar(ctx, "vacaciones %s sin efecto: la cuenta del empleado %s está %s",
 					vacacionesID, empleadoID, u.Estado)
 				return "", nil, nil
 			}
@@ -160,7 +159,7 @@ func (s *AuthService) ReactivarPorFinDeVacaciones(ctx context.Context, eventoID 
 	return s.procesarCiclo(ctx, dominio.EventoVacacionesFinalizadas, eventoID, empleadoID,
 		func(ctx context.Context, repo Repositorio, u *dominio.Usuario) (string, any, error) {
 			if u.Estado == dominio.EstadoDesactivadaPermanente {
-				log.Printf("auth-service: cuenta retirada: no se reactiva (empleado %s, vacaciones %s)", empleadoID, vacacionesID)
+				registrar(ctx, "cuenta retirada: no se reactiva (empleado %s, vacaciones %s)", empleadoID, vacacionesID)
 				return "", nil, nil
 			}
 			cambio, err := repo.Reactivar(ctx, u.ID, vacacionesID)
@@ -168,11 +167,11 @@ func (s *AuthService) ReactivarPorFinDeVacaciones(ctx context.Context, eventoID 
 				return "", nil, err
 			}
 			if !cambio {
-				log.Printf("auth-service: fin de las vacaciones %s sin efecto: la cuenta del empleado %s está %s (suspensión de %q)",
+				registrar(ctx, "fin de las vacaciones %s sin efecto: la cuenta del empleado %s está %s (suspensión de %q)",
 					vacacionesID, empleadoID, u.Estado, u.VacacionesSuspension)
 				return "", nil, nil
 			}
-			log.Printf("auth-service: cuenta del empleado %s reactivada al terminar las vacaciones %s", empleadoID, vacacionesID)
+			registrar(ctx, "cuenta del empleado %s reactivada al terminar las vacaciones %s", empleadoID, vacacionesID)
 			return dominio.EventoCuentaActivada, dominio.CuentaActivada{
 				EmpleadoID: u.EmpleadoID, Email: u.Email, Motivo: dominio.MotivoFinVacaciones,
 			}, nil

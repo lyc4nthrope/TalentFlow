@@ -43,3 +43,12 @@ scrape_configs:
       - drop:
           older_than: 24h
           drop_counter_reason: log_demasiado_viejo
+      # Reto 8 (F8): los 7 servicios escriben JSON con el formato común. "level" pasa a
+      # etiqueta (pocos valores: {service="auth-service", level="ERROR"}). El traceId NO:
+      # crearía un stream por petición; se busca en el texto con |= "<traceId>" o | json.
+      # Las líneas que no son JSON (Loki, Jaeger, bases de datos) pasan sin cambios.
+      - json:
+          expressions:
+            level: level
+      - labels:
+          level:

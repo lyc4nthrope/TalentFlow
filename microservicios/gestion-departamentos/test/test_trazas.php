@@ -50,5 +50,11 @@ $apagado = new Trazas(null, 'x', null, $enviar);
 $apagado->terminar('GET', '/departamentos', '/departamentos', 200, 1, 2);
 comprobar(count($enviados) === 2, 'apagado (sin endpoint) no envía nada');
 
+echo "Log JSON\n";
+$log = json_decode($t->lineaLog('ERROR', 'GET /departamentos/D01 500', ['status' => 500]), true);
+comprobar($log['level'] === 'ERROR' && $log['service'] === 'departamentos-service', 'nivel y servicio');
+comprobar($log['traceId'] === '4bf92f3577b34da6a3ce929d0e0e4736' && $log['spanId'] === $t->spanId, 'traceId y spanId de la petición');
+comprobar($log['status'] === 500 && strtotime($log['timestamp']) !== false, 'campos extra y timestamp');
+
 echo $fallos === 0 ? "OK\n" : "$fallos fallos\n";
 exit($fallos === 0 ? 0 : 1);

@@ -66,7 +66,7 @@ func (s *servidor) listarPorEmpleado(w http.ResponseWriter, r *http.Request) {
 func (s *servidor) responderLista(w http.ResponseWriter, r *http.Request, lista []dominio.Notificacion, err error) {
 	if err != nil {
 		// El detalle queda en el log; al cliente no se le filtran errores internos.
-		s.logger.Error("error consultando notificaciones", "error", err, "ruta", r.URL.Path)
+		s.logger.ErrorContext(r.Context(), "error consultando notificaciones", "error", err, "ruta", r.URL.Path)
 		responderError(w, r, http.StatusInternalServerError, "Error interno del servidor")
 		return
 	}

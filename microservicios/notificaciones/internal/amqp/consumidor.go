@@ -133,12 +133,12 @@ func (c *Consumidor) manejar(ctx context.Context, entrega amqp091.Delivery) {
 	switch resultado {
 	case aplicacion.Procesado, aplicacion.Duplicado, aplicacion.Descartado:
 		if err := entrega.Ack(false); err != nil {
-			c.logger.Error("no se pudo confirmar el mensaje", "error", err)
+			c.logger.ErrorContext(ctx, "no se pudo confirmar el mensaje", "error", err)
 		}
 	case aplicacion.ErrorTransitorio:
 		dormir(ctx, c.cfg.EsperaReintento)
 		if err := entrega.Nack(false, true); err != nil {
-			c.logger.Error("no se pudo devolver el mensaje a la cola", "error", err)
+			c.logger.ErrorContext(ctx, "no se pudo devolver el mensaje a la cola", "error", err)
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,6 +41,9 @@ func main() {
 	if *salud {
 		os.Exit(codigoSalida(comprobarSalud(urlSaludLocal(), &http.Client{Timeout: timeoutChequeo})))
 	}
+
+	// Reto 8 (F8): logs JSON con el formato común; también los log.Printf del arranque.
+	slog.SetDefault(trazas.NuevoLogger(os.Stdout, "auth-service"))
 
 	cfg, err := config.Cargar()
 	if err != nil {

@@ -5,8 +5,8 @@
   "main": "src/server.js",
   "private": true,
   "scripts": {
-    "dev": "node --require ./src/tracing.js src/server.js",
-    "start": "node --require ./src/tracing.js src/server.js",
+    "dev": "node --no-warnings --require ./src/tracing.js src/server.js",
+    "start": "node --no-warnings --require ./src/tracing.js src/server.js",
     "pretest": "node -e \"const fs=require('fs');fs.rmSync('reports',{recursive:true,force:true});fs.mkdirSync('reports')\"",
     "test": "node --test --experimental-test-coverage --test-coverage-include=\"src/dominio/**\" --test-coverage-include=\"src/services/**\" --test-coverage-include=\"src/eventos/envelope.js\" --test-coverage-include=\"src/eventos/eventos-empleado.js\" --test-coverage-include=\"src/errores.js\" --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=reports/junit.xml --test-reporter=lcov --test-reporter-destination=reports/lcov.info \"tests/*.test.js\""
   },

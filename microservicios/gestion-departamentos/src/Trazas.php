@@ -53,6 +53,22 @@ final class Trazas
         );
     }
 
+    /**
+     * Log JSON con el formato común de los 7 servicios (Reto 8, F8) y el traceId de esta
+     * petición, para que Grafana lo enlace con su traza.
+     */
+    public function lineaLog(string $nivel, string $mensaje, array $extra = []): string
+    {
+        return json_encode([
+            'timestamp' => (new DateTimeImmutable())->format('Y-m-d\TH:i:s.vp'),
+            'level' => $nivel,
+            'service' => $this->servicio,
+            'message' => $mensaje,
+            'traceId' => $this->traceId,
+            'spanId' => $this->spanId,
+        ] + $extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
     /** Cuerpo OTLP/JSON (ids en hexadecimal, tiempos en nanosegundos como texto). */
     public function carga(string $metodo, string $ruta, string $uri, int $estado, float $inicio, float $fin): array
     {
