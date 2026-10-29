@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from psycopg_pool import AsyncConnectionPool
 
+from app import trazas
 from app.api import crear_app
 from app.aplicacion import ProcesadorEventos
 from app.config import Config
@@ -58,3 +59,5 @@ async def ciclo_de_vida(_app):
 
 
 app = crear_app(repositorio, consumidor.estado, lifespan=ciclo_de_vida)
+# Antes de que el ciclo de vida abra el pool: así psycopg queda instrumentado.
+trazas.iniciar(app)
