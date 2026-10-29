@@ -53,7 +53,10 @@ public class SaludController {
         cuerpo.put("status", status);
         cuerpo.put("service", "vacaciones-service");
         cuerpo.put("timestamp", Instant.now().truncatedTo(ChronoUnit.SECONDS).toString());
-        cuerpo.put("components", Map.of("app", "UP", "db", db, "broker", brokerConectado() ? "UP" : "DOWN"));
+        String broker = brokerConectado() ? "UP" : "DOWN";
+        // Formato del PDF (Reto 8, D4); "components" se conserva para el Gateway (Reto 3).
+        cuerpo.put("checks", Map.of("database", db, "messageBroker", broker));
+        cuerpo.put("components", Map.of("app", "UP", "db", db, "broker", broker));
         return ResponseEntity.status("UP".equals(status) ? 200 : 503).body(cuerpo);
     }
 

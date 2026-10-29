@@ -49,6 +49,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
+        <!-- Reto 8 (D5): métricas en /actuator/prometheus; versiones gestionadas por Spring Boot. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
         <!-- Generación de la especificación OpenAPI (la UI se sirve aparte, bajo /vacaciones/docs) -->
         <dependency>
             <groupId>org.springdoc</groupId>

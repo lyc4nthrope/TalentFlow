@@ -28,6 +28,14 @@ spring:
     serialization:
       write-dates-as-timestamps: false  # fechas ISO-8601, no números
 
+# Reto 8: solo se publica el endpoint de Prometheus (el /health propio sigue en SaludController).
+# El 8085 no está publicado en el host: solo Prometheus, dentro de la red de Docker, lo alcanza.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus
+
 springdoc:
   api-docs:
     path: /vacaciones/openapi.json
