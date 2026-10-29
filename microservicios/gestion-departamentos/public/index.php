@@ -63,6 +63,16 @@ register_shutdown_function(function () use ($metricas, $trazas, $metodo, $uri, $
     }
 });
 
+// --- Simulación de caos (Reto 8, F11): retardo artificial, apagado por defecto ---
+// Solo se activa con docker-compose.caos.yml (CAOS_LATENCIA_MS > 0). Va después de iniciar
+// métricas y trazas para que el retardo se vea en Grafana y en Jaeger; /health queda fuera
+// para que Docker no dé el contenedor por caído (el caos es lentitud, no caída).
+$caosMs = (int) (getenv('CAOS_LATENCIA_MS') ?: 0);
+$caosProbabilidad = (float) (getenv('CAOS_PROBABILIDAD') ?: 1);
+if ($caosMs > 0 && $uri !== '/health' && mt_rand() / mt_getrandmax() < $caosProbabilidad) {
+    usleep($caosMs * 1000);
+}
+
 // --- Documentación (no requieren base de datos) ---
 // Bajo el prefijo del servicio: el Gateway solo enruta /departamentos/*. Van antes de
 // GET /departamentos/{id}, que si no tomaría "docs" como un id.
