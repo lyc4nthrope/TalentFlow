@@ -1,0 +1,15 @@
+# Canal de notificación de las alertas (Reto 8, D6 y D8): email por el SMTP de Grafana
+# (GF_SMTP_* en docker-compose.yml), que apunta a Mailhog. Los correos se ven en
+# http://localhost:8025. En producción se cambiaría solo la dirección y el servidor SMTP.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: Email soporte
+    receivers:
+      - uid: email-soporte
+        type: email
+        settings:
+          addresses: soporte@talentflow.local
+          singleEmail: false
+        disableResolveMessage: false

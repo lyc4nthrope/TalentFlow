@@ -1,0 +1,123 @@
+# Reglas de alerta como código (Reto 8, D6 y D9): las 3 primeras del PDF. Se evalúan cada
+# 30 s; "for" es cuánto debe sostenerse la condición antes de avisar (evita falsas alarmas
+# por un pico aislado). Sin datos (p. ej. sin tráfico) = OK: no hay errores ni latencia que
+# medir. Las consultas usan el contrato común de métricas de los 7 servicios (D5).
+apiVersion: 1
+groups:
+- orgId: 1
+  name: TalentFlow
+  folder: TalentFlow
+  interval: 30s
+  rules:
+  - uid: servicio-caido
+    title: Servicio caído
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: up{job!="prometheus"}
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+    for: 1m
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: critical
+      team: talentflow
+    annotations:
+      summary: '{{ $labels.job }} no responde'
+      description: Prometheus no puede leer /metrics de {{ $labels.job }} desde hace más de 1 minuto (up == 0). El servicio está caído o no es alcanzable en la red de Docker.
+      dashboardUid: talentflow-observabilidad
+  - uid: tasa-errores-5xx
+    title: Alta tasa de errores 5xx
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: sum by (job) (rate(http_requests_total{status=~"5.."}[2m])) / sum by (job) (rate(http_requests_total[2m]))
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0.1
+    for: 2m
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: warning
+      team: talentflow
+    annotations:
+      summary: '{{ $labels.job }} responde con errores 5xx'
+      description: 'Más del 10 % de las respuestas de {{ $labels.job }} son errores del servidor (5xx) desde hace más de 2 minutos. Valor actual: {{ humanizePercentage $values.A.Value }}.'
+      dashboardUid: talentflow-observabilidad
+  - uid: latencia-alta
+    title: Alta latencia
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: sum by (job) (rate(http_request_duration_seconds_sum{route!="/health"}[2m])) / sum by (job) (rate(http_request_duration_seconds_count{route!="/health"}[2m]))
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 2
+    for: 2m
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: warning
+      team: talentflow
+    annotations:
+      summary: '{{ $labels.job }} responde lento'
+      description: 'La latencia promedio de {{ $labels.job }} supera 2 s desde hace más de 2 minutos (sin contar /health). Valor actual: {{ humanizeDuration $values.A.Value }}. Revisar su traza en Jaeger
+        para ver qué dependencia tarda.'
+      dashboardUid: talentflow-observabilidad
