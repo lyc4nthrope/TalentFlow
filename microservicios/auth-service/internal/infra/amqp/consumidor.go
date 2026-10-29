@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"sync/atomic"
 	"time"
 
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/aplicacion"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/dominio"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/eventos"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/auth-service/internal/trazas"
 	amqp091 "github.com/rabbitmq/amqp091-go"
 )
 
@@ -80,7 +80,7 @@ func (c *Consumidor) Ejecutar(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		log.Printf("auth-service: consumo interrumpido; reintentando en %s: %v", espera, err)
+		registrar(ctx, "consumo interrumpido; reintentando en %s: %v", espera, err)
 		if !dormir(ctx, espera) {
 			return
 		}
@@ -123,7 +123,7 @@ func (c *Consumidor) consumir(ctx context.Context) error {
 
 	cierre := conexion.NotifyClose(make(chan *amqp091.Error, 1))
 	c.conectado.Store(true)
-	log.Printf("auth-service: consumiendo eventos en cola %s", c.cfg.Cola)
+	registrar(ctx, "consumiendo eventos en cola %s", c.cfg.Cola)
 
 	for {
 		select {
@@ -143,26 +143,30 @@ func (c *Consumidor) consumir(ctx context.Context) error {
 func (c *Consumidor) manejar(ctx context.Context, entrega amqp091.Delivery) {
 	var sobre eventos.Envelope
 	if err := json.Unmarshal(entrega.Body, &sobre); err != nil {
-		log.Printf("auth-service: evento descartado, envelope inválido: %v", err)
+		registrarError(ctx, "evento descartado, envelope inválido: %v", err)
 		_ = entrega.Ack(false)
 		return
 	}
 
+	// Reto 8 (D10): continúa la traza de quien publicó; el ctx llega al caso de uso, así lo
+	// que este publique (usuario.creado, cuenta.*) queda en la misma traza.
+	ctx, span := trazas.IniciarConsumo(ctx, entrega.Headers, sobre.Type)
 	err := c.despachar(ctx, sobre)
+	trazas.Terminar(span, err)
 	switch {
 	case err == nil:
 		if err := entrega.Ack(false); err != nil {
-			log.Printf("auth-service: no se pudo confirmar el mensaje %s: %v", sobre.ID, err)
+			registrarError(ctx, "no se pudo confirmar el mensaje %s: %v", sobre.ID, err)
 		}
 	case errors.Is(err, errTipoNoSoportado):
-		log.Printf("auth-service: evento descartado, tipo no soportado %q (id %s)", sobre.Type, sobre.ID)
+		registrar(ctx, "evento descartado, tipo no soportado %q (id %s)", sobre.Type, sobre.ID)
 		_ = entrega.Ack(false)
 	case errors.Is(err, aplicacion.ErrSolicitudInvalida), errors.Is(err, aplicacion.ErrRechazoPermanente):
 		// Mensaje envenenado o dato que la BD nunca aceptará: reintentarlo no sirve.
-		log.Printf("auth-service: evento descartado (id %s, %s): %v", sobre.ID, sobre.Type, err)
+		registrar(ctx, "evento descartado (id %s, %s): %v", sobre.ID, sobre.Type, err)
 		_ = entrega.Ack(false)
 	default:
-		log.Printf("auth-service: fallo transitorio procesando %s (%s); se reintentará: %v", sobre.ID, sobre.Type, err)
+		registrarError(ctx, "fallo transitorio procesando %s (%s); se reintentará: %v", sobre.ID, sobre.Type, err)
 		dormir(ctx, esperaReintento)
 		_ = entrega.Nack(false, true)
 	}

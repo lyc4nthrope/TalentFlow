@@ -6,11 +6,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 
-# El toolchain go1.25.0 (el mínimo de go.mod) no trae `covdata` y `go test -cover`
-# falla con "no such tool covdata" en los paquetes sin pruebas; desde 1.25.x posteriores
-# go lo compila al vuelo. Solo afecta a las pruebas: la imagen usa golang:1.25-alpine.
-export GOTOOLCHAIN ?= go1.25.14
-
 GOTESTSUM :=gotest.tools/gotestsum@v1.13.0
 COBERTURA := github.com/boumenot/gocover-cobertura@v1.4.0
 FILTRO    := ../../scripts/cobertura-go.awk

@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import dominio
 from app.aplicacion import RepositorioPerfiles
+from app.metricas import instrumentar
 
 logger = logging.getLogger("perfiles.api")
 
@@ -62,6 +63,7 @@ def crear_app(
         swagger_ui_parameters={"persistAuthorization": True},
         lifespan=lifespan,
     )
+    instrumentar(app)
 
     @app.exception_handler(RequestValidationError)
     async def validacion(request: Request, error: RequestValidationError) -> JSONResponse:
@@ -152,13 +154,16 @@ def crear_app(
         except Exception:  # noqa: BLE001
             db = "DOWN"
         status = "UP" if db == "UP" else "DOWN"
+        broker = estado_broker()
         return JSONResponse(
             status_code=200 if status == "UP" else 503,
             content={
                 "status": status,
                 "service": "perfiles-service",
                 "timestamp": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
-                "components": {"app": "UP", "db": db, "broker": estado_broker()},
+                # Formato del PDF (Reto 8, D4); "components" se conserva para el Gateway (Reto 3).
+                "checks": {"database": db, "messageBroker": "UP" if broker == "UP" else "DOWN"},
+                "components": {"app": "UP", "db": db, "broker": broker},
             },
         )
 

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -92,7 +91,7 @@ func (h *AuthHandler) responderFallo(w http.ResponseWriter, r *http.Request, err
 			return
 		}
 	}
-	log.Printf("auth-service: error interno en %s: %v", r.URL.Path, err)
+	registrarError(r.Context(), "error interno en %s: %v", r.URL.Path, err)
 	responderError(w, r, http.StatusInternalServerError, "Error interno del servidor")
 }
 
@@ -128,7 +127,7 @@ func (h *AuthHandler) RecoverPassword(w http.ResponseWriter, r *http.Request) {
 		ctx, cancelar := context.WithTimeout(base, plazoRecuperacion)
 		defer cancelar()
 		if err := h.casos.SolicitarRecuperacion(ctx, req.Email); err != nil {
-			log.Printf("auth-service: error procesando recuperación: %v", err)
+			registrarError(r.Context(), "error procesando recuperación: %v", err)
 		}
 	})
 	responderJSON(w, http.StatusAccepted, map[string]string{

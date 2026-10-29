@@ -1,0 +1,11 @@
+# Enrutamiento de las alertas (Reto 8, D6): todas van al email de soporte. Se agrupan por
+# regla y servicio: si dos servicios caen, llegan dos correos, uno por servicio.
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: Email soporte
+    group_by: ['alertname', 'job']
+    group_wait: 10s        # espera corta antes del primer correo de un grupo nuevo
+    group_interval: 1m     # cambios dentro del grupo (otro servicio cae, uno se recupera)
+    repeat_interval: 1h    # recordatorio mientras siga disparada

@@ -7,28 +7,27 @@ from contextlib import asynccontextmanager
 
 from psycopg_pool import AsyncConnectionPool
 
+from app import logs, trazas
 from app.api import crear_app
 from app.aplicacion import ProcesadorEventos
 from app.config import Config
 from app.consumidor import Consumidor
 from app.repositorio import RepositorioPostgres
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s service=perfiles-service logger=%(name)s %(message)s",
-)
 logger = logging.getLogger("perfiles")
 
 
 class _SinHealthcheck(logging.Filter):
-    """El healthcheck de Docker consulta /health cada 5 s: sin este filtro, el log de
-    acceso se llena de esas líneas y tapa los eventos. Las demás peticiones se registran."""
+    """El healthcheck de Docker (cada 5 s) y Prometheus (cada 15 s): sin este filtro, el log
+    de acceso se llena de esas líneas y tapa los eventos. Las demás peticiones se registran."""
 
     def filter(self, registro: logging.LogRecord) -> bool:
-        return "GET /health " not in registro.getMessage()
+        mensaje = registro.getMessage()
+        return "GET /health " not in mensaje and "GET /metrics " not in mensaje
 
 
-logging.getLogger("uvicorn.access").addFilter(_SinHealthcheck())
+# Reto 8 (F8): logs JSON con traceId, también los de uvicorn.
+logs.configurar("perfiles-service", (_SinHealthcheck(),))
 
 config = Config.desde_entorno()
 pool = AsyncConnectionPool(config.url_postgres, min_size=1, max_size=5, open=False)
@@ -58,3 +57,5 @@ async def ciclo_de_vida(_app):
 
 
 app = crear_app(repositorio, consumidor.estado, lifespan=ciclo_de_vida)
+# Antes de que el ciclo de vida abra el pool: así psycopg queda instrumentado.
+trazas.iniciar(app)

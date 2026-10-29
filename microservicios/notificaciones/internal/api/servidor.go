@@ -66,7 +66,7 @@ func (s *servidor) listarPorEmpleado(w http.ResponseWriter, r *http.Request) {
 func (s *servidor) responderLista(w http.ResponseWriter, r *http.Request, lista []dominio.Notificacion, err error) {
 	if err != nil {
 		// El detalle queda en el log; al cliente no se le filtran errores internos.
-		s.logger.Error("error consultando notificaciones", "error", err, "ruta", r.URL.Path)
+		s.logger.ErrorContext(r.Context(), "error consultando notificaciones", "error", err, "ruta", r.URL.Path)
 		responderError(w, r, http.StatusInternalServerError, "Error interno del servidor")
 		return
 	}
@@ -86,6 +86,7 @@ func (s *servidor) salud(w http.ResponseWriter, r *http.Request) {
 	if err := s.consultas.Ping(ctx); err != nil {
 		db = "DOWN"
 	}
+	broker := s.broker.Estado()
 	status, codigo := "UP", http.StatusOK
 	if db == "DOWN" {
 		status, codigo = "DOWN", http.StatusServiceUnavailable
@@ -94,10 +95,15 @@ func (s *servidor) salud(w http.ResponseWriter, r *http.Request) {
 		"status":    status,
 		"service":   "notificaciones-service",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		// Formato del PDF (Reto 8, D4); "components" se conserva para el Gateway (Reto 3).
+		"checks": map[string]string{
+			"database":      db,
+			"messageBroker": estadoBroker(broker),
+		},
 		"components": map[string]string{
 			"app":    "UP",
 			"db":     db,
-			"broker": s.broker.Estado(),
+			"broker": broker,
 		},
 	})
 }
@@ -144,3 +150,11 @@ const paginaSwagger = `<!doctype html>
   </script>
 </body>
 </html>`
+
+// estadoBroker: cualquier estado distinto de "UP" (p. ej. "RECONNECTING") cuenta como DOWN.
+func estadoBroker(estado string) string {
+	if estado == "UP" {
+		return "UP"
+	}
+	return "DOWN"
+}

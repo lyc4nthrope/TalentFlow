@@ -1,0 +1,14 @@
+# Proveedor de dashboards como código (Reto 8, D6): Grafana carga todo JSON que haya en
+# /etc/grafana/dashboards (observability/grafana/dashboards): talentflow.json (F9).
+apiVersion: 1
+
+providers:
+  - name: TalentFlow
+    folder: TalentFlow
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

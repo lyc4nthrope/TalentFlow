@@ -264,6 +264,14 @@ const openapiSpec = {
           status: { type: "string", enum: ["UP", "DOWN"] },
           service: { type: "string", example: "empleados-service" },
           timestamp: { type: "string", format: "date-time" },
+          checks: {
+            type: "object",
+            description: "Formato del Reto 8",
+            properties: {
+              database: { type: "string", enum: ["UP", "DOWN"] },
+              messageBroker: { type: "string", enum: ["UP", "DOWN"] }
+            }
+          },
           components: {
             type: "object",
             properties: {

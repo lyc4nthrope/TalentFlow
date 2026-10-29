@@ -34,4 +34,4 @@ source = ["app"]
 branch = true
 # El archivo de datos de coverage va con los reportes: se borra en cada make test y no se versiona.
 data_file = "reports/.coverage"
-omit = ["app/main.py", "app/config.py", "app/api.py", "app/consumidor.py", "app/repositorio.py"]
+omit = ["app/main.py", "app/config.py", "app/api.py", "app/consumidor.py", "app/repositorio.py", "app/metricas.py", "app/trazas.py", "app/logs.py"]

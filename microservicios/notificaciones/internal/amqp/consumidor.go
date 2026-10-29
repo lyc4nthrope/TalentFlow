@@ -12,6 +12,7 @@ import (
 	amqp091 "github.com/rabbitmq/amqp091-go"
 
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/aplicacion"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/trazas"
 )
 
 // Procesador es lo que el consumidor necesita del caso de uso.
@@ -121,18 +122,28 @@ func (c *Consumidor) consumir(ctx context.Context) error {
 }
 
 func (c *Consumidor) manejar(ctx context.Context, entrega amqp091.Delivery) {
-	switch c.procesador.Procesar(ctx, entrega.Body) {
+	// Reto 8 (D10): continúa la traza de quien publicó el evento.
+	ctx, span := trazas.IniciarConsumo(ctx, entrega.Headers, entrega.RoutingKey)
+	resultado := c.procesador.Procesar(ctx, entrega.Body)
+	if resultado == aplicacion.ErrorTransitorio {
+		trazas.Terminar(span, errProcesamiento)
+	} else {
+		trazas.Terminar(span, nil)
+	}
+	switch resultado {
 	case aplicacion.Procesado, aplicacion.Duplicado, aplicacion.Descartado:
 		if err := entrega.Ack(false); err != nil {
-			c.logger.Error("no se pudo confirmar el mensaje", "error", err)
+			c.logger.ErrorContext(ctx, "no se pudo confirmar el mensaje", "error", err)
 		}
 	case aplicacion.ErrorTransitorio:
 		dormir(ctx, c.cfg.EsperaReintento)
 		if err := entrega.Nack(false, true); err != nil {
-			c.logger.Error("no se pudo devolver el mensaje a la cola", "error", err)
+			c.logger.ErrorContext(ctx, "no se pudo devolver el mensaje a la cola", "error", err)
 		}
 	}
 }
+
+var errProcesamiento = errors.New("fallo transitorio procesando el evento; se reintentará")
 
 // dormir espera d o hasta que se cancele ctx. Devuelve false si se canceló.
 func dormir(ctx context.Context, d time.Duration) bool {
