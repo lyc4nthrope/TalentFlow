@@ -1,85 +1,283 @@
 # Reto 8 — Guion de la sustentación
 
-Guion para explicarle el reto al profesor: **qué decir**, **qué mostrar** y **qué ejecutar**. Va en el orden de los criterios de evaluación del PDF. Todos los comandos se corren desde la raíz del repositorio. Dura unos 20 minutos, buena parte esperando a que se disparen las alertas. Por eso la caída del servicio se lanza en el minuto 10 y se explica lo demás mientras corre.
+Cada sección lleva **el número del PDF** (`reto08.pdf`). Si el profesor pregunta "muéstreme el 4.3", se va directo a la sección 4.3. Cada una tiene el mismo orden:
 
-Si pregunta algo que no está aquí: [preguntas probables](README.md#3-preguntas-probables-en-la-sustentación) y [problemas comunes](README.md#4-problemas-comunes).
+- **Qué pide el PDF**: en una línea.
+- **Decir**: la explicación corta.
+- **Ejecutar**: los comandos, copiados tal cual. Todos se corren **desde la raíz del repo**.
+- **Mostrar**: los clics exactos en cada interfaz.
+- **Se espera**: lo que debe salir. Si no sale eso, algo está mal.
+
+Duración: unos 25 minutos. Las alertas tardan ~2 minutos: por eso la caída del servicio (sección 7) se lanza y se explica mientras corre.
+
+## Mapa: criterio de evaluación → sección
+
+| # | Criterio (puntos) | Secciones de este guion |
+|---|---|---|
+| 1 | Infraestructura (1.0) | 2 y 3 |
+| 2 | Instrumentación (1.0) | 4.1 métricas, 4.2 trazas, **4.3 `/health`** |
+| 3 | Logs centralizados (1.0) | 4.4 |
+| 4 | Dashboard (0.5) | 5 |
+| 5 | Alertas (0.5) | 6 y 7 |
+| 6 | Caos y documentación (1.0) | 1 (diagrama), 7 y 8 |
 
 ## 0. Antes de entrar (no se muestra)
 
 ```bash
 git checkout main && git pull
 docker compose up --build -d
-docker compose ps                     # esperar a que los 7 servicios digan (healthy), ~40 s
+docker compose ps        # esperar ~40 s: los 7 ms-* y el gateway en (healthy)
+```
 
+Login y tráfico para que el dashboard tenga datos:
+
+```bash
 TOKEN=$(curl -s -X POST localhost:8080/auth/login -H 'Content-Type: application/json' \
   -d '{"email":"admin@empresa.com","password":"Admin123*"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
 for i in $(seq 1 20); do for r in empleados departamentos perfiles vacaciones; do
-  curl -s -o /dev/null localhost:8080/$r -H "Authorization: Bearer $TOKEN"; done; done   # tráfico para el dashboard
+  curl -s -o /dev/null localhost:8080/$r -H "Authorization: Bearer $TOKEN"; done; done
 ```
 
-Dejar abiertas estas pestañas:
+> El `TOKEN` dura **1 hora**. Si un comando responde `401`, repetir el login. Todos los comandos van en **la misma terminal**, porque usan `$TOKEN`.
+
+Pestañas abiertas:
 
 | Pestaña | URL | Usuario |
 |---|---|---|
 | Prometheus | `http://localhost:9091/targets` | — |
-| Grafana | `http://localhost:3000` → Dashboards → TalentFlow → *TalentFlow - Observabilidad* | `admin` / `talentflow_grafana_2026` |
+| Grafana | `http://localhost:3000` | `admin` / `talentflow_grafana_2026` |
 | Jaeger | `http://localhost:16686` | — |
 | Mailhog (correos) | `http://localhost:8025` | — |
 | README en GitHub | sección *Observabilidad (Reto 8)* | — |
 
-Comprobar antes de empezar: 8 targets en `UP` (los 7 servicios y el propio Prometheus) y el dashboard con datos. El `TOKEN` sirve una hora: si se vence, se repite el login.
+Se espera: 8 targets en `UP` en Prometheus (7 servicios + el propio Prometheus).
 
-## 1. Introducción (1 min)
+## 1. Diagrama y conceptos
+
+**Qué pide el PDF:** el diagrama de arquitectura y la investigación de los conceptos en el README.
+
+**Mostrar:** README → *Observabilidad (Reto 8)* → *Diagrama de arquitectura de observabilidad*.
 
 **Decir:**
-> "En el Reto 8 le agregamos observabilidad a los 7 microservicios. Antes, para saber si algo fallaba, había que revisar servicio por servicio. Ahora hay tres pilares: **métricas** en Prometheus, que dicen qué pasa y cuánto; **trazas** en Jaeger, que dicen dónde se va el tiempo de una petición; y **logs** en Loki, que dicen qué pasó exactamente. Los tres se ven juntos en Grafana, y si algo falla llega un correo sin que nadie esté mirando. Todo está como código: con un `docker compose up` el dashboard, las fuentes de datos y las alertas aparecen solos."
+> "El sistema tenía 7 microservicios que eran una caja negra. Le agregamos los tres pilares: **métricas** en Prometheus (qué pasa y cuánto), **trazas** en Jaeger (dónde se va el tiempo) y **logs** en Loki (qué pasó exactamente). Grafana junta los tres y manda alertas por correo."
+>
+> "En el diagrama se ven los dos modelos. Prometheus usa **pull**: él le pide `/metrics` a cada servicio cada 15 s. Las trazas usan **push**: cada servicio envía sus spans a Jaeger por OTLP. Los logs también van por push: Promtail los lee de Docker y los envía a Loki."
 
-**Mostrar:** en GitHub, el README raíz → sección *Observabilidad (Reto 8)* → el **diagrama**.
+Si pregunta por los conceptos, las respuestas cortas están en la [sección 9](#9-preguntas-probables).
 
-**Decir, sobre el diagrama:**
-> "Prometheus está en la misma red de Docker que los servicios y les pide sus métricas cada 15 segundos: es el modelo **pull**. Las trazas van al revés: cada servicio las **empuja** a Jaeger por OTLP. El `traceId` viaja en la cabecera estándar `traceparent` de W3C, por HTTP y también dentro de los mensajes de RabbitMQ. Promtail lee los logs de todos los contenedores y los envía a Loki. Grafana consulta las tres fuentes y manda las alertas por email."
+## 2. Infraestructura en Docker Compose
 
-## 2. Infraestructura de observabilidad (1.0)
+**Qué pide el PDF:** Prometheus, Grafana, Loki, Promtail y Zipkin/Jaeger en el compose, en la misma red; Grafana con fuentes de datos aprovisionadas y volumen persistente.
 
-| Mostrar | Decir |
+**Mostrar:** `docker-compose.yml`, buscar (`Ctrl+F`) `prometheus:`, `grafana:`, `loki:`, `promtail:`, `jaeger:`.
+
+**Decir:**
+> "Los 5 están en el mismo compose, todos en la red `microservices-network`, con versiones fijas en vez de `latest` para que sea reproducible. Grafana guarda sus datos en el volumen `grafana-data`. Elegimos **Jaeger y no Zipkin** porque recibe OTLP, el protocolo propio de OpenTelemetry: los 5 lenguajes exportan igual, sin un exportador de Zipkin distinto en cada uno."
+
+**Mostrar:** `observability/grafana/provisioning/datasources/datasources.yml`.
+
+> "Las 3 fuentes de datos (Prometheus, Loki y Jaeger) se cargan solas al arrancar. Usan los nombres de Docker, como `http://prometheus:9090`, nunca `localhost`."
+
+**Ejecutar** (para probar que todos están en la misma red):
+
+```bash
+docker network inspect talentflow_microservices-network --format '{{range .Containers}}{{.Name}} {{end}}' | tr ' ' '\n' | sort
+```
+
+**Se espera:** en la lista salen `prometheus`, `grafana`, `loki`, `jaeger`, `api-gateway` y los `ms-*`.
+
+Si pregunta por qué Prometheus está en el **9091**: "El 9090 del host lo usa Jenkins desde el Reto 7. Dentro de la red sigue en el 9090."
+
+## 3. Configuración de Prometheus
+
+**Qué pide el PDF:** un `scrape_job` por microservicio, con nombres de Docker, y el Gateway primero.
+
+**Mostrar:** `observability/prometheus/prometheus.yml`.
+
+**Decir:**
+> "Hay 7 jobs, uno por servicio, por su nombre de Docker. El Gateway va primero porque es la vista del cliente. Su `/metrics` está en el puerto interno **9464** y no en el 8080, porque el 8080 es público y cualquiera podría leer las métricas sin token. Vacaciones, que es Spring Boot, usa `/actuator/prometheus`; los demás, `/metrics`."
+
+**Mostrar:** pestaña Prometheus → `http://localhost:9091/targets`.
+
+**Se espera:** 8 filas en `UP`. La columna *Endpoint* muestra las URL con nombres de Docker:
+
+| Job | Endpoint |
 |---|---|
-| `docker-compose.yml`: servicios `prometheus`, `grafana`, `loki`, `promtail`, `jaeger` | "Los 5 están en el mismo compose, con versiones fijas y no `latest`, para que en su máquina levante exactamente lo que probamos. Todos están en la red `microservices-network`." |
-| `observability/prometheus/prometheus.yml` | "Aquí están los 7 servicios como targets, por su nombre de Docker, nunca `localhost`. El Gateway es el primero. Lee sus métricas por el puerto interno 9464, porque su 8080 es público y cualquiera podría leerlas sin token." |
-| Pestaña Prometheus `/targets` | "Los 7 servicios en `UP`. El octavo es el propio Prometheus, que también se vigila a sí mismo." |
-| Carpeta `observability/` | "Toda la configuración está versionada: Prometheus, Loki, Promtail y Grafana con sus fuentes de datos, el dashboard y las alertas." |
+| api-gateway | `http://api-gateway:9464/metrics` |
+| empleados-service | `http://empleados-service:8081/metrics` |
+| departamentos-service | `http://departamentos-service:8082/metrics` |
+| perfiles-service | `http://perfiles-service:8083/metrics` |
+| notificaciones-service | `http://notificaciones-service:8084/metrics` |
+| vacaciones-service | `http://vacaciones-service:8085/actuator/prometheus` |
+| auth-service | `http://auth-service:8086/metrics` |
+| prometheus | `http://localhost:9090/metrics` (se vigila a sí mismo) |
 
-Si pregunta por qué Prometheus está en el 9091: "El 9090 del host lo usa Jenkins desde el Reto 7. Dentro de la red, Prometheus sigue en el 9090."
+## 4.1 Métricas en formato Prometheus
 
-## 3. Instrumentación de los microservicios (1.0)
+**Qué pide el PDF:** cada servicio expone CPU, memoria, peticiones por código y latencia.
 
 **Ejecutar:**
 
 ```bash
-docker compose exec api-gateway wget -qO- localhost:9464/metrics | grep '^http_requests_total' | grep -v health | head -3
-curl -s localhost:8080/health | python3 -m json.tool | grep -A7 '"checks"'
+docker compose exec prometheus wget -qO- http://empleados-service:8081/metrics \
+  | grep -E '^(process_cpu_seconds_total|process_resident_memory_bytes|http_requests_total|http_request_duration_seconds_count)' | grep -v health | head -6
 ```
 
+> Se ejecuta **desde el contenedor de Prometheus** porque los servicios no publican su puerto en el host: solo el Gateway (8080) es público. Es lo mismo que hace Prometheus al raspar.
+
+**Se espera:** líneas como `process_cpu_seconds_total 55.6`, `process_resident_memory_bytes 73183232` y `http_requests_total{method="GET",route="/empleados",status="200"} 61`.
+
 **Decir:**
-> "Los 7 servicios publican **las mismas métricas con los mismos nombres**, aunque están en 5 lenguajes: `http_requests_total` y `http_request_duration_seconds`, con método, ruta y código de estado. Por eso una sola consulta sirve para todos. La ruta va como patrón, `/empleados/:id`, y no con cada id, para no crear una serie por cada empleado. El `/health` responde con el formato del PDF, con `checks` de base de datos y broker."
+> "Los 7 servicios publican **las mismas métricas con los mismos nombres**, aunque son 5 lenguajes: `http_requests_total` y el histograma `http_request_duration_seconds`, con método, ruta y código. Así una sola consulta sirve para todos. La ruta va como patrón, `/empleados/:id`, no con cada id, para no crear una serie por empleado."
 
-**Mostrar:** README → tabla *Librerías por microservicio*.
+**Mostrar:** README → *Librerías por microservicio* (la tabla con la librería de cada lenguaje).
+
+## 4.2 Trazas con OpenTelemetry
+
+**Qué pide el PDF:** OTel en los 7 con `service.name`, exportador y propagación W3C. En Jaeger, una traza que muestre: (1) qué servicio recibió la petición, (2) a quién llamó y cuánto tardó, (3) si alguno dio error. Y el **caso difícil**: el scheduler de vacaciones.
+
+**Mostrar:** `docker-compose.yml`, buscar `x-otel`.
 
 **Decir:**
-> "Cada lenguaje usa la librería oficial de OpenTelemetry: Node, Python y Go con su SDK, y Java con Micrometer Tracing, que es lo estándar de Spring. PHP es el caso especial: el servicio no usa Composer, así que escribimos un exportador mínimo que lee el `traceparent` y envía el span a Jaeger con el mismo protocolo, OTLP. En los 7 el nombre del servicio sale de `OTEL_SERVICE_NAME`, el exportador apunta a `jaeger:4318` y la propagación es W3C. Está en el ancla `x-otel` del compose."
+> "La configuración de OpenTelemetry es la misma en los 7, en el ancla `x-otel`: `OTEL_SERVICE_NAME` con el nombre del servicio, el exportador a `http://jaeger:4318` (nombre de Docker, no `localhost`) y `OTEL_PROPAGATORS=tracecontext,baggage`, que es W3C. Cada lenguaje usa la librería oficial; PHP no usa Composer, así que hicimos un exportador mínimo que habla el mismo protocolo."
 
-**Ejecutar** (crear un empleado, el onboarding):
+### A. La traza del onboarding (crear un empleado)
+
+**Ejecutar:**
 
 ```bash
 N=$RANDOM; curl -s -X POST localhost:8080/empleados -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d "{\"id\":\"E$N\",\"nombre\":\"Ana\",\"apellido\":\"Gómez\",\"email\":\"ana.$N@empresa.com\",\"numeroEmpleado\":\"N$N\",\"cargo\":\"Analista\",\"area\":\"TI\",\"departamentoId\":\"IT\",\"fechaIngreso\":\"2026-04-01\"}"
+  -d "{\"id\":\"E$N\",\"nombre\":\"Ana\",\"apellido\":\"Gomez\",\"email\":\"ana.$N@empresa.com\",\"numeroEmpleado\":\"N$N\",\"cargo\":\"Analista\",\"area\":\"TI\",\"departamentoId\":\"IT\",\"fechaIngreso\":\"2026-04-01\"}"
+echo; echo "Empleado: E$N  correo: ana.$N@empresa.com"
 ```
 
-**Mostrar:** Jaeger → Service `api-gateway` → Operation `POST /empleados` → *Find Traces* → abrir la traza.
+**Se espera:** un JSON con `"estado":"ACTIVO"` y `"validacionDepartamento":"ACEPTADO"`. Anotar el id y el correo: se usan en la parte B.
+
+**Mostrar en Jaeger** (`http://localhost:16686`), paso a paso:
+
+1. Arriba, la pestaña **Search** (la que abre por defecto).
+2. Panel izquierdo → **Service**: elegir `api-gateway`.
+3. **Operation**: elegir `POST /empleados`.
+4. **Lookback**: `Last 15 Minutes`. Clic en el botón azul **Find Traces**.
+5. A la derecha sale una lista. La primera fila es la más reciente: dice `api-gateway: POST /empleados`, **21 Spans** y los nombres de los 7 servicios. Clic en el título de esa fila.
+6. Se abre la traza. Arriba, en la cabecera: **Services: 7**, **Total Spans: 21** y la duración total.
+
+**Decir, señalando la cascada** (a la izquierda el servicio y la operación; a la derecha la barra de tiempo):
+> "(1) **Quién la recibió:** la primera barra, `api-gateway POST /empleados`. (2) **A quién llamó y cuánto tardó:** el Gateway llama a empleados; empleados consulta Postgres, llama a `departamentos-service GET /departamentos/{id}` y publica `empleado.creado` en RabbitMQ. De ahí la traza **sigue** en auth, perfiles y vacaciones; auth publica `usuario.creado`, que consume notificaciones. Cada barra muestra su duración en milisegundos."
+>
+> "No se corta en el broker porque el `traceparent` viaja en las **cabeceras del mensaje** de RabbitMQ. Eso lo hicimos a mano o con la instrumentación de cada lenguaje, porque el SDK solo lo hace solo por HTTP."
+
+**Mostrar:** clic en la barra de `departamentos-service`. Se despliega el detalle: en **Tags** se ven `http.response.status_code` = `200` y la ruta. Clic otra vez para cerrar.
+
+**Opcional:** arriba a la derecha, el menú **Trace Timeline** → **Trace Graph** dibuja la traza como grafo de servicios.
+
+**Copiar el traceId** para la sección 4.4: está en la **barra de direcciones**, después de `/trace/` (32 caracteres).
+
+El punto (3), **un servicio con error**, se muestra en la sección 7, con departamentos apagado.
+
+### B. El caso difícil: el scheduler de vacaciones
 
 **Decir:**
-> "Es **una sola traza con los 7 servicios y unos 21 spans**. Entra por el Gateway, pasa a empleados, empleados consulta a departamentos y publica `empleado.creado` en RabbitMQ. De ahí la traza sigue en auth, perfiles y vacaciones, y auth publica `usuario.creado`, que consume notificaciones. No se corta en el broker porque el `traceparent` viaja en las cabeceras del mensaje. También se ven las consultas SQL con su tiempo."
+> "Este flujo no empieza con una petición: el scheduler de vacaciones corre solo, cada minuto. Sin una traza padre, lo que sigue (auth suspende la cuenta, notificaciones manda el correo) saldría como trazas sueltas. El `@Scheduled` de Spring abre el **span raíz** (`task vacaciones-scheduler.ejecutar`), la publicación cuelga de él y el contexto viaja en las cabeceras del mensaje."
 
-## 4. Logs centralizados (1.0)
+**Ejecutar:** se necesita una cuenta `ACTIVA`, porque auth no suspende cuentas pendientes. Se activa la del empleado de la parte A con el token de su correo de bienvenida y se programan vacaciones de 1 minuto:
+
+```bash
+EMP=E$N; EMAIL=ana.$N@empresa.com     # el empleado de la parte A
+ACT=$(curl -s "localhost:8025/api/v2/search?kind=to&query=$EMAIL" | python3 -c "
+import sys,json,re,quopri
+for m in json.load(sys.stdin)['items']:
+    b=quopri.decodestring(m['Content']['Body']).decode('utf-8','ignore')
+    t=re.search(r'token[=:\s\"]+([0-9a-f-]{36})',b)
+    if t: print(t.group(1)); break")
+curl -s -X POST localhost:8080/auth/reset-password -H 'Content-Type: application/json' \
+  -d "{\"token\":\"$ACT\",\"newPassword\":\"Clave123*\"}"; echo
+INI=$(TZ=America/Bogota date -d '+1 min' +%FT%H:%M:00); FIN=$(TZ=America/Bogota date -d '+2 min' +%FT%H:%M:00)
+curl -s -X POST localhost:8080/vacaciones -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"empleadoId\":\"$EMP\",\"fechaInicio\":\"$INI\",\"fechaFin\":\"$FIN\"}"; echo
+```
+
+> En Mac, `date -d` no existe: usar `date -v+1M +%FT%H:%M:00` y `date -v+2M +%FT%H:%M:00`.
+
+**Se espera:** `Contraseña establecida correctamente` y unas vacaciones en `PROGRAMADA`. Al segundo 0 del minuto siguiente el scheduler las inicia, y un minuto después las termina. Mientras tanto se puede seguir con la sección 4.3.
+
+**Mostrar en Jaeger:**
+
+1. **Service**: `vacaciones-service`. **Operation**: `task vacaciones-scheduler.ejecutar`. **Lookback**: `Last 5 Minutes`. **Find Traces**.
+2. Salen muchas filas de **1 Span**: son las pasadas del scheduler sin nada que hacer. Buscar la fila con **6 Spans** y abrirla.
+
+**Se espera** una sola cascada:
+
+```
+vacaciones-service      task vacaciones-scheduler.ejecutar      ← span raíz, sin petición HTTP
+vacaciones-service      talentflow.eventos/vacaciones.iniciadas send
+notificaciones-service  process vacaciones.iniciadas
+auth-service            process vacaciones.iniciadas            ← suspende la cuenta
+auth-service            publish cuenta.desactivada
+notificaciones-service  process cuenta.desactivada
+```
+
+Un minuto después sale otra de **5 Spans** con `vacaciones.finalizadas` → auth → `cuenta.activada` → notificaciones.
+
+> "Es lo que pide el PDF: una sola cascada del scheduler a auth y de ahí a notificaciones. Si el contexto no se propagara, veríamos tres trazas separadas."
+
+## 4.3 Endpoint de salud (`/health`)
+
+**Qué pide el PDF:** cada servicio responde `GET /health` con `status`, `service` y `checks` de base de datos y broker; **200** si está `UP` y **503** si está `DOWN`.
+
+**Decir:**
+> "Los 7 servicios tienen `/health` desde los Retos 3 a 5. En este reto le agregamos el formato exacto del PDF: `status`, `service` y `checks` con `database` y `messageBroker`. Lo usan tres cosas: el healthcheck de Docker (por eso `docker compose ps` dice *healthy*), el Gateway, que junta la salud de todos, y la sustentación."
+
+**Ejecutar** (los 7, por nombre de Docker, desde dentro de la red):
+
+```bash
+for s in api-gateway:8080 empleados-service:8081 departamentos-service:8082 perfiles-service:8083 \
+         notificaciones-service:8084 vacaciones-service:8085 auth-service:8086; do
+  echo "== $s"; docker compose exec grafana curl -s -w '  -> HTTP %{http_code}\n' http://$s/health
+done
+```
+
+> Se usa el contenedor de **Grafana** porque está en la misma red y trae `curl`, que muestra el código HTTP aunque sea 503. Desde el host no se puede llamar `localhost:8081`: solo el Gateway publica su puerto.
+
+**Se espera:** 7 respuestas con `"status":"UP"`, `-> HTTP 200` y `checks`. Por ejemplo:
+
+```json
+{"status":"UP","service":"empleados-service","checks":{"database":"UP","messageBroker":"UP"}, ...}
+```
+
+Dos casos especiales que conviene decir antes de que pregunte:
+
+| Servicio | Qué tiene `checks` | Por qué |
+|---|---|---|
+| departamentos-service | Solo `database` | No usa RabbitMQ: no hay broker que revisar |
+| api-gateway | Un `UP`/`DOWN` por cada servicio de atrás | No tiene base de datos: su salud es la de los servicios a los que enruta |
+| vacaciones-service (Spring) | Igual que los demás, en `/health` | El PDF dice que Spring trae `/actuator/health`. Lo dejamos apagado y usamos un `/health` propio para que los 7 respondan **el mismo formato** |
+
+**Ejecutar** el caso degradado (503), apagando la base de datos de perfiles:
+
+```bash
+docker compose stop database-perfiles
+docker compose exec grafana curl -s -w '  -> HTTP %{http_code}\n' http://perfiles-service:8083/health
+docker compose start database-perfiles      # restaurar
+```
+
+**Se espera:**
+
+```json
+{"status":"DOWN","service":"perfiles-service","checks":{"database":"DOWN","messageBroker":"UP"}, ...}  -> HTTP 503
+```
+
+**Ejecutar** la vista del Gateway, que sí se puede llamar desde el host:
+
+```bash
+curl -s localhost:8080/health | python3 -m json.tool | grep -A7 '"checks"'
+```
+
+**Se espera:** `checks` con los 6 servicios de atrás en `UP`.
+
+## 4.4 Logs estructurados (Loki + Promtail)
+
+**Qué pide el PDF:** logs JSON con `timestamp`, `level`, `service`, `traceId` y `message`; Promtail recoge los de todos los contenedores; Loki como fuente en Grafana; una consulta LogQL.
 
 **Ejecutar:**
 
@@ -87,53 +285,92 @@ N=$RANDOM; curl -s -X POST localhost:8080/empleados -H "Authorization: Bearer $T
 docker logs --tail 2 ms-auth
 ```
 
-**Decir:**
-> "Todos los servicios escriben JSON con el mismo formato: `timestamp`, `level`, `service`, `message` y, cuando hay una petición en curso, el `traceId` y el `spanId`."
+**Se espera:** líneas JSON: `{"timestamp":"...","level":"INFO","message":"...","service":"auth-service","traceId":"...","spanId":"..."}`.
 
-**Mostrar:** en Jaeger, copiar el ID de la traza (arriba, junto al título). En Grafana → Explore → fuente **Loki** → escribir:
+**Mostrar:** `observability/promtail/promtail-config.yml`.
+
+> "Promtail descubre los contenedores por el socket de Docker, como pide el PDF, y los envía a `http://loki:3100`. Al `level` lo convierte en etiqueta. El `traceId` **no** es etiqueta: crearía un stream nuevo por cada petición, así que se busca en el texto."
+
+**Mostrar en Grafana**, paso a paso:
+
+1. Menú de la izquierda (☰) → **Explore**.
+2. Arriba a la izquierda, el selector de fuente de datos: elegir **Loki**.
+3. A la derecha del editor, cambiar de **Builder** a **Code**.
+4. Pegar la consulta, con el traceId copiado de Jaeger en la sección 4.2:
+
+   ```
+   {project="talentflow"} |= "<traceId>" | json
+   ```
+
+5. Clic en **Run query** (arriba a la derecha).
+
+**Se espera:** logs de **6 servicios** de la misma petición. El Gateway no sale porque no loguea las peticiones que salen bien.
+
+**Mostrar:** clic en una línea para abrirla → abajo, en **Links**, el enlace de `traceId` abre la traza de Jaeger en un panel al lado. "Así se salta del log a la traza: se correlacionan los pilares."
+
+Otra consulta para mostrar, la de errores por servicio:
 
 ```
-{project="talentflow"} |= "<traceId copiado>" | json
+sum by (service) (count_over_time({project="talentflow", level="ERROR"}[5m]))
 ```
 
-**Decir:**
-> "Promtail recoge los logs de todos los contenedores por el socket de Docker y los envía a Loki. Con el `traceId` de esa traza salen los logs de la misma petición en 6 servicios. El Gateway no aparece porque no loguea las peticiones que salen bien. El `level` es una etiqueta de Loki; el `traceId` no, porque crearía un stream por cada petición, así que se busca en el texto."
+Más consultas con su resultado: README → *Logs centralizados con Loki*.
 
-**Mostrar:** abrir una línea y hacer clic en el enlace del `traceId`.
+## 5. Dashboard en Grafana
 
-> "Desde el log se salta a la traza en Jaeger. Así se correlacionan los pilares."
+**Qué pide el PDF:** 4 paneles (estado, tasa, latencia, errores) en dos filas, aprovisionado desde un JSON en Git.
 
-Otras consultas LogQL con su resultado: README → *Logs centralizados con Loki*.
-
-## 5. Dashboard en Grafana (0.5)
-
-**Mostrar:** el dashboard *TalentFlow - Observabilidad*.
+**Mostrar:** Grafana → menú ☰ → **Dashboards** → carpeta **TalentFlow** → *TalentFlow - Observabilidad*.
 
 **Decir:**
-> "Tiene las dos filas que pide el PDF y una más. **Resumen del sistema:** el estado de cada servicio con `up`, en verde o rojo, y tres números de todo el sistema: peticiones por segundo, porcentaje de errores 5xx y latencia p95. **Comportamiento del tráfico:** tasa de peticiones, latencia promedio y errores 4xx/5xx por servicio, con las consultas del PDF, más el p95. La tercera fila tiene CPU, memoria y los logs de error. Las consultas no cuentan `/health`, porque Docker lo llama cada 5 segundos y taparía el tráfico real."
+> "**Fila 1, Resumen del sistema:** el estado de cada servicio con `up`, en verde o rojo, y tres números del sistema: peticiones por segundo, % de errores 5xx y latencia p95. **Fila 2, Comportamiento del tráfico:** tasa de peticiones, latencia promedio y errores 4xx/5xx por servicio, con las consultas del PDF, más el p95. Agregamos una **fila 3** con CPU, memoria y logs de error. Las consultas no cuentan `/health`: Docker lo llama cada 5 s y taparía el tráfico real."
+
+**Mostrar:** en un panel, menú ⋮ → **Edit** → se ve la consulta PromQL. Salir con **Discard** (o `Esc`).
 
 **Mostrar:** `observability/grafana/dashboards/talentflow.json` y `observability/grafana/provisioning/dashboards/dashboards.yml`.
 
-> "El dashboard es un JSON versionado en Git. Grafana lo carga solo al arrancar, sin configurar nada a mano."
+> "El dashboard es un JSON versionado en Git. Grafana lo carga solo al arrancar."
 
-## 6. Alertas y caos: servicio caído (0.5 + parte de 1.0)
+## 6. Alertas proactivas
 
-**Ejecutar ya**, porque la alerta tarda unos 2 minutos:
+**Qué pide el PDF:** al menos 2 reglas y un canal externo funcional.
+
+**Mostrar:** `observability/grafana/provisioning/alerting/` → `rules.yml`, `contact-points.yml`, `policies.yml`.
+
+**Decir:**
+> "Tres reglas, como código: **servicio caído** (`up` en 0 durante 1 min), **errores 5xx** (más del 10 % durante 2 min) y **latencia alta** (promedio sobre 2 s durante 2 min). Cada una evalúa los 7 servicios por separado, así que el correo dice cuál falla. El canal es **email** por **Mailhog**, que ya estaba desde el Reto 4: no necesita tokens; un webhook de Discord o Telegram sería un secreto que no puede ir en el repo. La regla 4, contenedor reiniciado, no la hicimos porque necesita cAdvisor; el PDF pide mínimo 2."
+
+**Mostrar:** Grafana → ☰ → **Alerting** → **Alert rules**: las 3 reglas en la carpeta TalentFlow.
+
+## 7. Simulación del caos
+
+### A. Apagar un servicio (empezar ya: tarda ~2 min)
+
+**Ejecutar:**
 
 ```bash
 docker compose stop departamentos-service
 ```
 
-**Mostrar** mientras espera: `observability/grafana/provisioning/alerting/` → `rules.yml`, `contact-points.yml` y `policies.yml`.
+Mientras llega la alerta, mostrar **el servicio con error en Jaeger** (el punto 3 del 4.2):
 
-**Decir:**
-> "Hay 3 reglas, todas como código: **servicio caído**, si `up` está en 0 durante 1 minuto; **errores 5xx**, si pasan del 10 % durante 2 minutos; y **latencia alta**, si el promedio pasa de 2 segundos durante 2 minutos. Cada regla evalúa los 7 servicios por separado, así que el correo dice cuál falla. El canal es **email**: Grafana usa como servidor SMTP a Mailhog, que ya teníamos desde el Reto 4. Elegimos email porque no necesita tokens; un webhook de Discord o Telegram es un secreto que no podría ir en el repositorio. Para producción solo cambiaría la dirección del SMTP. La regla 4, contenedor reiniciado, no la hicimos porque necesita cAdvisor; el PDF pide mínimo 2 y tenemos 3."
+```bash
+N=$RANDOM; curl -s -X POST localhost:8080/empleados -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"id\":\"E$N\",\"nombre\":\"Luis\",\"apellido\":\"Paz\",\"email\":\"luis.$N@empresa.com\",\"numeroEmpleado\":\"N$N\",\"cargo\":\"Analista\",\"area\":\"TI\",\"departamentoId\":\"IT\",\"fechaIngreso\":\"2026-04-01\"}"; echo
+```
+
+**Se espera:** `201` con `"validacionDepartamento":"PENDIENTE"`: el circuit breaker del Reto 3 guarda al empleado aunque departamentos no responda.
+
+**Mostrar en Jaeger:** Service `api-gateway`, Operation `POST /empleados`, **Find Traces**, abrir la primera. Los spans `empleados-service GET` tienen un **ícono rojo de error**. Clic en uno → Tags: `error = true` y `getaddrinfo ENOTFOUND departamentos-service`.
+
+> "Se ven **4 intentos** con error: el primero y los 3 reintentos. Después, el fallback guarda al empleado como `PENDIENTE`. La traza muestra el error **y** cómo se recuperó el sistema."
 
 **Mostrar,** en orden:
-1. Prometheus `/targets`: departamentos en **`DOWN`**, *no such host*.
-2. Grafana: su recuadro en **rojo**.
+
+1. Prometheus `/targets`: `departamentos-service` en **DOWN**, error *no such host*.
+2. Grafana, dashboard: su recuadro en **rojo**.
 3. Grafana → Alerting → Alert rules: *Servicio caído* pasa de *Pending* a *Firing*.
-4. Mailhog: llega **"[FIRING:1] Servicio caído departamentos-service"** (unos 2 minutos después del `stop`).
+4. Mailhog: llega **"[FIRING:1] Servicio caído departamentos-service"** (~2 min después del `stop`).
 
 **Ejecutar:**
 
@@ -141,9 +378,9 @@ docker compose stop departamentos-service
 docker compose start departamentos-service
 ```
 
-> "Al volver, llega el correo `[RESOLVED]`."
+**Se espera:** a los ~2 min, el correo **"[RESOLVED]"**.
 
-## 7. Caos: latencia inducida (parte de 1.0)
+### B. Latencia inducida
 
 **Ejecutar:**
 
@@ -153,42 +390,55 @@ for i in $(seq 1 80); do curl -s -o /dev/null localhost:8080/departamentos -H "A
 ```
 
 **Decir:**
-> "El PDF sugiere meter un retardo en el código. Nosotros lo dejamos como un **interruptor apagado por defecto**: departamentos solo duerme 2,5 segundos si se levanta con `docker-compose.caos.yml`. Así la prueba se repite sin editar código y nunca queda encendida por error. Son 2,5 segundos porque superan el umbral de la alerta, 2 s, pero no llegan al timeout de 5 s con que empleados llama a departamentos: las peticiones funcionan, solo que lentas."
+> "El PDF sugiere meter un retardo en el código. Lo dejamos como un **interruptor apagado por defecto**: departamentos solo duerme 2,5 s si se levanta con `docker-compose.caos.yml`. Así no se edita código y nunca queda encendido por error. Son 2,5 s porque pasan el umbral de la alerta (2 s) pero no el timeout de 5 s con que empleados llama a departamentos."
 
-**Mostrar:** Grafana → panel *Latencia promedio por servicio*: departamentos y el Gateway suben a ~2,5 s. Tras ~2 minutos, en Mailhog: **"Alta latencia departamentos-service"** y **"Alta latencia api-gateway"**.
+**Mostrar:**
 
-**Ejecutar:** crear un empleado con el comando de la sección 3 y abrir su traza en Jaeger.
+1. Dashboard → panel *Latencia promedio por servicio*: departamentos y el Gateway suben a ~2,5 s.
+2. Mailhog, ~2 min después: **"Alta latencia departamentos-service"** y **"Alta latencia api-gateway"**.
+3. Crear un empleado con el comando de la sección 4.2 A y abrir su traza en Jaeger: la barra de `departamentos-service` ocupa casi toda la traza.
 
-> "La barra de departamentos ocupa casi toda la traza."
-
-**Ejecutar** al terminar:
+**Ejecutar** al terminar (apaga el caos):
 
 ```bash
-docker compose up -d departamentos-service    # apaga el caos
+docker compose up -d departamentos-service
 ```
 
-## 8. La pregunta del PDF: ¿qué servicio tardó más y cómo lo identificaron?
+## 8. La pregunta: ¿qué servicio tardó más y cómo lo identificaron?
 
 **Decir:**
-> "Depende de la situación. **Sin caos**, dentro de lo que espera el cliente, el más lento es **empleados**: unos 50 de los 52 ms de crear un empleado. Abriendo su span se ve en qué se van: la llamada a departamentos, las consultas a Postgres y la confirmación del broker. El span más largo de toda la traza es **vacaciones**, unos 100 ms, pero consume el evento en segundo plano y no retrasa al cliente.
+> "**Sin caos**, el más lento para el cliente es **empleados**: unos 50 de los 52 ms de crear un empleado, entre la llamada a departamentos, Postgres y el broker. El span más largo es **vacaciones** (~100 ms), pero consume el evento en segundo plano y no retrasa al cliente.
 >
-> **Con el caos**, el responsable es **departamentos**: de 2,5 segundos, casi todo es la espera de empleados a departamentos.
+> **Con el caos**, es **departamentos**: de 2,5 s, casi todo es la espera de empleados a departamentos.
 >
-> Lo identificamos **cruzando los tres pilares**. La **alerta** dijo qué servicio estaba lento. El **panel de latencia** confirmó que solo departamentos, y quienes lo llaman, estaban en segundos. Y la **traza** mostró por qué: la barra de departamentos va dentro de las de empleados y el Gateway, que solo lo esperan. Las métricas dicen *qué* pasa; la traza dice *por qué*."
+> Lo identificamos **cruzando los tres pilares**: la **alerta** dijo qué servicio estaba lento; el **panel de latencia** confirmó que solo departamentos y quienes lo llaman; la **traza** mostró por qué: la barra de departamentos va dentro de las de empleados y el Gateway, que solo lo esperan."
 
-**Si pregunta por el p95 de 4,85 s** cuando el retardo real era 2,5 s:
-> "Prometheus estima los percentiles interpolando dentro de los rangos del histograma, y 2,5 s cae en el rango de 2 a 5 s. El promedio sí es exacto. Por eso la alerta usa el promedio, como pide el PDF."
+**Cierre:** mostrar [`pruebas.md`](pruebas.md) con las 10 capturas.
 
-## 9. Cierre (30 s)
+> "La evidencia, con horas y capturas, está en `pruebas.md`; las decisiones, en `PLAN.md`. Con todo esto instrumentado, las pruebas de los 7 servicios siguen en verde y la suite E2E del Reto 6 pasa 61 de 61."
 
-**Mostrar:** [`docs/reto-08/pruebas.md`](pruebas.md), con las 10 capturas, y la tabla de criterios del [manual](README.md#0-criterios-de-evaluación--dónde-se-demuestran).
+## 9. Preguntas probables
 
-**Decir:**
-> "La evidencia completa, con horas y capturas, está en `pruebas.md`. Las decisiones y lo que aprendimos en cada fase, en `PLAN.md`. Y lo más importante: con todo esto instrumentado, las pruebas de los 7 servicios siguen en verde con la lógica de negocio al 100 %, y la suite E2E del Reto 6 pasa 61 de 61."
+| Pregunta | Respuesta corta |
+|---|---|
+| ¿Cuál es el rol de cada pilar? | Métricas: **qué** pasa y cuánto (dashboards, alertas). Trazas: **dónde** se va el tiempo de una petición. Logs: **qué pasó exactamente**. La métrica avisa, la traza ubica, el log explica. |
+| Pull vs. push | **Pull**: Prometheus pide `/metrics` cada 15 s; si no responde, `up = 0` y así sabe que está caído. **Push**: el servicio envía cada span a Jaeger cuando termina; un span es un evento único y si no se envía, se pierde. |
+| ¿Qué es la CNCF? ¿Por qué OpenTelemetry? | La *Cloud Native Computing Foundation* (Linux Foundation) gobierna Kubernetes, Prometheus, Jaeger y OpenTelemetry, para que no dependan de un proveedor. OTel es **agnóstico**: 5 lenguajes, un mismo formato y protocolo (OTLP). Cambiar Jaeger por otro backend es cambiar una URL. |
+| ¿Cómo viaja el traceId? (W3C) | En la cabecera `traceparent: 00-<traceId 32 hex>-<spanId 16 hex>-01`. Quien llama la inyecta; quien recibe la extrae y crea su span como hijo. Al ser estándar, Node, Go, PHP, Python y Java se entienden. En RabbitMQ va en las cabeceras del mensaje. |
+| ¿Por qué Jaeger y no Zipkin? | Jaeger recibe OTLP nativo; Zipkin pediría su exportador en cada lenguaje. Es graduado de la CNCF y su UI muestra la cascada y el grafo. Versión 2.20.0 fija: la 2.21 quitó un endpoint que usa Grafana. |
+| ¿Por qué no `latest`? | Reproducibilidad: en otra máquina levanta exactamente lo que probamos. |
+| ¿Qué es un span? | Una operación con inicio y duración (una petición HTTP, una consulta SQL, un mensaje). Una traza es el árbol de spans de una petición. |
+| ¿Por qué no se cuenta `/health` ni `/metrics`? | Docker llama `/health` cada 5 s y Prometheus `/metrics` cada 15 s. Taparían el tráfico real y llenarían Jaeger de trazas vacías. |
+| ¿Por qué `route` es un patrón? | `/empleados/:id` en vez de `/empleados/E001`: con el id habría una serie por empleado (cardinalidad) y Prometheus se llenaría. |
+| ¿Por qué el p95 dio 4,85 s si el retardo era 2,5 s? | Prometheus estima el percentil interpolando dentro del rango del histograma (2 a 5 s). El promedio sí es exacto: por eso la alerta usa el promedio, como pide el PDF. |
+| ¿Muestreo? | 100 %, para desarrollo. En producción se muestrearía por cabecera. |
+| ¿Cómo lo instrumentaron sin romper el 100 % de cobertura? | La instrumentación vive en el arranque y en los adaptadores HTTP y de mensajería, nunca en el dominio (D7). |
+
+Más preguntas y problemas comunes: [manual del reto](README.md#3-preguntas-probables-en-la-sustentación).
 
 ## Después
 
 ```bash
-docker compose up -d departamentos-service   # por si el caos quedó encendido
-docker compose ps                            # todo en (healthy)
+docker compose up -d departamentos-service database-perfiles   # por si algo quedó apagado o con caos
+docker compose ps                                              # todo en (healthy)
 ```
