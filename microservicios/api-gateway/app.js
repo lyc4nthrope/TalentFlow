@@ -1,6 +1,6 @@
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const { saludDelSistema } = require('./salud');
+const { saludDelSistema, leerSaludDe, saludDeTodos } = require('./salud');
 const { verificarToken, leerBearer } = require('./autenticacion');
 const { analizarRuta, esRutaPublica, decidirAcceso, servicioDeRuta } = require('./autorizacion');
 const { trace } = require('@opentelemetry/api');
@@ -21,9 +21,19 @@ const errorJson = (res, status, error, message, req) =>
  * @param {string} config.jwtIssuer  emisor esperado del token (claim iss)
  * @param {Array<{nombre: string, prefijo: string, url: string}>} config.servicios
  * @param {Function} [config.salud]  agregador del /health (por defecto, saludDelSistema)
+ * @param {Function} [config.saludDe]  /health de un servicio (por defecto, leerSaludDe)
+ * @param {Function} [config.saludTodos]  /health de todos (por defecto, saludDeTodos)
  * @param {object} [config.metricas]  contadores de crearMetricas(); sin ellos no se mide
  */
-function crearApp({ jwtSecret, jwtIssuer, servicios, salud = saludDelSistema, metricas }) {
+function crearApp({
+    jwtSecret,
+    jwtIssuer,
+    servicios,
+    salud = saludDelSistema,
+    saludDe = leerSaludDe,
+    saludTodos = saludDeTodos,
+    metricas
+}) {
     const app = express();
     const prefijos = servicios.map((s) => s.prefijo);
 
@@ -44,6 +54,37 @@ function crearApp({ jwtSecret, jwtIssuer, servicios, salud = saludDelSistema, me
             res.status(200).json(await salud(servicios));
         } catch (error) {
             next(error); // Express 4 no captura el rechazo de un handler async por sí solo
+        }
+    });
+
+    // Reto 8, D18: la salud de todos los servicios desde fuera, cada uno con su /health tal
+    // cual. A diferencia de /health, responde 503 si alguno está DOWN. Público, como /health.
+    app.get('/health/servicios', async (req, res, next) => {
+        try {
+            const { codigo, cuerpo } = await saludTodos(servicios);
+            res.status(codigo).json(cuerpo);
+        } catch (error) {
+            next(error);
+        }
+    });
+
+    // Reto 8, D19: el /health de un servicio, con su propio 200/503. Solo los servicios de la
+    // tabla: el nombre nunca se usa para armar una URL (el Gateway no llama a donde le digan).
+    app.get('/health/:servicio', async (req, res, next) => {
+        try {
+            const servicio = servicios.find((s) => s.nombre === req.params.servicio);
+            if (!servicio) {
+                return res.status(404).json({
+                    error: 'Not Found',
+                    message: 'Servicio desconocido',
+                    path: req.originalUrl,
+                    servicios: servicios.map((s) => s.nombre)
+                });
+            }
+            const { codigo, cuerpo } = await saludDe(servicio);
+            res.status(codigo).json(cuerpo);
+        } catch (error) {
+            next(error);
         }
     });
 

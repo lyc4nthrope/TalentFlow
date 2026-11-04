@@ -27,6 +27,9 @@ describe('rutaDelGateway', () => {
 
     it('/health se mide aparte y lo demás cae en "other"', () => {
         assert.equal(rutaDelGateway('/health', PREFIJOS), '/health');
+        // D20: /health/servicios y /health/{servicio} tampoco son tráfico de negocio.
+        assert.equal(rutaDelGateway('/health/servicios', PREFIJOS), '/health');
+        assert.equal(rutaDelGateway('/healthX', PREFIJOS), 'other');
         assert.equal(rutaDelGateway('/empleadosX', PREFIJOS), 'other');
         assert.equal(rutaDelGateway('/metrics', PREFIJOS), 'other');
     });

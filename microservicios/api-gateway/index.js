@@ -1,7 +1,7 @@
 // Punto de entrada: lee la configuración del entorno y abre el puerto. La lógica vive en
 // app.js (construible sin red, para las pruebas).
 const { crearApp } = require('./app');
-const { crearMetricas, crearAppMetricas } = require('./metricas');
+const { crearMetricas, crearAppMetricas, registrarMetricasSalud } = require('./metricas');
 
 const PORT = process.env.PORT || 8080;
 // Reto 5, D11/D21: el secreto es obligatorio y no tiene valor por defecto en el código.
@@ -29,6 +29,8 @@ const SERVICIOS = [
 ];
 
 const metricas = crearMetricas();
+// Reto 8, D20: la salud de cada servicio y de su BD y broker, como métrica para Prometheus.
+registrarMetricasSalud(metricas.registro, SERVICIOS);
 crearApp({ jwtSecret: JWT_SECRET, jwtIssuer: JWT_ISSUER, servicios: SERVICIOS, metricas }).listen(PORT, () => {
     console.log(`API Gateway ejecutandose en el puerto ${PORT}`);
 });

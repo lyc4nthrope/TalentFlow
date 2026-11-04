@@ -57,7 +57,7 @@ groups:
       datasourceUid: prometheus
       model:
         refId: A
-        expr: sum by (job) (rate(http_requests_total{status=~"5.."}[2m])) / sum by (job) (rate(http_requests_total[2m]))
+        expr: sum by (job) (rate(http_requests_total{status=~"5..",route!="/health"}[2m])) / sum by (job) (rate(http_requests_total{route!="/health"}[2m]))
         instant: true
         intervalMs: 1000
         maxDataPoints: 43200
@@ -81,7 +81,7 @@ groups:
       team: talentflow
     annotations:
       summary: '{{ $labels.job }} responde con errores 5xx'
-      description: 'Más del 10 % de las respuestas de {{ $labels.job }} son errores del servidor (5xx) desde hace más de 2 minutos. Valor actual: {{ humanizePercentage $values.A.Value }}.'
+      description: 'Más del 10 % de las respuestas de {{ $labels.job }} son errores del servidor (5xx) desde hace más de 2 minutos (sin contar /health: una dependencia caída tiene su propia alerta). Valor actual: {{ humanizePercentage $values.A.Value }}.'
       dashboardUid: talentflow-observabilidad
   - uid: latencia-alta
     title: Alta latencia
@@ -120,4 +120,44 @@ groups:
       summary: '{{ $labels.job }} responde lento'
       description: 'La latencia promedio de {{ $labels.job }} supera 2 s desde hace más de 2 minutos (sin contar /health). Valor actual: {{ humanizeDuration $values.A.Value }}. Revisar su traza en Jaeger
         para ver qué dependencia tarda.'
+      dashboardUid: talentflow-observabilidad
+  # Reto 8, D21: una base de datos o el broker caídos no tumban el proceso (`up` sigue en 1),
+  # así que "Servicio caído" no los ve. El Gateway publica el /health de cada servicio como
+  # talentflow_health_check (D20); aquí se vigila cada dependencia por separado.
+  - uid: dependencia-caida
+    title: Dependencia caída
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: talentflow_health_check{check!="status"}
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+    for: 1m
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: critical
+      team: talentflow
+    annotations:
+      summary: '{{ $labels.check }} de {{ $labels.service }} caída'
+      description: 'El /health de {{ $labels.service }} reporta {{ $labels.check }} en DOWN desde hace más de 1 minuto (el servicio sigue vivo, pero su dependencia no responde). Ver GET http://localhost:8080/health/{{ $labels.service }}. Si el servicio entero deja de responder, esta alerta se resuelve y avisa Servicio caído.'
       dashboardUid: talentflow-observabilidad

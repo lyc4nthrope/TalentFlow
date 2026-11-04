@@ -60,4 +60,56 @@ async function saludDelSistema(servicios, opciones) {
     };
 }
 
-module.exports = { consultarSalud, detectarProblemas, saludDelSistema };
+const esObjeto = (valor) => typeof valor === 'object' && valor !== null;
+
+// Reto 8, D19: el /health de un servicio tal cual lo responde (código y cuerpo), para verlo
+// desde fuera por el Gateway. Nunca lanza: si no responde a tiempo, o no responde JSON, es
+// 503 DOWN con el motivo.
+async function leerSaludDe({ nombre, url }, { fetchImpl = fetch, timeoutMs = TIMEOUT_HEALTH_MS } = {}) {
+    try {
+        const respuesta = await fetchImpl(`${url}/health`, { signal: AbortSignal.timeout(timeoutMs) });
+        const cuerpo = await respuesta.json();
+        // null o un número también son JSON válido: sin esto, leer cuerpo.status lanzaría
+        // fuera de aquí y un solo servicio raro tumbaría /health/servicios y el scrape.
+        if (!esObjeto(cuerpo)) throw new Error('El /health no devolvió un objeto JSON');
+        return { codigo: respuesta.status, cuerpo };
+    } catch {
+        return { codigo: 503, cuerpo: { status: 'DOWN', service: nombre, detalle: 'No responde' } };
+    }
+}
+
+const estaSano = ({ codigo, cuerpo }) => codigo === 200 && cuerpo.status === 'UP';
+
+// Reto 8, D18: la salud de todos los servicios en una sola respuesta, con el /health de cada
+// uno tal cual. 200 solo si todos están UP; si no, 503. A diferencia de GET /health (que
+// sigue en 200 para el healthcheck de Docker), esta URL sí dice si el sistema está sano.
+async function saludDeTodos(servicios, opciones) {
+    const lecturas = await Promise.all(servicios.map((s) => leerSaludDe(s, opciones)));
+    const todosSanos = lecturas.every(estaSano);
+    return {
+        codigo: todosSanos ? 200 : 503,
+        cuerpo: {
+            status: todosSanos ? 'UP' : 'DOWN',
+            service: 'api-gateway',
+            timestamp: new Date().toISOString(),
+            checks: Object.fromEntries(servicios.map(({ nombre }, i) => [nombre, estaSano(lecturas[i]) ? 'UP' : 'DOWN'])),
+            servicios: Object.fromEntries(servicios.map(({ nombre }, i) => [nombre, lecturas[i].cuerpo]))
+        }
+    };
+}
+
+// Reto 8, D20: la salud como valores de una métrica (1 = UP, 0 = DOWN). Por servicio, su
+// estado general (check "status") y cada dependencia de su `checks` (database,
+// messageBroker). Un servicio que no responde no trae `checks`: solo su status en 0.
+function valoresDeSalud(cuerpos) {
+    const valores = [];
+    for (const [service, cuerpo] of Object.entries(cuerpos)) {
+        valores.push({ labels: { service, check: 'status' }, value: cuerpo.status === 'UP' ? 1 : 0 });
+        for (const [check, estado] of Object.entries(esObjeto(cuerpo.checks) ? cuerpo.checks : {})) {
+            valores.push({ labels: { service, check }, value: estado === 'UP' ? 1 : 0 });
+        }
+    }
+    return valores;
+}
+
+module.exports = { consultarSalud, detectarProblemas, saludDelSistema, leerSaludDe, saludDeTodos, valoresDeSalud };

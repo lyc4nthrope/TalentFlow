@@ -2,6 +2,7 @@
 // negocio, por eso no entra en el umbral de cobertura; tiene su prueba (tests/metricas.test.js).
 const express = require('express');
 const client = require('@prometheus-io/client');
+const { saludDeTodos, valoresDeSalud } = require('./salud');
 
 // Hasta 10 s: el umbral de la alerta de latencia (2 s) cae dentro de un bucket exacto.
 const BUCKETS_SEGUNDOS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10];
@@ -36,7 +37,7 @@ function crearMetricas() {
  * URL real: cada id distinto crearía una serie nueva.
  */
 function rutaDelGateway(ruta, prefijos) {
-    if (ruta === '/health') return '/health';
+    if (ruta === '/health' || ruta.startsWith('/health/')) return '/health';
     return prefijos.find((p) => ruta === p || ruta.startsWith(`${p}/`)) ?? 'other';
 }
 
@@ -72,4 +73,24 @@ function crearAppMetricas(registro) {
     return app;
 }
 
-module.exports = { crearMetricas, rutaDelGateway, middlewareMetricas, crearAppMetricas, BUCKETS_SEGUNDOS };
+/**
+ * Reto 8, D20: talentflow_health_check{service, check} = 1 (UP) o 0 (DOWN), calculada en
+ * cada scrape con el /health de cada servicio. Prometheus solo lee /metrics: sin esto, una
+ * base de datos caída no se ve, porque el proceso sigue vivo y `up` sigue en 1. Se borra
+ * antes de cada lectura para no dejar valores de un servicio que ya no responde.
+ */
+function registrarMetricasSalud(registro, servicios, opciones) {
+    return new client.Gauge({
+        name: 'talentflow_health_check',
+        help: 'Salud de cada servicio y de sus dependencias según su /health (1 = UP, 0 = DOWN)',
+        labelNames: ['service', 'check'],
+        registers: [registro],
+        async collect() {
+            const { cuerpo } = await saludDeTodos(servicios, opciones);
+            this.reset();
+            for (const { labels, value } of valoresDeSalud(cuerpo.servicios)) this.set(labels, value);
+        }
+    });
+}
+
+module.exports = { crearMetricas, rutaDelGateway, middlewareMetricas, crearAppMetricas, registrarMetricasSalud, BUCKETS_SEGUNDOS };

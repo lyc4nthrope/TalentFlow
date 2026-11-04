@@ -111,6 +111,85 @@
     },
     {
       "type": "stat",
+      "title": "Dependencias de cada servicio (BD y broker)",
+      "description": "talentflow_health_check del Gateway (D20): el checks del /health de cada servicio. 1 = UP, 0 = DOWN. Una BD caída se ve aquí aunque el servicio siga UP arriba.",
+      "id": 15,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "talentflow_health_check{check!=\"status\"}",
+          "legendFormat": "{{service}} · {{check}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
       "title": "Peticiones por segundo",
       "description": "Tráfico de negocio de todo el sistema (sin /health).",
       "id": 3,
@@ -122,7 +201,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 6
+        "y": 11
       },
       "fieldConfig": {
         "defaults": {
@@ -183,7 +262,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 6
+        "y": 11
       },
       "fieldConfig": {
         "defaults": {
@@ -233,7 +312,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[1m])) / sum(rate(http_requests_total[1m])) or vector(0)",
+          "expr": "sum(rate(http_requests_total{status=~\"5..\",route!=\"/health\"}[1m])) / sum(rate(http_requests_total{route!=\"/health\"}[1m])) or vector(0)",
           "legendFormat": "",
           "instant": true
         }
@@ -252,7 +331,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 6
+        "y": 11
       },
       "fieldConfig": {
         "defaults": {
@@ -317,7 +396,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 15
       },
       "panels": []
     },
@@ -334,7 +413,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 11
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -386,7 +465,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 11
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -438,7 +517,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 24
       },
       "fieldConfig": {
         "defaults": {
@@ -472,7 +551,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum by (job, status) (rate(http_requests_total{status=~\"[45]..\"}[1m]))",
+          "expr": "sum by (job, status) (rate(http_requests_total{status=~\"[45]..\",route!=\"/health\"}[1m]))",
           "legendFormat": "{{job}} {{status}}"
         }
       ]
@@ -490,7 +569,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 24
       },
       "fieldConfig": {
         "defaults": {
@@ -538,7 +617,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 32
       },
       "panels": []
     },
@@ -555,7 +634,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -607,7 +686,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -659,7 +738,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 41
       },
       "options": {
         "showTime": true,
