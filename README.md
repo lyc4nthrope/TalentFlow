@@ -81,6 +81,8 @@ Enrutamiento por prefijo, sin rutas adicionales en el Gateway. Desde el Reto 5, 
 | Ruta externa | Servicio interno | Notas |
 |---|---|---|
 | `GET /health` | (el propio Gateway) | Salud propia del Gateway (no hace proxy) + estado de los 6 servicios, su base de datos, el Circuit Breaker y su conexión al broker; `problemas` explica por qué el sistema está `DEGRADADO` — ver [manual del Reto 4](docs/reto-04/README.md) |
+| `GET /health/servicios` | (el propio Gateway) | Reto 8: el `/health` de los 6 servicios tal cual, en una sola respuesta. **200 solo si todos están `UP`; si no, 503.** Sirve para vigilar el sistema completo desde fuera |
+| `GET /health/{servicio}` | el servicio indicado | Reto 8: el `/health` de ese servicio con **su propio código** (200 o 503), p. ej. `/health/departamentos-service`. Un nombre desconocido es 404 con la lista de nombres válidos |
 | `/auth/*` | `http://auth-service:8086` | Reto 5: login, recuperación, restablecimiento y cambio de contraseña |
 | `/empleados/*` | `http://empleados-service:8081` | Cuerpo, cabeceras y código de estado se reenvían sin alterar (salvo las cabeceras `X-User-*`, que pone el Gateway) |
 | `/departamentos/*` | `http://departamentos-service:8082` | Ídem |
@@ -1159,7 +1161,7 @@ Consultas LogQL usadas, con su resultado real:
 
 | Fila | Paneles |
 |---|---|
-| Resumen del sistema | Estado de cada servicio (`up`, UP verde / DOWN rojo); peticiones por segundo, % de 5xx y latencia p95 de todo el sistema |
+| Resumen del sistema | Estado de cada servicio (`up`, UP verde / DOWN rojo); **dependencias de cada servicio** (base de datos y broker, de `talentflow_health_check`); peticiones por segundo, % de 5xx y latencia p95 de todo el sistema |
 | Comportamiento del tráfico | Tasa de peticiones, latencia promedio (`_sum / _count`), errores 4xx/5xx y latencia p95, por servicio |
 | Recursos y logs | CPU y memoria por servicio; logs de ERROR y WARN desde Loki |
 
@@ -1172,8 +1174,11 @@ Las consultas excluyen `/health`, que el healthcheck de Docker llama cada 5 s. L
 | Servicio caído | `up < 1` durante 1 minuto | critical |
 | Alta tasa de errores 5xx | más del 10 % de 5xx durante 2 minutos | warning |
 | Alta latencia | latencia promedio mayor a 2 s durante 2 minutos (sin `/health`) | warning |
+| Dependencia caída | la base de datos o el broker de un servicio en `DOWN` durante 1 minuto | critical |
 
-Cada regla evalúa los 7 servicios por separado (`by (job)`), así que el correo dice cuál falla. La regla 4 del PDF (*contenedor reiniciado*) queda fuera porque necesita las métricas de Docker (cAdvisor), que no están en el stack.
+Cada regla evalúa los 7 servicios por separado (`by (job)`), así que el correo dice cuál falla.
+
+**Por qué hace falta *Dependencia caída*.** Si se cae la base de datos de un servicio, el proceso sigue vivo: Prometheus sigue leyendo su `/metrics` y `up` sigue en 1, así que *Servicio caído* no se entera. Prometheus no lee `/health`, solo métricas. Por eso el Gateway, que ya consulta el `/health` de todos, lo publica en su `/metrics` como `talentflow_health_check{service, check}` (1 = UP, 0 = DOWN), con `check` = `status`, `database` o `messageBroker`. La regla vigila cada dependencia y el correo dice cuál: *"Dependencia caída database departamentos-service"*. La regla de 5xx no cuenta `/health`: antes, el 503 del healthcheck de Docker la disparaba y el correo decía "errores 5xx" en vez de "base de datos caída". La regla 4 del PDF (*contenedor reiniciado*) queda fuera porque necesita las métricas de Docker (cAdvisor), que no están en el stack.
 
 **Canal elegido: email**, con Mailhog como servidor SMTP de pruebas. Ya existía desde el Reto 4 y no expone ningún token: un webhook de Discord o Telegram es un secreto que no puede ir en el repositorio. Cómo quedó configurado, todo como código:
 
@@ -1194,7 +1199,8 @@ Detalle, horas exactas y las 10 capturas: [`docs/reto-08/pruebas.md`](docs/reto-
 | Traza de crear un empleado | 1 traza, 7 servicios, 21 spans: Gateway → empleados → departamentos → RabbitMQ → auth → notificaciones, perfiles y vacaciones |
 | Apagar `departamentos-service` | Target `DOWN`, panel en rojo y correo *Servicio caído* a 1 min 45 s |
 | Inducir 2,5 s de latencia en departamentos | Correo *Alta latencia* de departamentos y del Gateway a los 2 min |
-| Apagar la BD de departamentos | Correo *Alta tasa de errores 5xx* de departamentos y del Gateway |
+| Apagar la BD de departamentos con tráfico | Correo *Alta tasa de errores 5xx* de departamentos y del Gateway |
+| Apagar la BD de departamentos sin tráfico | `talentflow_health_check{check="database"}` en 0, panel *Dependencias* en rojo y correo *Dependencia caída database departamentos-service* a 1 min 30 s; el target sigue `UP` |
 
 | Dashboard con métricas reales | Traza distribuida completa | Alerta recibida |
 |---|---|---|

@@ -18,7 +18,7 @@ Duración: unos 25 minutos. Las alertas tardan ~2 minutos: por eso la caída del
 | 2 | Instrumentación (1.0) | 4.1 métricas, 4.2 trazas, **4.3 `/health`** |
 | 3 | Logs centralizados (1.0) | 4.4 |
 | 4 | Dashboard (0.5) | 5 |
-| 5 | Alertas (0.5) | 6 y 7 |
+| 5 | Alertas (0.5) | 6 y 7 (7 C: base de datos caída) |
 | 6 | Caos y documentación (1.0) | 1 (diagrama), 7 y 8 |
 
 ## 0. Antes de entrar (no se muestra)
@@ -38,7 +38,13 @@ for i in $(seq 1 20); do for r in empleados departamentos perfiles vacaciones; d
   curl -s -o /dev/null localhost:8080/$r -H "Authorization: Bearer $TOKEN"; done; done
 ```
 
-> El `TOKEN` dura **1 hora**. Si un comando responde `401`, repetir el login. Todos los comandos van en **la misma terminal**, porque usan `$TOKEN`.
+Comprobar que el token quedó guardado:
+
+```bash
+echo ${TOKEN:0:20}     # debe mostrar texto; si sale vacío, el login falló
+```
+
+> Todos los comandos van en **la misma terminal**: `$TOKEN` solo existe en la terminal donde se hizo el login. Si un comando responde `Token requerido` o `401`, el token está vacío o venció (dura **1 hora**): repetir el login.
 
 Pestañas abiertas:
 
@@ -153,13 +159,15 @@ echo; echo "Empleado: E$N  correo: ana.$N@empresa.com"
 
 **Se espera:** un JSON con `"estado":"ACTIVO"` y `"validacionDepartamento":"ACEPTADO"`. Anotar el id y el correo: se usan en la parte B.
 
+Si sale `"Token requerido para acceder a este recurso."`, `$TOKEN` está vacío: hacer el login del paso 0 **en esta terminal** y repetir. Sin el empleado creado, la parte B falla.
+
 **Mostrar en Jaeger** (`http://localhost:16686`), paso a paso:
 
 1. Arriba, la pestaña **Search** (la que abre por defecto).
 2. Panel izquierdo → **Service**: elegir `api-gateway`.
 3. **Operation**: elegir `POST /empleados`.
 4. **Lookback**: `Last 15 Minutes`. Clic en el botón azul **Find Traces**.
-5. A la derecha sale una lista. La primera fila es la más reciente: dice `api-gateway: POST /empleados`, **21 Spans** y los nombres de los 7 servicios. Clic en el título de esa fila.
+5. A la derecha sale una lista, la más reciente arriba. Abrir la fila que dice `api-gateway: POST /empleados` con **21 Spans** y los nombres de los 7 servicios (clic en el título). Una fila de **1 Span** es una petición que el Gateway rechazó (por ejemplo, un 401 sin token): no pasó a ningún otro servicio.
 6. Se abre la traza. Arriba, en la cabecera: **Services: 7**, **Total Spans: 21** y la duración total.
 
 **Decir, señalando la cascada** (a la izquierda el servicio y la operación; a la derecha la barra de tiempo):
@@ -199,7 +207,7 @@ curl -s -X POST localhost:8080/vacaciones -H "Authorization: Bearer $TOKEN" -H '
 
 > En Mac, `date -d` no existe: usar `date -v+1M +%FT%H:%M:00` y `date -v+2M +%FT%H:%M:00`.
 
-**Se espera:** `Contraseña establecida correctamente` y unas vacaciones en `PROGRAMADA`. Al segundo 0 del minuto siguiente el scheduler las inicia, y un minuto después las termina. Mientras tanto se puede seguir con la sección 4.3.
+**Se espera:** `Contraseña establecida correctamente` y unas vacaciones en `PROGRAMADA`. Si sale `token inválido o expirado`, el empleado de la parte A no se creó (no hubo correo de bienvenida): revisar `$TOKEN` y repetir la parte A. Al segundo 0 del minuto siguiente el scheduler las inicia, y un minuto después las termina. Mientras tanto se puede seguir con la sección 4.3.
 
 **Mostrar en Jaeger:**
 
@@ -267,13 +275,41 @@ docker compose start database-perfiles      # restaurar
 {"status":"DOWN","service":"perfiles-service","checks":{"database":"DOWN","messageBroker":"UP"}, ...}  -> HTTP 503
 ```
 
-**Ejecutar** la vista del Gateway, que sí se puede llamar desde el host:
+### Desde fuera, por el Gateway (lo que pidió el profesor)
+
+Los servicios no publican su puerto: desde fuera solo se llega al Gateway (`localhost:8080`). Por eso el Gateway tiene tres URL de salud, **públicas, sin token**:
+
+| URL | Qué devuelve | Código | Para qué sirve |
+|---|---|---|---|
+| `GET /health` | La salud del **propio Gateway** y un resumen de los 6 | **Siempre 200** mientras el Gateway viva | Para el healthcheck de Docker. Si diera 503 cuando cae otro servicio, Docker creería que el enfermo es el Gateway |
+| `GET /health/servicios` | El `/health` de **los 6 servicios a la vez**, cada uno tal cual | **200 si todos están UP; 503 si alguno no** | Para vigilar el sistema completo con una sola URL, como haría un monitor externo |
+| `GET /health/{servicio}` | El `/health` de **un solo servicio**, tal cual | **El mismo 200 o 503 del servicio** | Para ver el 4.3 servicio por servicio, con su `checks` de base de datos y broker |
+
+**Ejecutar** (todos a la vez):
 
 ```bash
-curl -s localhost:8080/health | python3 -m json.tool | grep -A7 '"checks"'
+curl -s localhost:8080/health/servicios | python3 -m json.tool | head -12
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' localhost:8080/health/servicios
 ```
 
-**Se espera:** `checks` con los 6 servicios de atrás en `UP`.
+**Se espera:** `"status": "UP"`, `checks` con los 6 en `UP`, el `/health` completo de cada uno en `servicios` y `HTTP 200`.
+
+**Ejecutar** (uno por uno):
+
+```bash
+for s in auth-service empleados-service departamentos-service perfiles-service notificaciones-service vacaciones-service; do
+  echo "== $s"; curl -s -w '  -> HTTP %{http_code}\n' localhost:8080/health/$s
+done
+curl -s -w '  -> HTTP %{http_code}\n' localhost:8080/health/no-existe     # nombre inválido
+```
+
+**Se espera:** cada servicio con su `checks` y `-> HTTP 200`. El nombre inválido da `404` con la lista de nombres válidos.
+
+**Mostrar en Jaeger:** Service `api-gateway` → Operation `GET /health/servicios` → **Find Traces** → abrir la primera. Se ven **8 spans**: la petición, su handler y las **6 llamadas** del Gateway al `/health` de cada servicio, con su código.
+
+> "El healthcheck de Docker y el scrape de Prometheus también llaman `/health`, cada 5 y 15 s, pero no dejan trazas, para no tapar las de negocio. Solo se traza cuando alguien de fuera pide `/health/servicios` o `/health/{servicio}`."
+
+El caso degradado por el Gateway se muestra en la sección 7 C, con la base de datos de departamentos apagada.
 
 ## 4.4 Logs estructurados (Loki + Promtail)
 
@@ -338,9 +374,9 @@ Más consultas con su resultado: README → *Logs centralizados con Loki*.
 **Mostrar:** `observability/grafana/provisioning/alerting/` → `rules.yml`, `contact-points.yml`, `policies.yml`.
 
 **Decir:**
-> "Tres reglas, como código: **servicio caído** (`up` en 0 durante 1 min), **errores 5xx** (más del 10 % durante 2 min) y **latencia alta** (promedio sobre 2 s durante 2 min). Cada una evalúa los 7 servicios por separado, así que el correo dice cuál falla. El canal es **email** por **Mailhog**, que ya estaba desde el Reto 4: no necesita tokens; un webhook de Discord o Telegram sería un secreto que no puede ir en el repo. La regla 4, contenedor reiniciado, no la hicimos porque necesita cAdvisor; el PDF pide mínimo 2."
+> "Cuatro reglas, como código: **servicio caído** (`up` en 0 durante 1 min), **errores 5xx** (más del 10 % durante 2 min), **latencia alta** (promedio sobre 2 s durante 2 min) y **dependencia caída** (la base de datos o el broker de un servicio en DOWN durante 1 min; se explica en la sección 7 C). Cada una evalúa los 7 servicios por separado, así que el correo dice cuál falla. El canal es **email** por **Mailhog**, que ya estaba desde el Reto 4: no necesita tokens; un webhook de Discord o Telegram sería un secreto que no puede ir en el repo. La regla 4, contenedor reiniciado, no la hicimos porque necesita cAdvisor; el PDF pide mínimo 2."
 
-**Mostrar:** Grafana → ☰ → **Alerting** → **Alert rules**: las 3 reglas en la carpeta TalentFlow.
+**Mostrar:** Grafana → ☰ → **Alerting** → **Alert rules**: las 4 reglas en la carpeta TalentFlow.
 
 ## 7. Simulación del caos
 
@@ -404,6 +440,47 @@ for i in $(seq 1 80); do curl -s -o /dev/null localhost:8080/departamentos -H "A
 docker compose up -d departamentos-service
 ```
 
+### C. Apagar una base de datos (lo que preguntó el profesor)
+
+**Decir, antes de ejecutar:**
+> "Una base de datos caída es distinta de un servicio caído. El proceso sigue vivo, Prometheus sigue leyendo su `/metrics` y `up` sigue en 1, así que *Servicio caído* no se entera. Prometheus no lee `/health`, solo métricas. Por eso el Gateway, que ya consulta el `/health` de todos, lo publica como una métrica, `talentflow_health_check`: 1 si la dependencia está UP y 0 si no, por servicio y por dependencia. Sobre esa métrica hay una alerta, **Dependencia caída**, y un panel en el dashboard."
+
+**Ejecutar:**
+
+```bash
+docker compose stop database-departamentos
+sleep 20
+curl -s -w '  -> HTTP %{http_code}\n' localhost:8080/health/departamentos-service
+curl -s -o /dev/null -w '/health/servicios -> HTTP %{http_code}\n' localhost:8080/health/servicios
+```
+
+**Se espera:**
+
+```
+{"status":"DOWN","service":"departamentos-service","checks":{"database":"DOWN"}, ...}  -> HTTP 503
+/health/servicios -> HTTP 503
+```
+
+**Mostrar,** en orden (unos 90 s en total):
+
+1. **Prometheus** `/targets`: departamentos sigue en **UP**. "Por eso hacía falta otra métrica."
+2. **Prometheus** → arriba, **Query** → escribir `talentflow_health_check{service="departamentos-service"}` → **Execute**: `check="database"` vale **0** y `check="status"` vale **0**.
+3. **Grafana**, dashboard: el panel **Dependencias de cada servicio (BD y broker)** muestra `departamentos-service · database` en **rojo**. El recuadro de arriba, *Estado de cada servicio*, sigue verde: el proceso está vivo.
+4. **Grafana** → Alerting → Alert rules: *Dependencia caída* pasa de *Pending* a *Firing*.
+5. **Mailhog**: llega **"[FIRING:1] Dependencia caída database … departamentos-service"** (~1 min 30 s después del `stop`). El correo dice qué dependencia y de qué servicio, y a qué URL mirar.
+6. **Jaeger**: la traza de `GET /health/servicios` tiene la llamada a `departamentos-service` en **rojo** con 503.
+
+**Ejecutar** para restaurar:
+
+```bash
+docker compose start database-departamentos
+```
+
+**Se espera:** en ~1 min, el correo **"[RESOLVED] Dependencia caída …"** y el panel otra vez verde.
+
+Si pregunta por qué no se usó la alerta de errores 5xx:
+> "Antes de este cambio llegaba un correo *Alta tasa de errores 5xx*, pero por casualidad: el healthcheck de Docker llama `/health` cada 5 s y cada 503 contaba como error. El motivo del correo era equivocado. Ahora la regla de 5xx no cuenta `/health`, y la base de datos caída tiene su propia alerta con el nombre correcto."
+
 ## 8. La pregunta: ¿qué servicio tardó más y cómo lo identificaron?
 
 **Decir:**
@@ -439,6 +516,6 @@ Más preguntas y problemas comunes: [manual del reto](README.md#3-preguntas-prob
 ## Después
 
 ```bash
-docker compose up -d departamentos-service database-perfiles   # por si algo quedó apagado o con caos
+docker compose up -d departamentos-service database-perfiles database-departamentos   # por si algo quedó apagado o con caos
 docker compose ps                                              # todo en (healthy)
 ```
