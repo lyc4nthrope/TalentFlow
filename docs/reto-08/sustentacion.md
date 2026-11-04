@@ -27,7 +27,7 @@ Dejar abiertas estas pestañas:
 | Mailhog (correos) | `http://localhost:8025` | — |
 | README en GitHub | sección *Observabilidad (Reto 8)* | — |
 
-Comprobar antes de empezar: 7 de 7 targets en `UP` y el dashboard con datos. El `TOKEN` sirve una hora: si se vence, se repite el login.
+Comprobar antes de empezar: 8 targets en `UP` (los 7 servicios y el propio Prometheus) y el dashboard con datos. El `TOKEN` sirve una hora: si se vence, se repite el login.
 
 ## 1. Introducción (1 min)
 
@@ -45,7 +45,7 @@ Comprobar antes de empezar: 7 de 7 targets en `UP` y el dashboard con datos. El 
 |---|---|
 | `docker-compose.yml`: servicios `prometheus`, `grafana`, `loki`, `promtail`, `jaeger` | "Los 5 están en el mismo compose, con versiones fijas y no `latest`, para que en su máquina levante exactamente lo que probamos. Todos están en la red `microservices-network`." |
 | `observability/prometheus/prometheus.yml` | "Aquí están los 7 servicios como targets, por su nombre de Docker, nunca `localhost`. El Gateway es el primero. Lee sus métricas por el puerto interno 9464, porque su 8080 es público y cualquiera podría leerlas sin token." |
-| Pestaña Prometheus `/targets` | "Los 7 en `UP`." |
+| Pestaña Prometheus `/targets` | "Los 7 servicios en `UP`. El octavo es el propio Prometheus, que también se vigila a sí mismo." |
 | Carpeta `observability/` | "Toda la configuración está versionada: Prometheus, Loki, Promtail y Grafana con sus fuentes de datos, el dashboard y las alertas." |
 
 Si pregunta por qué Prometheus está en el 9091: "El 9090 del host lo usa Jenkins desde el Reto 7. Dentro de la red, Prometheus sigue en el 9090."
@@ -55,7 +55,7 @@ Si pregunta por qué Prometheus está en el 9091: "El 9090 del host lo usa Jenki
 **Ejecutar:**
 
 ```bash
-docker compose exec api-gateway wget -qO- localhost:9464/metrics | grep http_requests_total | head -3
+docker compose exec api-gateway wget -qO- localhost:9464/metrics | grep '^http_requests_total' | grep -v health | head -3
 curl -s localhost:8080/health | python3 -m json.tool | grep -A7 '"checks"'
 ```
 
