@@ -2,17 +2,19 @@
 
 # Microservicio de Gestión de Departamentos
 
-Segundo microservicio de negocio del sistema, introducido en el Reto 2 para cumplir el requisito de diversidad tecnológica del proyecto final: implementado en **PHP** (servidor nativo, sin framework ni Composer) con **MySQL** como base de datos, independiente de `empleados-service`.
+Segundo microservicio de negocio del sistema, introducido en el Reto 2 para cumplir el requisito de diversidad tecnológica del proyecto final: implementado en **PHP** (servidor nativo, sin framework; Composer solo para las pruebas) con **MySQL** como base de datos, independiente de `empleados-service`.
 
 ## Endpoints
 
-### Registrar un departamento
+| Método y ruta | Éxito | Errores |
+|---|---|---|
+| `POST /departamentos` | **201** + `Location: /departamentos/{id}` | **400**: faltan `id`/`nombre`, JSON inválido o `id` ya registrado |
+| `GET /departamentos` | **200**: arreglo, en orden de creación | — |
+| `GET /departamentos/{id}` | **200** | **404**: `El departamento con id {id} no existe` |
+| `PUT /departamentos/{id}` | **200**: el departamento actualizado | **400**: falta `nombre`, JSON inválido o `id` del cuerpo distinto del de la ruta (`No se puede cambiar el id`); **404** si no existe |
+| `DELETE /departamentos/{id}` | **204** sin cuerpo | **404** si no existe |
 
-```
-POST /departamentos
-```
-
-Cuerpo:
+Cuerpo de `POST` (y de `PUT`, sin `id`):
 
 ```json
 {
@@ -22,27 +24,15 @@ Cuerpo:
 }
 ```
 
-- **201 Created**: departamento registrado, con header `Location: /departamentos/{id}`.
-- **400 Bad Request**: faltan campos obligatorios (`id`, `nombre`), cuerpo JSON inválido, o el `id` ya está registrado.
+`PUT` es un reemplazo completo: si no se envía `descripcion`, queda en `null`. El `id` no se puede cambiar; enviarlo igual al de la ruta es válido.
 
-Las respuestas de error siguen el formato `{ status, error, message, timestamp, path, errors? }` (alineado con la clase de API RESTful).
+Las respuestas de error siguen el formato `{ status, error, message, timestamp, path, errors? }` (alineado con la clase de API RESTful). Si la base de datos no responde, las rutas de negocio dan **500** `No fue posible conectar con la base de datos`.
 
-### Listar departamentos
+Permisos (Gateway, D8): ADMIN puede todo; USER solo lee (`PUT` y `DELETE` le dan **403**).
 
-```
-GET /departamentos
-```
+### Eliminar un departamento con empleados
 
-- **200 OK**: arreglo con todos los departamentos registrados.
-
-### Consultar un departamento por id
-
-```
-GET /departamentos/{id}
-```
-
-- **200 OK**: información del departamento.
-- **404 Not Found**: `El departamento con id {id} no existe`.
+`DELETE` no revisa empleados: este servicio no conoce a `gestion-empleados` y no hay clave foránea entre bases de datos. Decisión: los empleados ya asignados conservan su `departamentoId`; registrar un empleado **nuevo** en un departamento eliminado responde **400** desde `empleados-service`, que valida el departamento contra este servicio.
 
 ### Health check (interno)
 
@@ -61,15 +51,26 @@ Cualquier otra ruta o método responde **404** con `Recurso no encontrado`.
 
 ## Estructura del código
 
+Capas (proyecto final, F1): el HTTP no conoce SQL y las reglas no conocen HTTP, así cada una se prueba sola.
+
 ```
-public/index.php                    # Punto de entrada HTTP: enrutamiento y manejo de errores
+public/index.php                    # Entrada: /metrics, trazas, log JSON, caos; delega en Aplicacion y emite la respuesta
 src/
-├── Database.php                    # Conexión PDO a MySQL (lee configuración de variables de entorno)
-├── DepartamentoRepository.php      # Acceso a datos (buscarPorId, guardar, listar)
-└── OpenApi.php                     # Especificación OpenAPI + HTML de Swagger UI (/departamentos/docs)
+├── Aplicacion.php                  # Adaptador HTTP: método + ruta + cuerpo -> Respuesta (rutas, JSON, errores, /health, docs)
+├── Respuesta.php                   # Valor status + cabeceras + cuerpo
+├── DepartamentoService.php         # Reglas de negocio (crear, listar, obtener, actualizar, eliminar)
+├── ErrorDeNegocio.php              # Regla incumplida: status, mensaje y errors[]
+├── RepositorioDepartamentos.php    # Puerto de persistencia
+├── DepartamentoRepository.php      # Implementación PDO (sentencias preparadas)
+├── Database.php                    # Conexión PDO a MySQL (variables de entorno)
+├── OpenApi.php                     # Especificación OpenAPI + HTML de Swagger UI
+├── Metricas.php, Trazas.php        # Observabilidad (Reto 8)
+└── cargar.php                      # require_once de todo src/ (no hay autoload en producción)
+tests/                              # PHPUnit (ver Pruebas)
+scripts/test_departamentos.php      # Prueba de humo de caja negra contra el sistema levantado
 ```
 
-Sin Composer ni autoload: el servicio no tiene dependencias externas, así que se mantuvo deliberadamente simple.
+La imagen de ejecución no lleva Composer, `vendor/` ni pruebas: solo `src/` y `public/` (etapa `runner` del `Dockerfile`).
 
 ## Variables de entorno
 
@@ -96,15 +97,33 @@ Swagger UI en `http://localhost:8080/departamentos/docs` y la especificación en
 
 ## Pruebas
 
-Pruebas de integración de caja negra (vía HTTP, sin dependencias externas), en `test/test_departamentos.php`. Requieren el sistema levantado (`docker compose up --build`) y PHP en el host; por defecto apuntan al Gateway:
+Sin PHP en el host: todo corre en Docker.
 
 ```bash
-php microservicios/gestion-departamentos/test/test_departamentos.php
-# o contra otra URL base:
-TEST_BASE_URL=http://localhost:8080 php microservicios/gestion-departamentos/test/test_departamentos.php
+make -C microservicios/gestion-departamentos test
 ```
 
-No forman parte de `npm test` (que solo corre las pruebas unitarias de Node y no necesita el sistema levantado).
+Construye la etapa `test` del `Dockerfile` (PHPUnit 11 + pcov), exporta `reports/junit.xml` y `reports/clover.xml` y reescribe las rutas del contenedor a las del host para SonarQube. Falla si una prueba falla o si la cobertura de líneas de `src/` baja del 70 % (`tests/cobertura-minima.php`). Excluidos de la cobertura: `src/Database.php` (conexión real por entorno) y `src/cargar.php` (solo `require_once`).
+
+| Archivo | Nivel | Qué cubre |
+|---|---|---|
+| `tests/DepartamentoServiceTest.php` | Unidad, repositorio en memoria | Todas las reglas y ramas de error |
+| `tests/DepartamentoRepositoryTest.php` | Integración, SQLite en memoria con `init.sql` | SQL real: guardar, buscar, orden de `listar`, `actualizar`, `eliminar`, `SQLSTATE 23000` |
+| `tests/AplicacionTest.php` | HTTP, servicio real + SQLite | Cada operación, 400/404/500, docs, `/health` 200/503 |
+| `tests/MetricasTest.php`, `tests/TrazasTest.php`, `tests/OpenApiTest.php` | Unidad | Observabilidad y especificación |
+
+En Jenkins, el stage Test ejecuta el mismo `make test` y publica ambos reportes; SonarQube importa los dos.
+
+### Prueba de humo (caja negra)
+
+`scripts/test_departamentos.php` recorre el servicio vía HTTP a través del Gateway. No es parte de `make test`: requiere el sistema levantado (`docker compose up --build`) y PHP en el host.
+
+```bash
+php microservicios/gestion-departamentos/scripts/test_departamentos.php
+TEST_BASE_URL=http://localhost:8080 php microservicios/gestion-departamentos/scripts/test_departamentos.php
+```
+
+El escenario de punta a punta de `PUT`/`DELETE` y de los permisos está en `e2e-tests/features/departamentos/crud.feature`.
 
 ## Pendientes conocidos
 

@@ -53,6 +53,15 @@ const OPERACIONES = {
       cuerpo: { id: idUnico('D'), nombre: `Departamento E2E ${idUnico('n')}` },
     }),
 
+  // Sobre el departamento del escenario (el que creó la preparación del empleado).
+  'actualizar un departamento': (mundo) =>
+    mundo.peticion('PUT', `/departamentos/${encodeURIComponent(mundo.recurso('departamento').id)}`, {
+      cuerpo: { nombre: `Departamento E2E ${idUnico('n')}` },
+    }),
+
+  'eliminar un departamento': (mundo) =>
+    mundo.peticion('DELETE', `/departamentos/${encodeURIComponent(mundo.recurso('departamento').id)}`),
+
   'programar vacaciones para un empleado': (mundo) =>
     mundo.peticion('POST', '/vacaciones', {
       cuerpo: {

@@ -2,6 +2,12 @@
 
 function obtenerEspecificacionOpenApi(): array
 {
+    $parametroId = ['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string'], 'example' => 'IT'];
+    $error = fn (string $descripcion) => [
+        'description' => $descripcion,
+        'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Error']]],
+    ];
+
     $departamentoSchema = [
         'type' => 'object',
         'properties' => [
@@ -38,7 +44,7 @@ function obtenerEspecificacionOpenApi(): array
         'info' => [
             'title' => 'TalentFlow - Servicio de Gestión de Departamentos',
             'version' => '0.1.0',
-            'description' => 'Registro, consulta y listado de departamentos. Persiste en MySQL.',
+            'description' => 'Registro, consulta, listado, actualización y eliminación de departamentos. Persiste en MySQL.',
         ],
         'servers' => [['url' => '/']],
         // D13: el Gateway exige un JWT. Los [] vacíos son listas PHP y json_encode los
@@ -95,18 +101,51 @@ function obtenerEspecificacionOpenApi(): array
             '/departamentos/{id}' => [
                 'get' => [
                     'summary' => 'Consulta un departamento por id',
-                    'parameters' => [
-                        ['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string'], 'example' => 'IT'],
-                    ],
+                    'parameters' => [$parametroId],
                     'responses' => [
                         '200' => [
                             'description' => 'Departamento encontrado',
                             'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Departamento']]],
                         ],
-                        '404' => [
-                            'description' => 'El departamento no existe',
-                            'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Error']]],
+                        '404' => $error('El departamento no existe'),
+                    ],
+                ],
+                'put' => [
+                    'summary' => 'Actualiza el nombre y la descripción de un departamento',
+                    'description' => 'Reemplazo completo: si no se envía descripcion queda en null. El id no se puede cambiar.',
+                    'parameters' => [$parametroId],
+                    'requestBody' => [
+                        'required' => true,
+                        'content' => [
+                            'application/json' => [
+                                'schema' => [
+                                    'type' => 'object',
+                                    'required' => ['nombre'],
+                                    'properties' => [
+                                        'nombre' => ['type' => 'string', 'example' => 'Tecnología e Innovación'],
+                                        'descripcion' => ['type' => 'string', 'example' => 'Departamento de TI'],
+                                    ],
+                                ],
+                            ],
                         ],
+                    ],
+                    'responses' => [
+                        '200' => [
+                            'description' => 'Departamento actualizado',
+                            'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Departamento']]],
+                        ],
+                        '400' => $error('Falta el nombre, cuerpo JSON inválido o se intentó cambiar el id'),
+                        '404' => $error('El departamento no existe'),
+                    ],
+                ],
+                'delete' => [
+                    'summary' => 'Elimina un departamento',
+                    'description' => 'Los empleados ya asignados conservan su departamentoId; '
+                        . 'registrar un empleado nuevo en un departamento eliminado responde 400.',
+                    'parameters' => [$parametroId],
+                    'responses' => [
+                        '204' => ['description' => 'Departamento eliminado'],
+                        '404' => $error('El departamento no existe'),
                     ],
                 ],
             ],
