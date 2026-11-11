@@ -49,13 +49,7 @@ public class JdbcRepositorioVacaciones implements RepositorioVacaciones {
                     .param("creacion", fechaCreacion.atOffset(ZoneOffset.UTC))
                     .update();
         } catch (DataIntegrityViolationException e) {
-            // Red de seguridad: la restricción EXCLUDE de la BD impide el solapamiento aun si
-            // dos solicitudes simultáneas pasaran la validación previa.
-            if (e.getMostSpecificCause() instanceof SQLException sql && VIOLACION_EXCLUSION.equals(sql.getSQLState())) {
-                throw new SolicitudInvalidaException("fechaInicio",
-                        "El período se cruza con otro período vigente del empleado");
-            }
-            throw e;
+            throw traducirSolapamiento(e);
         }
         return new Vacaciones(id, empleadoId, fechaInicio, fechaFin, EstadoVacaciones.PROGRAMADA, fechaCreacion);
     }
@@ -86,11 +80,19 @@ public class JdbcRepositorioVacaciones implements RepositorioVacaciones {
     @Override
     public Optional<Vacaciones> buscarVigenteSolapado(String empleadoId, LocalDateTime fechaInicio,
             LocalDateTime fechaFin) {
+        // Los ids nunca están vacíos: excluir "" no descarta ningún período.
+        return buscarOtroVigenteSolapado("", empleadoId, fechaInicio, fechaFin);
+    }
+
+    @Override
+    public Optional<Vacaciones> buscarOtroVigenteSolapado(String excluirId, String empleadoId,
+            LocalDateTime fechaInicio, LocalDateTime fechaFin) {
         // Rangos semiabiertos [inicio, fin): se cruzan si cada uno empieza antes de que el
         // otro termine (mismo criterio que la restricción EXCLUDE con tsrange '[)').
         return jdbc.sql("SELECT " + COLUMNAS + """
                  FROM vacaciones
                 WHERE empleado_id = :empleadoId
+                  AND id <> :excluirId
                   AND estado IN ('PROGRAMADA', 'EN_CURSO')
                   AND fecha_inicio < :fin
                   AND fecha_fin > :inicio
@@ -98,6 +100,7 @@ public class JdbcRepositorioVacaciones implements RepositorioVacaciones {
                 LIMIT 1
                 """)
                 .param("empleadoId", empleadoId)
+                .param("excluirId", excluirId)
                 .param("inicio", fechaInicio)
                 .param("fin", fechaFin)
                 .query(JdbcRepositorioVacaciones::aVacaciones)
@@ -105,10 +108,37 @@ public class JdbcRepositorioVacaciones implements RepositorioVacaciones {
     }
 
     @Override
+    public boolean reprogramar(String id, LocalDateTime fechaInicio, LocalDateTime fechaFin) {
+        try {
+            return jdbc.sql("""
+                    UPDATE vacaciones SET fecha_inicio = :inicio, fecha_fin = :fin
+                     WHERE id = :id AND estado = 'PROGRAMADA'
+                    """)
+                    .param("inicio", fechaInicio)
+                    .param("fin", fechaFin)
+                    .param("id", id)
+                    .update() == 1;
+        } catch (DataIntegrityViolationException e) {
+            throw traducirSolapamiento(e);
+        }
+    }
+
+    @Override
     public boolean cancelar(String id) {
         return jdbc.sql("UPDATE vacaciones SET estado = 'CANCELADA' WHERE id = :id AND estado = 'PROGRAMADA'")
                 .param("id", id)
                 .update() == 1;
+    }
+
+    /**
+     * Red de seguridad: la restricción EXCLUDE de la BD impide el solapamiento aun si dos
+     * solicitudes simultáneas pasaran la validación previa. Otra violación se propaga tal cual.
+     */
+    private static RuntimeException traducirSolapamiento(DataIntegrityViolationException e) {
+        if (e.getMostSpecificCause() instanceof SQLException sql && VIOLACION_EXCLUSION.equals(sql.getSQLState())) {
+            return new SolicitudInvalidaException("fechaInicio", "El período se cruza con otro período vigente del empleado");
+        }
+        return e;
     }
 
     private static Vacaciones aVacaciones(ResultSet fila, int numero) throws SQLException {

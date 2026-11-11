@@ -71,6 +71,22 @@ const OPERACIONES = {
       },
     }),
 
+  // El período lo programa el ADMIN (preparación); la reprogramación sale con el token
+  // de la sesión, así la misma operación prueba el 403 de USER y el 200 de ADMIN.
+  'reprogramar las vacaciones de un empleado': async (mundo) => {
+    const programado = exigirCodigo(
+      await mundo.enviar('POST', '/vacaciones', {
+        token: await mundo.tokenDeAdmin(),
+        cuerpo: { empleadoId: mundo.recurso('empleado').id, fechaInicio: fechaEnDias(400), fechaFin: fechaEnDias(404) },
+      }),
+      201,
+      'Programar el período que se va a reprogramar'
+    );
+    return mundo.peticion('PUT', `/vacaciones/${encodeURIComponent(programado.body.id)}`, {
+      cuerpo: { fechaInicio: fechaEnDias(410), fechaFin: fechaEnDias(414) },
+    });
+  },
+
   'editar el perfil de un empleado': async (mundo) => {
     const { id } = mundo.recurso('empleado');
     await esperarPerfil(mundo, id);

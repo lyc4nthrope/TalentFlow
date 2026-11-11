@@ -245,6 +245,172 @@ class ServicioVacacionesTest {
         assertThat(servicio.consultar(futura.id()).estado()).isEqualTo(EstadoVacaciones.EN_CURSO);
     }
 
+    // --- Reprogramar (PUT /vacaciones/{id}, proyecto final F2) ---
+
+    private static ReprogramacionVacaciones nuevasFechas(String empleadoId, String inicio, String fin) {
+        return new ReprogramacionVacaciones(empleadoId, FechaHoraEntrada.comoInicio(inicio).orElseThrow(),
+                FechaHoraEntrada.comoFin(fin).orElseThrow());
+    }
+
+    @Test
+    void reprogramaUnPeriodoYPublicaDeNuevoVacacionesProgramadasConLasFechasNuevas() {
+        Vacaciones creada = servicio.programar(solicitud("E001", "2026-12-14", "2026-12-20"));
+
+        Vacaciones reprogramada = servicio.reprogramar(creada.id(), nuevasFechas(null, "2026-11-02T08:00", "2026-11-06T18:00"));
+
+        assertThat(reprogramada).isEqualTo(creada.conFechas(LocalDateTime.of(2026, 11, 2, 8, 0), LocalDateTime.of(2026, 11, 6, 18, 0)));
+        assertThat(servicio.consultar(creada.id())).isEqualTo(reprogramada);
+        assertThat(publicador.publicados).hasSize(2);
+        assertThat(publicador.publicados.get(1).tipo()).isEqualTo("vacaciones.programadas");
+        assertThat(publicador.publicados.get(1).data()).isEqualTo(new VacacionesProgramadas(
+                creada.id(), "E001", "juan@empresa.com", "2026-11-02T08:00:00-05:00", "2026-11-06T18:00:00-05:00", 5));
+    }
+
+    @Test
+    void reprogramarConElMismoEmpleadoEnElCuerpoEsValido() {
+        Vacaciones creada = servicio.programar(solicitud("E001", "2026-12-14", "2026-12-20"));
+
+        assertThat(servicio.reprogramar(creada.id(), nuevasFechas("E001", "2026-12-15", "2026-12-21")).fechaFin())
+                .isEqualTo(LocalDateTime.of(2026, 12, 21, 23, 59, 59));
+    }
+
+    @Test
+    void reprogramarUnoInexistenteEs404() {
+        assertThatThrownBy(() -> servicio.reprogramar("V-2026-9999", nuevasFechas(null, "2026-12-14", "2026-12-20")))
+                .isInstanceOf(VacacionesNoEncontradasException.class);
+        assertThat(publicador.publicados).isEmpty();
+    }
+
+    @Test
+    void noSePuedeCambiarElEmpleadoDelPeriodo() {
+        empleados.registrar("E002", "ana@empresa.com");
+        Vacaciones creada = servicio.programar(solicitud("E001", "2026-12-14", "2026-12-20"));
+
+        assertThatThrownBy(() -> servicio.reprogramar(creada.id(), nuevasFechas("E002", "2026-12-15", "2026-12-21")))
+                .isInstanceOfSatisfying(SolicitudInvalidaException.class, e -> {
+                    assertThat(e.campo()).isEqualTo("empleadoId");
+                    assertThat(e.getMessage()).isEqualTo("No se puede cambiar el empleado del período");
+                });
+        assertThat(servicio.consultar(creada.id())).isEqualTo(creada);
+        assertThat(publicador.publicados).hasSize(1);
+    }
+
+    @ParameterizedTest(name = "[{index}] {0} → 409: {1}")
+    @CsvSource(delimiter = '|', textBlock = """
+            EN_CURSO   | está EN_CURSO y ya inició
+            FINALIZADA | está FINALIZADA
+            CANCELADA  | está CANCELADA
+            """)
+    void noReprogramaSegunElEstadoYExplicaElMotivo(EstadoVacaciones estado, String motivo) {
+        Vacaciones v = vacaciones.agregar("V-X", "E001", LocalDateTime.of(2026, 12, 1, 8, 0), LocalDateTime.of(2026, 12, 5, 18, 0), estado);
+
+        assertThatThrownBy(() -> servicio.reprogramar("V-X", nuevasFechas(null, "2026-12-14", "2026-12-20")))
+                .isInstanceOf(ConflictoDeEstadoException.class)
+                .hasMessage("El período V-X no se puede reprogramar: " + motivo);
+        assertThat(vacaciones.datos.get("V-X")).isEqualTo(v);
+        assertThat(publicador.publicados).isEmpty();
+    }
+
+    @Test
+    void noReprogramaUnPeriodoProgramadoQueYaInicio() {
+        // Sigue PROGRAMADA (el scheduler aún no pasó) pero empezó a las 10:00, que es ahora.
+        vacaciones.agregar("V-X", "E001", LocalDateTime.of(2026, 9, 28, 10, 0), LocalDateTime.of(2026, 10, 2, 18, 0),
+                EstadoVacaciones.PROGRAMADA);
+
+        assertThatThrownBy(() -> servicio.reprogramar("V-X", nuevasFechas(null, "2026-12-14", "2026-12-20")))
+                .isInstanceOf(ConflictoDeEstadoException.class)
+                .hasMessage("El período V-X no se puede reprogramar: está PROGRAMADA y ya inició");
+    }
+
+    @Test
+    void reprogramarNoPuedeCruzarseConOtroPeriodoDelEmpleado() {
+        Vacaciones otro = servicio.programar(solicitud("E001", "2026-12-14", "2026-12-20"));
+        Vacaciones creada = servicio.programar(solicitud("E001", "2027-01-11", "2027-01-15"));
+
+        assertThatThrownBy(() -> servicio.reprogramar(creada.id(), nuevasFechas(null, "2026-12-18", "2026-12-23")))
+                .isInstanceOfSatisfying(SolicitudInvalidaException.class, e -> {
+                    assertThat(e.campo()).isEqualTo("fechaInicio");
+                    assertThat(e.periodoEnConflicto()).isEqualTo(otro);
+                });
+        assertThat(servicio.consultar(creada.id())).isEqualTo(creada);
+        assertThat(publicador.publicados).hasSize(2);
+    }
+
+    @Test
+    void reprogramarSobreSusPropiasFechasNoEsCruce() {
+        Vacaciones creada = servicio.programar(solicitud("E001", "2026-12-14", "2026-12-20"));
+
+        assertThat(servicio.reprogramar(creada.id(), nuevasFechas(null, "2026-12-16", "2026-12-22")).fechaInicio())
+                .isEqualTo(LocalDateTime.of(2026, 12, 16, 0, 0));
+    }
+
+    @Test
+    void reprogramarValidaLasFechasComoProgramar() {
+        Vacaciones creada = servicio.programar(solicitud("E001", "2026-12-14", "2026-12-20"));
+
+        assertThatThrownBy(() -> servicio.reprogramar(creada.id(), nuevasFechas(null, "2026-09-27", "2026-10-02")))
+                .isInstanceOfSatisfying(SolicitudInvalidaException.class, e -> assertThat(e.campo()).isEqualTo("fechaInicio"));
+        assertThatThrownBy(() -> servicio.reprogramar(creada.id(), nuevasFechas(null, "2026-12-20T10:00", "2026-12-20T10:00")))
+                .isInstanceOfSatisfying(SolicitudInvalidaException.class, e -> assertThat(e.campo()).isEqualTo("fechaFin"));
+        assertThat(servicio.consultar(creada.id())).isEqualTo(creada);
+        assertThat(publicador.publicados).hasSize(1);
+    }
+
+    @Test
+    void conLaFechaSolaDeHoyElPeriodoReprogramadoEmpiezaAhora() {
+        Vacaciones creada = servicio.programar(solicitud("E001", "2026-12-14", "2026-12-20"));
+
+        assertThat(servicio.reprogramar(creada.id(), nuevasFechas(null, "2026-09-28", "2026-10-02")).fechaInicio())
+                .isEqualTo(LocalDateTime.of(2026, 9, 28, 10, 0));
+    }
+
+    @Test
+    void noReprogramaSiElEmpleadoSeRetiro() {
+        Vacaciones creada = servicio.programar(solicitud("E001", "2026-12-14", "2026-12-20"));
+        empleados.marcarRetirado("E001", "juan@empresa.com");
+
+        assertThatThrownBy(() -> servicio.reprogramar(creada.id(), nuevasFechas(null, "2026-12-15", "2026-12-21")))
+                .isInstanceOf(SolicitudInvalidaException.class)
+                .hasMessageContaining("retirado");
+        assertThat(publicador.publicados).hasSize(1);
+    }
+
+    @Test
+    void siElPeriodoCambiaDeEstadoJustoAntesDeReprogramarloEs409YNoSePublica() {
+        Vacaciones creada = servicio.programar(solicitud("E001", "2026-12-14", "2026-12-20"));
+        vacaciones.alReprogramar = () -> vacaciones.datos.computeIfPresent(creada.id(),
+                (id, v) -> v.conEstado(EstadoVacaciones.CANCELADA));
+
+        assertThatThrownBy(() -> servicio.reprogramar(creada.id(), nuevasFechas(null, "2026-12-15", "2026-12-21")))
+                .isInstanceOf(ConflictoDeEstadoException.class)
+                .hasMessage("El período " + creada.id() + " cambió de estado y no se puede reprogramar");
+        assertThat(servicio.consultar(creada.id()).fechaInicio()).isEqualTo(creada.fechaInicio());
+        assertThat(publicador.publicados).hasSize(1);
+    }
+
+    @Test
+    void reprogramarPublicaDespuesDeCerrarLaTransaccion() {
+        Fakes.TransaccionesRastreadas transacciones = new Fakes.TransaccionesRastreadas();
+        publicador.transacciones = transacciones;
+        servicio = new ServicioVacaciones(vacaciones, empleados, publicador, transacciones, RELOJ);
+        Vacaciones creada = servicio.programar(solicitud("E001", "2026-12-14", "2026-12-20"));
+
+        servicio.reprogramar(creada.id(), nuevasFechas(null, "2026-12-15", "2026-12-21"));
+
+        assertThat(transacciones.abiertas).isEqualTo(2);
+        assertThat(publicador.dentroDeTransaccionAlPublicar).containsExactly(false, false);
+    }
+
+    @Test
+    void siLaPublicacionFallaLaReprogramacionQuedaGuardada() {
+        Vacaciones creada = servicio.programar(solicitud("E001", "2026-12-14", "2026-12-20"));
+        publicador.exito = false;
+
+        Vacaciones reprogramada = servicio.reprogramar(creada.id(), nuevasFechas(null, "2026-12-15", "2026-12-21"));
+
+        assertThat(servicio.consultar(creada.id())).isEqualTo(reprogramada);
+    }
+
     @Test
     void consultarUnoInexistenteEs404() {
         assertThatThrownBy(() -> servicio.consultar("V-2026-9999")).isInstanceOf(VacacionesNoEncontradasException.class);

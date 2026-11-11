@@ -41,24 +41,10 @@ public class ServicioVacaciones {
         ReglasVacaciones.validarFechas(fechaInicio, fechaFin, ahora);
 
         Programacion programacion = transacciones.ejecutar(() -> {
-            // Validación 4: el empleado debe existir en la réplica (y no estar retirado).
-            EmpleadoReplica empleado = empleados.buscarParaProgramar(solicitud.empleadoId())
-                    .orElseThrow(() -> new SolicitudInvalidaException("empleadoId",
-                            "El empleado " + solicitud.empleadoId() + " no corresponde a un empleado registrado"));
-            if (empleado.retirado()) {
-                throw new SolicitudInvalidaException("empleadoId",
-                        "El empleado " + solicitud.empleadoId() + " está retirado y no puede programar vacaciones");
-            }
-
+            EmpleadoReplica empleado = empleadoHabilitado(solicitud.empleadoId());
             // Validación 3: sin solapamiento con un período PROGRAMADA o EN_CURSO.
             vacaciones.buscarVigenteSolapado(solicitud.empleadoId(), fechaInicio, fechaFin)
-                    .ifPresent(conflicto -> {
-                        throw new SolicitudInvalidaException("fechaInicio",
-                                "El período se cruza con otro período " + conflicto.estado() + " del empleado ("
-                                        + conflicto.id() + ": " + conflicto.fechaInicio() + " a "
-                                        + conflicto.fechaFin() + ")",
-                                conflicto);
-                    });
+                    .ifPresent(ServicioVacaciones::rechazarSolapamiento);
 
             Vacaciones creada = vacaciones.crear(solicitud.empleadoId(), fechaInicio, fechaFin,
                     Instant.now(reloj).truncatedTo(ChronoUnit.SECONDS));
@@ -71,6 +57,61 @@ public class ServicioVacaciones {
         publicador.publicar(VacacionesProgramadas.TIPO,
                 VacacionesProgramadas.de(creada, programacion.email(), reloj.getZone()));
         return creada;
+    }
+
+    /** Validación 4: el empleado debe existir en la réplica (y no estar retirado). Bloquea su fila. */
+    private EmpleadoReplica empleadoHabilitado(String empleadoId) {
+        EmpleadoReplica empleado = empleados.buscarParaProgramar(empleadoId)
+                .orElseThrow(() -> new SolicitudInvalidaException("empleadoId",
+                        "El empleado " + empleadoId + " no corresponde a un empleado registrado"));
+        if (empleado.retirado()) {
+            throw new SolicitudInvalidaException("empleadoId",
+                    "El empleado " + empleadoId + " está retirado y no puede programar vacaciones");
+        }
+        return empleado;
+    }
+
+    private static void rechazarSolapamiento(Vacaciones conflicto) {
+        throw new SolicitudInvalidaException("fechaInicio",
+                "El período se cruza con otro período " + conflicto.estado() + " del empleado ("
+                        + conflicto.id() + ": " + conflicto.fechaInicio() + " a " + conflicto.fechaFin() + ")",
+                conflicto);
+    }
+
+    /**
+     * Cambia las fechas de un período PROGRAMADA que aún no inicia, con las mismas reglas que
+     * programar (sin chocar consigo mismo). Publica de nuevo vacaciones.programadas: el
+     * catálogo no tiene un evento de "actualizadas" y así el empleado recibe las fechas nuevas.
+     */
+    public Vacaciones reprogramar(String id, ReprogramacionVacaciones solicitud) {
+        LocalDateTime ahora = LocalDateTime.now(reloj).truncatedTo(ChronoUnit.SECONDS);
+        LocalDateTime fechaInicio = FechaHoraEntrada.inicioEfectivo(solicitud.fechaInicio(), ahora);
+        LocalDateTime fechaFin = solicitud.fechaFin().valor();
+
+        Programacion programacion = transacciones.ejecutar(() -> {
+            Vacaciones actual = consultar(id);
+            if (solicitud.empleadoId() != null && !solicitud.empleadoId().equals(actual.empleadoId())) {
+                throw new SolicitudInvalidaException("empleadoId", "No se puede cambiar el empleado del período");
+            }
+            if (!actual.esReprogramable(ahora)) {
+                throw new ConflictoDeEstadoException("El período " + id + " no se puede reprogramar: está "
+                        + actual.estado() + (actual.estaVigente() ? " y ya inició" : ""));
+            }
+            ReglasVacaciones.validarFechas(fechaInicio, fechaFin, ahora);
+            EmpleadoReplica empleado = empleadoHabilitado(actual.empleadoId());
+            vacaciones.buscarOtroVigenteSolapado(id, actual.empleadoId(), fechaInicio, fechaFin)
+                    .ifPresent(ServicioVacaciones::rechazarSolapamiento);
+            if (!vacaciones.reprogramar(id, fechaInicio, fechaFin)) {
+                throw new ConflictoDeEstadoException("El período " + id + " cambió de estado y no se puede reprogramar");
+            }
+            return new Programacion(actual.conFechas(fechaInicio, fechaFin), empleado.email());
+        });
+
+        // Después del commit, como en programar.
+        Vacaciones reprogramada = programacion.vacaciones();
+        publicador.publicar(VacacionesProgramadas.TIPO,
+                VacacionesProgramadas.de(reprogramada, programacion.email(), reloj.getZone()));
+        return reprogramada;
     }
 
     public Vacaciones consultar(String id) {

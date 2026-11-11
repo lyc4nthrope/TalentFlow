@@ -50,10 +50,31 @@ final class Fakes {
 
         @Override
         public Optional<Vacaciones> buscarVigenteSolapado(String empleadoId, LocalDateTime inicio, LocalDateTime fin) {
+            return buscarOtroVigenteSolapado("", empleadoId, inicio, fin);
+        }
+
+        @Override
+        public Optional<Vacaciones> buscarOtroVigenteSolapado(String excluirId, String empleadoId, LocalDateTime inicio,
+                LocalDateTime fin) {
             return datos.values().stream()
+                    .filter(v -> !v.id().equals(excluirId))
                     .filter(v -> v.empleadoId().equals(empleadoId) && v.estaVigente())
                     .filter(v -> ReglasVacaciones.seSolapan(v.fechaInicio(), v.fechaFin(), inicio, fin))
                     .findFirst();
+        }
+
+        /** Se ejecuta al empezar reprogramar: simula otra operación que llega justo antes. */
+        Runnable alReprogramar = () -> { };
+
+        @Override
+        public boolean reprogramar(String id, LocalDateTime inicio, LocalDateTime fin) {
+            alReprogramar.run();
+            Vacaciones v = datos.get(id);
+            if (v == null || v.estado() != EstadoVacaciones.PROGRAMADA) {
+                return false;
+            }
+            datos.put(id, v.conFechas(inicio, fin));
+            return true;
         }
 
         /** Se ejecuta al empezar cancelar: simula otra operación que llega justo antes. */
