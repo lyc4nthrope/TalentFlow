@@ -2,6 +2,7 @@
 
 Fuente de requisitos: `proyectoFinal.pdf` (requisitos, restricciones obligatorias y criterios de evaluación).
 Punto de partida: rama `lyc4nthrope` en `71ce0e4` (igual a `main`, Retos 1 a 8 completados).
+Reparto de F3–F12 entre Cristhian y Valeria, en objetivos con un PR cada uno: [`PLAN-EQUIPO.md`](PLAN-EQUIPO.md).
 Cada fase termina **verificada** (pruebas + ejecución real cuando aplica), con su propio commit.
 
 ## Qué cubre cada reto del semestre (nota del PDF)
