@@ -10,6 +10,7 @@ Microservicio del Reto 4 que **produce eventos propios**: expone REST a RR. HH. 
 | GET | `/vacaciones` | Todos los períodos |
 | GET | `/vacaciones?empleadoId={id}` | Los de un empleado |
 | GET | `/vacaciones/{id}` | Un período (`404` si no existe) |
+| PUT | `/vacaciones/{id}` | Reprograma (`fechaInicio`, `fechaFin`; `empleadoId` opcional y no cambiable) un período `PROGRAMADA` que aún no ha iniciado; `200` con el período y publica de nuevo `vacaciones.programadas`. Ya iniciado o en otro estado → `409`; inexistente → `404` |
 | DELETE | `/vacaciones/{id}` | Cancela un período que aún no ha iniciado: queda `CANCELADA` (no se borra); si ya inició o no está programado → `409` |
 | GET | `/vacaciones/docs` · `/vacaciones/openapi.json` | Swagger UI / especificación |
 | GET | `/health` | Interno: `status`, `db`, `broker` |
@@ -39,6 +40,8 @@ Las respuestas devuelven `"2026-10-20T08:00:00"` (fecha y hora local). Con hora 
 
 Campos desconocidos en el cuerpo → `400` (Jackson `fail-on-unknown-properties`).
 
+**Reprogramar (`PUT`, proyecto final):** mismas validaciones 1 a 4 y mismo formato de fechas; en el solapamiento no cuenta el propio período. Un `empleadoId` distinto al del período → `400` (`"No se puede cambiar el empleado del período"`). El `UPDATE` es condicional (`WHERE estado = 'PROGRAMADA'`): si el scheduler o una cancelación lo cambió entre la consulta y la escritura → `409`.
+
 ## Réplica de empleados por eventos (cola `vacaciones.eventos`)
 
 Decisión (b) del reto — **disponibilidad sobre consistencia inmediata**: en vez de consultar a empleados-service por REST en cada solicitud, este servicio consume `empleado.creado`, `empleado.actualizado` y `empleado.retirado` y mantiene su tabla `empleados_replica(empleado_id, email, retirado)`. Así funciona aunque empleados-service esté caído, y tiene el `email` que exige `vacaciones.programadas`. Deduplicación por `id` de mensaje en la misma transacción que el efecto; `ack` manual (el reencolado automático de Spring AMQP ante cualquier excepción sería un bucle infinito).
@@ -47,11 +50,13 @@ Decisión (b) del reto — **disponibilidad sobre consistencia inmediata**: en v
 
 | Evento | Catálogo | Cuándo | `data` |
 |---|---|---|---|
-| `vacaciones.programadas` | 3.8 | `POST /vacaciones` | `vacacionesId, empleadoId, email, fechaInicio, fechaFin, diasHabiles` |
+| `vacaciones.programadas` | 3.8 | `POST /vacaciones` y `PUT /vacaciones/{id}` | `vacacionesId, empleadoId, email, fechaInicio, fechaFin, diasHabiles` |
 | `vacaciones.iniciadas` | 3.9 | El scheduler ve `fechaInicio <= ahora` (pasa a `EN_CURSO`) | `vacacionesId, empleadoId, email, fechaInicio, fechaFin` |
 | `vacaciones.finalizadas` | 3.10 | El scheduler ve `fechaFin <= ahora` (pasa a `FINALIZADA`) | `vacacionesId, empleadoId, email, fechaFin` |
 
 Todos con el envelope del catálogo, **después del commit** y con confirmación del broker; si la publicación falla, el cambio queda registrado y el error va al log. Las fechas viajan en ISO-8601 **con desfase** (`"2026-10-20T08:00:00-05:00"`): desviación documentada del ejemplo del catálogo, que muestra solo la fecha. `diasHabiles` = lunes a viernes entre la fecha de inicio y la de fin, ambas incluidas, sin festivos. Cancelar un período no publica evento (el catálogo no define uno).
+
+**Reprogramar reutiliza `vacaciones.programadas`** (con un `id` de evento nuevo): el catálogo no define un evento `vacaciones.actualizadas` y añadir uno obligaría a cambiar los consumidores. Así notificaciones-service, sin cambios, envía al empleado un correo con las fechas nuevas; el `vacacionesId` es el mismo, de modo que un consumidor puede reconocerlo como una reprogramación.
 
 ## Scheduler (Reto 5)
 
@@ -91,7 +96,8 @@ com.talentflow.vacaciones
 ## Pruebas y ejecución
 
 ```bash
-mvn test                       # 61 pruebas (dominio, casos de uso y scheduler con fakes, eventos publicados, controlador, arranque del contexto)
+mvn test                       # 151 pruebas unitarias (dominio, casos de uso y scheduler con fakes, eventos publicados, controlador, arranque del contexto)
+mvn verify                     # además, 62 de integración con Testcontainers (PostgreSQL 16 real)
 docker compose up --build      # desde la raíz del repo
 ```
 

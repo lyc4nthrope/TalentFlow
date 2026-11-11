@@ -2,16 +2,19 @@ package com.talentflow.vacaciones.infraestructura.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.talentflow.vacaciones.aplicacion.ReprogramacionVacaciones;
 import com.talentflow.vacaciones.aplicacion.ServicioVacaciones;
 import com.talentflow.vacaciones.aplicacion.SolicitudVacaciones;
 import com.talentflow.vacaciones.dominio.ConflictoDeEstadoException;
@@ -139,5 +142,54 @@ class VacacionesControllerTest {
         mvc.perform(get("/vacaciones").param("empleadoId", "E001"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].empleadoId").value("E001"));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions reprogramar(String id, String cuerpo) throws Exception {
+        return mvc.perform(put("/vacaciones/" + id).contentType(MediaType.APPLICATION_JSON).content(cuerpo));
+    }
+
+    @Test
+    void reprogramarResponde200ConElPeriodoYPasaLasFechasInterpretadas() throws Exception {
+        when(servicio.reprogramar(eq("V-2026-0001"), any())).thenReturn(PERIODO);
+        ArgumentCaptor<ReprogramacionVacaciones> solicitud = ArgumentCaptor.forClass(ReprogramacionVacaciones.class);
+
+        reprogramar("V-2026-0001", "{\"fechaInicio\":\"2026-12-14\",\"fechaFin\":\"2026-12-20T18:30\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("V-2026-0001"))
+                .andExpect(jsonPath("$.fechaFin").value("2026-12-20T18:30:00"));
+
+        verify(servicio).reprogramar(eq("V-2026-0001"), solicitud.capture());
+        assertThat(solicitud.getValue().empleadoId()).isNull();
+        assertThat(solicitud.getValue().fechaInicio().valor()).isEqualTo(LocalDateTime.of(2026, 12, 14, 0, 0));
+        assertThat(solicitud.getValue().fechaInicio().soloFecha()).isTrue();
+        assertThat(solicitud.getValue().fechaFin().valor()).isEqualTo(LocalDateTime.of(2026, 12, 20, 18, 30));
+    }
+
+    @Test
+    void reprogramarSinFechasOConFormatoInvalido400() throws Exception {
+        reprogramar("V-2026-0001", "{}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.length()").value(2));
+        reprogramar("V-2026-0001", "{\"fechaInicio\":\"2026-02-30\",\"fechaFin\":\"2026-03-05\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("fechaInicio"));
+        reprogramar("V-2026-0001", "{\"fechaInicio\":\"2026-12-14\",\"fechaFin\":\"2026-12-20\",\"estado\":\"CANCELADA\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("estado"));
+    }
+
+    @Test
+    void reprogramarCambiandoElEmpleado400YEstadoNoValido409YInexistente404() throws Exception {
+        when(servicio.reprogramar(eq("V-1"), any()))
+                .thenThrow(new SolicitudInvalidaException("empleadoId", "No se puede cambiar el empleado del período"));
+        when(servicio.reprogramar(eq("V-2"), any())).thenThrow(new ConflictoDeEstadoException("está CANCELADA"));
+        when(servicio.reprogramar(eq("V-3"), any())).thenThrow(new VacacionesNoEncontradasException("V-3"));
+        String cuerpo = "{\"empleadoId\":\"E002\",\"fechaInicio\":\"2026-12-14\",\"fechaFin\":\"2026-12-20\"}";
+
+        reprogramar("V-1", cuerpo)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("empleadoId"));
+        reprogramar("V-2", cuerpo).andExpect(status().isConflict());
+        reprogramar("V-3", cuerpo).andExpect(status().isNotFound());
     }
 }

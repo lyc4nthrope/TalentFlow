@@ -1,8 +1,7 @@
-// Pipeline de gestion-departamentos (Reto 7, F3).
-// Solo Build (sintaxis PHP) y Package/Publish: el servicio no tiene pruebas unitarias,
-// quedó fuera del alcance de pruebas del Reto 6 (no aparece en la tabla de reportes del
-// README). Un stage Test con un reporte vacío o con "|| true" mostraría un verde falso;
-// por eso no hay Test, ni cobertura, ni SonarQube con un gate de cobertura.
+// Pipeline de gestion-departamentos (Reto 7, F3; pruebas desde el proyecto final, F1).
+// Test corre PHPUnit dentro de Docker (`make test`, etapa `reportes` del Dockerfile) y publica
+// reports/junit.xml y reports/clover.xml. Una prueba que falla, o la cobertura de líneas de
+// src/ por debajo del 70 %, hace fallar Test: el pipeline termina en FAILURE y no empaqueta.
 pipeline {
     agent any
 
@@ -29,7 +28,56 @@ pipeline {
             steps {
                 // php -l de cada archivo: un error de sintaxis detiene el pipeline.
                 dir(env.SERVICE_DIR) {
-                    sh 'find . -name "*.php" -print0 | xargs -0 -n1 php -l'
+                    sh 'find . -name "*.php" -not -path "./vendor/*" -print0 | xargs -0 -n1 php -l'
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                // make -C microservicios/gestion-departamentos test
+                sh 'make -C ${SERVICE_DIR} test'
+            }
+            post {
+                always {
+                    // allowEmptyResults: si el build de Docker no llega a correr PHPUnit, el fallo
+                    // ya lo da `make test`; aquí no se agrega un segundo error engañoso.
+                    junit testResults: 'microservicios/gestion-departamentos/reports/junit.xml', allowEmptyResults: true
+                    recordCoverage(
+                        tools: [[parser: 'CLOVER', pattern: 'microservicios/gestion-departamentos/reports/clover.xml']],
+                        sourceCodeRetention: 'EVERY_BUILD'
+                    )
+                }
+            }
+        }
+
+        // SonarQube: importa la cobertura y los resultados de Test. Las exclusiones de cobertura
+        // son las mismas de phpunit.xml (conexión por entorno y carga de archivos).
+        // SONAR_HABILITADO=false salta ambos stages.
+        stage('SonarQube') {
+            when { environment name: 'SONAR_HABILITADO', value: 'true' }
+            steps {
+                dir(env.SERVICE_DIR) {
+                    withSonarQubeEnv('SonarQubeServer') {
+                        sh '''
+                        sonar-scanner \\
+                          -Dsonar.projectKey=gestion-departamentos \\
+                          -Dsonar.sources=src \\
+                          -Dsonar.tests=tests \\
+                          -Dsonar.coverage.exclusions=src/Database.php,src/cargar.php \\
+                          -Dsonar.php.coverage.reportPaths=reports/clover.xml \\
+                          -Dsonar.php.tests.reportPath=reports/junit.xml
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            when { environment name: 'SONAR_HABILITADO', value: 'true' }
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }

@@ -1,5 +1,6 @@
 package com.talentflow.vacaciones.infraestructura.web;
 
+import com.talentflow.vacaciones.aplicacion.ReprogramacionVacaciones;
 import com.talentflow.vacaciones.aplicacion.ServicioVacaciones;
 import com.talentflow.vacaciones.aplicacion.SolicitudVacaciones;
 import com.talentflow.vacaciones.dominio.Vacaciones;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -55,6 +57,19 @@ public class VacacionesController {
     @ApiResponse(responseCode = "404", description = "El período no existe")
     public Vacaciones consultar(@PathVariable String id) {
         return servicio.consultar(id);
+    }
+
+    @PutMapping("/{id}")
+    @Operation(summary = "Reprograma un período que aún no ha iniciado y publica de nuevo vacaciones.programadas",
+            description = "Mismas reglas y formato de fechas que POST, sin contar el propio período en el "
+                    + "solapamiento. El empleado no se puede cambiar.")
+    @ApiResponse(responseCode = "200", description = "Período con las fechas nuevas")
+    @ApiResponse(responseCode = "400", description = "Fechas incoherentes, en el pasado, solapamiento "
+            + "(incluye periodoEnConflicto), empleado retirado o cambio de empleadoId")
+    @ApiResponse(responseCode = "404", description = "El período no existe")
+    @ApiResponse(responseCode = "409", description = "El período ya inició o no está PROGRAMADA")
+    public Vacaciones reprogramar(@PathVariable String id, @Valid @RequestBody ReprogramacionVacaciones solicitud) {
+        return servicio.reprogramar(id, solicitud);
     }
 
     @DeleteMapping("/{id}")

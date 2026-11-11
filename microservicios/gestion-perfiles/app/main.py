@@ -44,6 +44,11 @@ def _registrar_fallo(tarea: asyncio.Task) -> None:
 @asynccontextmanager
 async def ciclo_de_vida(_app):
     await pool.open(wait=False)  # no bloquea el arranque si la BD tarda en responder
+    # Columnas nuevas en volúmenes existentes (F2). Espera acotada: pool.connection() aguarda
+    # hasta 30 s (timeout del pool) mientras el pool reintenta conectar; compose ya arranca
+    # tras database-perfiles healthy. Si aun así falla, uvicorn sale y restart: on-failure
+    # reintenta el arranque: sin columnas el servicio no debe atender.
+    await repositorio.migrar()
     tarea = asyncio.create_task(consumidor.ejecutar(), name="consumidor-eventos")
     tarea.add_done_callback(_registrar_fallo)
     yield

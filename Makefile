@@ -16,8 +16,8 @@
 
 .DEFAULT_GOAL := ayuda
 .PHONY: ayuda pruebas pruebas-empleados pruebas-gateway pruebas-auth \
-        pruebas-notificaciones pruebas-perfiles pruebas-vacaciones pruebas-soporte-e2e \
-        sistema-e2e e2e e2e-local e2e-restaurar
+        pruebas-notificaciones pruebas-perfiles pruebas-vacaciones pruebas-departamentos \
+        pruebas-soporte-e2e sistema-e2e e2e e2e-local e2e-restaurar
 
 # El override docker-compose.e2e.yml pone el scheduler de vacaciones cada 5 s. Sin él,
 # el ciclo de vacaciones de la suite falla con E2E_SCHEDULER_SEGUNDOS=5 (D6). bdd-tests está
@@ -40,7 +40,7 @@ ayuda:
 # --- Pruebas de cada microservicio (Punto 1) -------------------------------------------
 
 pruebas: pruebas-empleados pruebas-gateway pruebas-auth pruebas-notificaciones \
-         pruebas-perfiles pruebas-vacaciones pruebas-soporte-e2e
+         pruebas-perfiles pruebas-vacaciones pruebas-departamentos pruebas-soporte-e2e
 	@echo "Todas las pruebas de los microservicios pasaron."
 
 # Node: las dependencias vienen de los workspaces de la raíz (npm ci en la raíz).
@@ -64,6 +64,10 @@ pruebas-perfiles:
 # con Testcontainers (Failsafe), así que necesita Docker.
 pruebas-vacaciones:
 	cd microservicios/gestion-vacaciones && mvn -q verify
+
+# PHP: PHPUnit corre dentro de Docker (no hace falta PHP en la máquina) y exige 70 % de src/.
+pruebas-departamentos:
+	$(MAKE) -C microservicios/gestion-departamentos test
 
 # Pruebas unitarias del soporte de la suite BDD (polling, fechas, tokens): no
 # necesitan el sistema levantado.

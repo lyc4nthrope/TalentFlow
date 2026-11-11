@@ -4,7 +4,7 @@
  * Métricas Prometheus del servicio (Reto 8, D5 y D15). El servidor de PHP ejecuta el script
  * desde cero en cada petición, así que los contadores viven en un archivo JSON protegido con
  * flock. Se pierde al reiniciar el contenedor; rate() de Prometheus maneja ese reinicio.
- * Infraestructura (D7): tiene su prueba en test/test_metricas.php.
+ * Infraestructura (D7): tiene su prueba en tests/MetricasTest.php.
  */
 final class Metricas
 {
@@ -66,7 +66,7 @@ final class Metricas
 
     /**
      * Patrón de la ruta y no la URL, para no crear una serie por cada id. Replica el
-     * enrutamiento de public/index.php: lo que no casa con una ruta es "other".
+     * enrutamiento de src/Aplicacion.php: lo que no casa con una ruta es "other".
      */
     public static function ruta(string $metodo, string $uri): string
     {
@@ -80,7 +80,7 @@ final class Metricas
         if (isset($fijas["$metodo $uri"])) {
             return $fijas["$metodo $uri"];
         }
-        if ($metodo === 'GET' && preg_match('#^/departamentos/[^/]+$#', $uri)) {
+        if (in_array($metodo, ['GET', 'PUT', 'DELETE'], true) && preg_match('#^/departamentos/[^/]+$#', $uri)) {
             return '/departamentos/{id}';
         }
         return self::RUTA_OTRA;
