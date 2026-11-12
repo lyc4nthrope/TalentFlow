@@ -1,0 +1,12 @@
+# Blackbox Exporter de TalentFlow (Reto 8, D22). Prometheus le pide sondear cada base de
+# datos y el broker (job "dependencias" en prometheus.yml): así su estado se conoce sin
+# pasar por el /health del servicio dueño, que desaparece si ese servicio cae.
+#
+# tcp_connect solo abre y cierra una conexión TCP al puerto: dice si el motor acepta
+# conexiones, no si las credenciales del servicio sirven (eso lo sigue diciendo su /health).
+modules:
+  tcp_connect:
+    prober: tcp
+    timeout: 3s
+    tcp:
+      preferred_ip_protocol: ip4

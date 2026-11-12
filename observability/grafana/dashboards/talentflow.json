@@ -8,7 +8,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": false,
   "graphTooltip": 1,
   "time": {
@@ -33,7 +33,7 @@
     {
       "type": "stat",
       "title": "Estado de cada servicio",
-      "description": "up de cada scrape_job: 1 = Prometheus llegó a /metrics en el último scrape (UP), 0 = no (DOWN).",
+      "description": "up de cada scrape_job de los servicios (sin las sondas del job dependencias): 1 = Prometheus llegó a /metrics en el último scrape (UP), 0 = no (DOWN).",
       "id": 2,
       "datasource": {
         "type": "prometheus",
@@ -103,25 +103,258 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "up{job!=\"prometheus\"}",
+          "expr": "up{job!~\"prometheus|dependencias\"}",
           "legendFormat": "{{job}}",
           "instant": true
         }
       ]
     },
     {
-      "type": "stat",
-      "title": "Dependencias de cada servicio (BD y broker)",
-      "description": "talentflow_health_check del Gateway (D20): el checks del /health de cada servicio. 1 = UP, 0 = DOWN. Una BD caída se ve aquí aunque el servicio siga UP arriba.",
-      "id": 15,
+      "type": "table",
+      "title": "Salud por servicio (proceso, base de datos y lo que reporta el servicio)",
+      "description": "Una fila por microservicio (D22). Proceso = up de su scrape. Base de datos (sonda directa) = conexión TCP del Blackbox Exporter, independiente del servicio. Las dos columnas \"según el servicio\" son su propio /health leído por el Gateway: SIN DATOS ahí significa que el servicio no responde. NO USA = el servicio no tiene broker.",
+      "id": 16,
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 5,
-        "w": 24,
+        "h": 8,
+        "w": 20,
         "x": 0,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green",
+                  "index": 1
+                },
+                "-1": {
+                  "text": "NO USA",
+                  "color": "transparent",
+                  "index": 2
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "SIN DATOS",
+                  "color": "#808080",
+                  "index": 3
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#808080"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#808080",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "align": "center",
+            "cellOptions": {
+              "type": "color-background",
+              "mode": "basic"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Servicio"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              },
+              {
+                "id": "custom.align",
+                "value": "left"
+              },
+              {
+                "id": "mappings",
+                "value": []
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Microservicio (proceso)"
+            },
+            "properties": [
+              {
+                "id": "description",
+                "value": "up del scrape de /metrics: ¿el proceso responde a Prometheus?"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Base de datos (sonda directa)"
+            },
+            "properties": [
+              {
+                "id": "description",
+                "value": "probe_success del Blackbox Exporter: ¿la BD acepta conexiones TCP? No depende del servicio."
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Base de datos (según el servicio)"
+            },
+            "properties": [
+              {
+                "id": "description",
+                "value": "check database del /health del servicio. SIN DATOS = el servicio no responde."
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Broker (según el servicio)"
+            },
+            "properties": [
+              {
+                "id": "description",
+                "value": "check messageBroker del /health del servicio. SIN DATOS = el servicio no responde; NO USA = el servicio no usa broker."
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Servicio",
+            "desc": false
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (service) (label_replace(up{job=~\".+-service\"}, \"service\", \"$1\", \"job\", \"(.+)\"))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "max by (service) (probe_success{job=\"dependencias\", check=\"database\"})",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "C",
+          "expr": "max by (service) (talentflow_health_check{check=\"database\"})",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "D",
+          "expr": "max by (service) (talentflow_health_check{check=\"messageBroker\"}) or (max by (service) (talentflow_health_check{check=\"database\"}) * 0 - 1)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "service": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4
+            },
+            "renameByName": {
+              "service": "Servicio",
+              "Value #A": "Microservicio (proceso)",
+              "Value #B": "Base de datos (sonda directa)",
+              "Value #C": "Base de datos (según el servicio)",
+              "Value #D": "Broker (según el servicio)"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Broker (sonda directa)",
+      "description": "probe_success del Blackbox Exporter contra message-broker:5672 (AMQP): 1 = RabbitMQ acepta conexiones, 0 = no. Independiente de los servicios.",
+      "id": 17,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 20,
         "y": 6
       },
       "fieldConfig": {
@@ -138,6 +371,17 @@
                 "1": {
                   "text": "UP",
                   "color": "green"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "SIN DATOS",
+                  "color": "#808080",
+                  "index": 2
                 }
               }
             }
@@ -165,7 +409,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "center",
-        "textMode": "value_and_name",
+        "textMode": "value",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -182,8 +426,8 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "talentflow_health_check{check!=\"status\"}",
-          "legendFormat": "{{service}} · {{check}}",
+          "expr": "probe_success{job=\"dependencias\", check=\"messageBroker\"}",
+          "legendFormat": "message-broker",
           "instant": true
         }
       ]
@@ -201,7 +445,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 11
+        "y": 14
       },
       "fieldConfig": {
         "defaults": {
@@ -262,7 +506,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 11
+        "y": 14
       },
       "fieldConfig": {
         "defaults": {
@@ -331,7 +575,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 11
+        "y": 14
       },
       "fieldConfig": {
         "defaults": {
@@ -396,7 +640,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 18
       },
       "panels": []
     },
@@ -413,7 +657,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 19
       },
       "fieldConfig": {
         "defaults": {
@@ -465,7 +709,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 19
       },
       "fieldConfig": {
         "defaults": {
@@ -517,7 +761,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -569,7 +813,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -617,7 +861,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 35
       },
       "panels": []
     },
@@ -634,7 +878,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 33
+        "y": 36
       },
       "fieldConfig": {
         "defaults": {
@@ -686,7 +930,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 33
+        "y": 36
       },
       "fieldConfig": {
         "defaults": {
@@ -738,7 +982,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 44
       },
       "options": {
         "showTime": true,

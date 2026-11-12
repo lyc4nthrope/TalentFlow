@@ -56,6 +56,39 @@ scrape_configs:
     static_configs:
       - targets: ['auth-service:8086']
 
+  # Sondas directas (D22): Prometheus pide al Blackbox Exporter que abra una conexión TCP a
+  # cada base de datos y al broker. El estado de la BD ya no depende de que su servicio
+  # responda. Las etiquetas service y check son las mismas de talentflow_health_check, para
+  # cruzar ambas en el dashboard y en las alertas.
+  - job_name: 'dependencias'
+    metrics_path: '/probe'
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets: ['database-empleados:5432']
+        labels: { service: 'empleados-service', check: 'database' }
+      - targets: ['database-departamentos:3306']
+        labels: { service: 'departamentos-service', check: 'database' }
+      - targets: ['database-perfiles:5432']
+        labels: { service: 'perfiles-service', check: 'database' }
+      - targets: ['database-notificaciones:5432']
+        labels: { service: 'notificaciones-service', check: 'database' }
+      - targets: ['database-vacaciones:5432']
+        labels: { service: 'vacaciones-service', check: 'database' }
+      - targets: ['database-auth:5432']
+        labels: { service: 'auth-service', check: 'database' }
+      - targets: ['message-broker:5672']
+        labels: { service: 'message-broker', check: 'messageBroker' }
+    # Relabeling estándar del Blackbox: el target pasa a ser el parámetro ?target= de la
+    # sonda, queda como instance, y la petición real va al exporter.
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
   # El propio Prometheus.
   - job_name: 'prometheus'
     static_configs:
