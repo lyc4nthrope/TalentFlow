@@ -101,3 +101,32 @@ Las métricas avisan que algo está lento y en qué servicio. La traza explica p
 ## 8. Regresión
 
 Después de todos los cambios del reto, las pruebas de cada servicio siguen en verde con la lógica de negocio al 100 % (Gateway 150, empleados 92, auth y notificaciones con su umbral de Go, perfiles 37, vacaciones `mvn verify`, departamentos `test_metricas.php` y `test_trazas.php`) y la suite E2E del Reto 6 pasa **61/61** con el interruptor de caos apagado.
+
+## 9. Salud independiente del servicio (F15)
+
+**Fecha:** 2026-11-12, con todo el sistema arriba y los 15 targets de Prometheus en `UP` (7 servicios, Prometheus y las 7 sondas del job `dependencias`). Servicio de prueba: `departamentos-service` y su base `database-departamentos`.
+
+**Cómo se leyó cada columna:**
+- **Proceso:** `up{job="departamentos-service"}`.
+- **BD, sonda directa:** `probe_success{service="departamentos-service"}`.
+- **BD, según el servicio:** `talentflow_health_check{service="departamentos-service",check="database"}`.
+- **Alertas:** el estado sale de la API de Grafana.
+- **Correos:** los de Mailhog, que guarda la hora en UTC (UTC = hora local + 5 h).
+
+| Caso | Acción (hora local) | Proceso | BD (sonda) | BD (servicio) | `/health/departamentos-service` | Correo (hora UTC) |
+|---|---|---|---|---|---|---|
+| Base | — (15:53:14) | 1 | 1 | 1 | 200 | — |
+| **B.** Se cae la base de datos | `stop database-departamentos` (15:45:51) | 1 | **0** | **0** | 503 | *Base de datos caída* FIRING 20:47:30, RESOLVED 20:48:30 |
+| **C.** Se cae el microservicio, la base sigue sana | `stop departamentos-service` (~15:53:25) | **0** | 1 | sin datos | 503 | *Servicio caído* FIRING 20:55:06, RESOLVED 20:56:06 |
+| **D.** Se caen los dos | `stop departamentos-service database-departamentos` (~15:56:45) | **0** | **0** | sin datos | 503 | *Base de datos caída* FIRING 20:58:30 y *Servicio caído* FIRING 20:58:36; los dos RESOLVED 20:59:30 y 20:59:36 |
+| **E.** La base está viva pero el servicio no puede usarla | `ALTER USER 'user_deptos'@'%' ACCOUNT LOCK` (15:49:38); `UNLOCK` a las 15:51:18 | 1 | 1 | **0** | 503 | *Dependencia caída* FIRING 20:51:33, RESOLVED 20:52:33 |
+
+**Lo que muestra:**
+- **Cada caso dispara solo su alerta:**
+  - con la base caída (B), *Dependencia caída* se queda en *Normal* y no duplica el correo;
+  - con el servicio caído (C), no llega ninguna alerta de base de datos.
+- **Con el servicio caído (C y D), la sonda sigue diciendo el estado real de la base:** UP en C y DOWN en D. Antes de F15 esa celda quedaba sin datos.
+- **Al restaurar la base en B, no hay falsa alarma.** Del segundo 15 al 135 después del `start`, la sonda y el servicio se mantuvieron en 1 y *Dependencia caída* en *Normal*.
+- **En E, el usuario de MySQL quedó desbloqueado al final:** `SELECT account_locked FROM mysql.user WHERE user='user_deptos'` devuelve `N`.
+
+**Hallazgo aparte, que no es de F15:** al arrancar el sistema ese día, `auth-service`, `notificaciones-service` y `perfiles-service` estaban detenidos desde el día anterior. Docker los había parado con una señal de terminación y salieron con código 0. Como su política es `restart: on-failure`, no volvieron solos cuando Docker arrancó. Se levantaron con `docker compose up -d --no-build`. Se anota para el objetivo de réplicas del proyecto final.

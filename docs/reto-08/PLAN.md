@@ -44,6 +44,7 @@ Cada fase termina **verificada** (en la UI de Prometheus, Grafana, Jaeger o Loki
 | D19 | Salud de un servicio desde fuera | `GET /health/{servicio}`: su `/health` con su propio código (200/503); solo nombres de la tabla de servicios, 404 con la lista si no existe | Muestra el 4.3 servicio por servicio. El nombre nunca arma una URL: el Gateway no llama a donde le digan |
 | D20 | BD y broker como métrica | El Gateway publica `talentflow_health_check{service, check}` (1/0) en su `/metrics`, calculada en cada scrape con el `/health` de cada servicio | Con la BD caída el proceso sigue vivo y `up` sigue en 1: Prometheus no la veía. Se reutiliza la consulta que el Gateway ya hace; ningún servicio cambia |
 | D21 | Alerta de dependencia | Regla **Dependencia caída** (`check != "status"` en 0 durante 1 min, `critical`) y panel en el dashboard; la regla de 5xx deja de contar `/health` | El correo dice qué dependencia cayó. Antes, el 503 del healthcheck de Docker disparaba "errores 5xx", un aviso correcto por casualidad y con el motivo equivocado |
+| D22 | Estado de la BD y del broker independiente del servicio | **Blackbox Exporter** (`prom/blackbox-exporter:v0.29.1`, módulo `tcp_connect`) con un job `dependencias` en Prometheus: una sonda TCP por BD y otra al broker, con las etiquetas `service` y `check` de D20. Alertas *Base de datos caída* y *Broker caído*; *Dependencia caída* solo cuando el servicio dice DOWN y la sonda dice UP | Con el servicio caído su `/health` no responde y la serie `check="database"` desaparece: nadie sabía si la BD seguía viva. Un exportador por motor (postgres_exporter ×5, mysqld_exporter) serían 6 contenedores más y credenciales en cada uno; que el Gateway abra conexiones a las BD rompería su papel de entrada única. Una sola pieza, sin credenciales, alcanza para "¿acepta conexiones?"; el "¿puede usarla el servicio?" lo sigue diciendo su `/health` |
 
 ## Fases
 
@@ -64,6 +65,7 @@ Cada fase termina **verificada** (en la UI de Prometheus, Grafana, Jaeger o Loki
 | **F12** Documentación | README raíz (sección del Reto 8, índice, mapa), manual y sustentación | Cada entregable del PDF presente | ✅ |
 | **F13** Cierre | Pruebas de los Retos 6 y 7 en verde, PR `lyc4nthrope` → `dev` → `main` | Ramas sincronizadas | ✅ |
 | **F14** Salud desde fuera y dependencias | D17-D21, pedido del profesor en la sustentación | BD de departamentos apagada sin tráfico → métrica en 0, panel en rojo y correo *Dependencia caída* | ✅ |
+| **F15** Salud independiente del servicio | D22: Blackbox Exporter, job `dependencias`, tabla *Salud por servicio*, alertas *Base de datos caída* y *Broker caído*, *Dependencia caída* sin duplicados | Los 4 casos en vivo (BD caída, servicio caído, ambos, credenciales rotas con la BD viva): cada uno muestra su estado y avisa solo la alerta correcta ([`pruebas.md`](pruebas.md#9-salud-independiente-del-servicio-f15)) | ✅ |
 
 ## Fuera de alcance (anotado para después)
 
