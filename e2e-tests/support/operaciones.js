@@ -53,6 +53,15 @@ const OPERACIONES = {
       cuerpo: { id: idUnico('D'), nombre: `Departamento E2E ${idUnico('n')}` },
     }),
 
+  // Sobre el departamento del escenario (el que creó la preparación del empleado).
+  'actualizar un departamento': (mundo) =>
+    mundo.peticion('PUT', `/departamentos/${encodeURIComponent(mundo.recurso('departamento').id)}`, {
+      cuerpo: { nombre: `Departamento E2E ${idUnico('n')}` },
+    }),
+
+  'eliminar un departamento': (mundo) =>
+    mundo.peticion('DELETE', `/departamentos/${encodeURIComponent(mundo.recurso('departamento').id)}`),
+
   'programar vacaciones para un empleado': (mundo) =>
     mundo.peticion('POST', '/vacaciones', {
       cuerpo: {
@@ -61,6 +70,22 @@ const OPERACIONES = {
         fechaFin: fechaEnDias(404),
       },
     }),
+
+  // El período lo programa el ADMIN (preparación); la reprogramación sale con el token
+  // de la sesión, así la misma operación prueba el 403 de USER y el 200 de ADMIN.
+  'reprogramar las vacaciones de un empleado': async (mundo) => {
+    const programado = exigirCodigo(
+      await mundo.enviar('POST', '/vacaciones', {
+        token: await mundo.tokenDeAdmin(),
+        cuerpo: { empleadoId: mundo.recurso('empleado').id, fechaInicio: fechaEnDias(400), fechaFin: fechaEnDias(404) },
+      }),
+      201,
+      'Programar el período que se va a reprogramar'
+    );
+    return mundo.peticion('PUT', `/vacaciones/${encodeURIComponent(programado.body.id)}`, {
+      cuerpo: { fechaInicio: fechaEnDias(410), fechaFin: fechaEnDias(414) },
+    });
+  },
 
   'editar el perfil de un empleado': async (mundo) => {
     const { id } = mundo.recurso('empleado');

@@ -22,6 +22,13 @@ public interface RepositorioVacaciones {
     /** Primer período vigente (PROGRAMADA o EN_CURSO) del empleado que se cruza con el rango [inicio, fin). */
     Optional<Vacaciones> buscarVigenteSolapado(String empleadoId, LocalDateTime fechaInicio, LocalDateTime fechaFin);
 
+    /** Como buscarVigenteSolapado, sin contar el período excluirId (al reprogramarlo no choca consigo mismo). */
+    Optional<Vacaciones> buscarOtroVigenteSolapado(String excluirId, String empleadoId, LocalDateTime fechaInicio,
+            LocalDateTime fechaFin);
+
+    /** Cambia las fechas solo si sigue PROGRAMADA. Devuelve false si otra operación lo cambió antes. */
+    boolean reprogramar(String id, LocalDateTime fechaInicio, LocalDateTime fechaFin);
+
     /** Pasa a CANCELADA solo si sigue PROGRAMADA. Devuelve false si otra operación lo cambió antes. */
     boolean cancelar(String id);
 

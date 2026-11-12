@@ -22,7 +22,17 @@ Deduplicación por `id` de mensaje (tabla `eventos_procesados`) en la misma tran
 | GET | `/perfiles/docs` · `/perfiles/openapi.json` | Swagger UI / especificación |
 | GET | `/health` | Interno: `status`, `db`, `broker` |
 
-`PUT` es una **actualización parcial** de los campos que gestiona el empleado (`telefono`, `direccion`, `ciudad`, `biografia`): lo no enviado no cambia (el reto envía solo algunos). `nombre` y `email` **no** se editan aquí — los replica empleados-service — y cualquier otro campo responde `400` (evita la asignación masiva).
+`PUT` es una **actualización parcial** de los campos que gestiona el empleado (`telefono`, `direccion`, `ciudad`, `biografia` y, desde el proyecto final, `foto`, `redesSociales`, `codigoPostal`): lo no enviado no cambia (el reto envía solo algunos). `nombre` y `email` **no** se editan aquí — los replica empleados-service — y cualquier otro campo responde `400` (evita la asignación masiva).
+
+| Campo (proyecto final) | Regla |
+|---|---|
+| `foto` | URL `http`/`https` con host, máx. 500; `""` la quita. `javascript:`, `data:`, `ftp:` → `400` (evita XSS al pintarla) |
+| `redesSociales` | Objeto `{linkedin, github, twitter}`, cada una URL `http`/`https` máx. 300; otra clave → `400`. Si se envía **reemplaza** el objeto guardado: las redes no enviadas quedan `null` |
+| `codigoPostal` | Máx. 10, letras, dígitos, espacio y guion |
+
+La respuesta siempre trae `foto`, `codigoPostal` y `redesSociales` con sus tres claves (`null` = no registrada).
+
+> **Base de datos existente:** `init.sql` solo corre con un volumen nuevo. Al arrancar, `RepositorioPostgres.migrar()` añade las columnas `foto`, `codigo_postal` y `redes_sociales` con `ADD COLUMN IF NOT EXISTS` (idempotente, con un candado `pg_advisory_xact_lock` por si arrancan varias réplicas), así un volumen anterior no hay que borrarlo.
 
 ## Estructura del código
 
@@ -51,7 +61,7 @@ app/
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-pytest                         # 28 pruebas (eventos, deduplicación, API)
+make test                      # 73 pruebas (eventos, deduplicación, reglas de actualización, API) y cobertura al 100 %
 ruff check app tests           # estilo + reglas de seguridad (configuración en pyproject.toml)
 ```
 

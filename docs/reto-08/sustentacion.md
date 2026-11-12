@@ -18,7 +18,7 @@ Duración: unos 25 minutos. Las alertas tardan ~2 minutos: por eso la caída del
 | 2 | Instrumentación (1.0) | 4.1 métricas, 4.2 trazas, **4.3 `/health`** |
 | 3 | Logs centralizados (1.0) | 4.4 |
 | 4 | Dashboard (0.5) | 5 |
-| 5 | Alertas (0.5) | 6 y 7 (7 C: base de datos caída) |
+| 5 | Alertas (0.5) | 6 y 7 (7 C: base de datos caída; 7 D: servicio caído con la base sana) |
 | 6 | Caos y documentación (1.0) | 1 (diagrama), 7 y 8 |
 
 ## 0. Antes de entrar (no se muestra)
@@ -56,7 +56,7 @@ Pestañas abiertas:
 | Mailhog (correos) | `http://localhost:8025` | — |
 | README en GitHub | sección *Observabilidad (Reto 8)* | — |
 
-Se espera: 8 targets en `UP` en Prometheus (7 servicios + el propio Prometheus).
+Se espera: 15 targets en `UP` en Prometheus: 7 servicios, el propio Prometheus y las 7 sondas del job `dependencias` (6 bases de datos y el broker).
 
 ## 1. Diagrama y conceptos
 
@@ -105,7 +105,7 @@ Si pregunta por qué Prometheus está en el **9091**: "El 9090 del host lo usa J
 
 **Mostrar:** pestaña Prometheus → `http://localhost:9091/targets`.
 
-**Se espera:** 8 filas en `UP`. La columna *Endpoint* muestra las URL con nombres de Docker:
+**Se espera:** 15 filas en `UP`: las 8 de la tabla y, más abajo, el job `dependencias` con las 7 sondas directas (ver 7 D). La columna *Endpoint* muestra las URL con nombres de Docker:
 
 | Job | Endpoint |
 |---|---|
@@ -374,7 +374,7 @@ Más consultas con su resultado: README → *Logs centralizados con Loki*.
 **Mostrar:** `observability/grafana/provisioning/alerting/` → `rules.yml`, `contact-points.yml`, `policies.yml`.
 
 **Decir:**
-> "Cuatro reglas, como código: **servicio caído** (`up` en 0 durante 1 min), **errores 5xx** (más del 10 % durante 2 min), **latencia alta** (promedio sobre 2 s durante 2 min) y **dependencia caída** (la base de datos o el broker de un servicio en DOWN durante 1 min; se explica en la sección 7 C). Cada una evalúa los 7 servicios por separado, así que el correo dice cuál falla. El canal es **email** por **Mailhog**, que ya estaba desde el Reto 4: no necesita tokens; un webhook de Discord o Telegram sería un secreto que no puede ir en el repo. La regla 4, contenedor reiniciado, no la hicimos porque necesita cAdvisor; el PDF pide mínimo 2."
+> "Seis reglas, como código: **servicio caído** (`up` en 0 durante 1 min), **errores 5xx** (más del 10 % durante 2 min), **latencia alta** (promedio sobre 2 s durante 2 min), **base de datos caída** y **broker caído** (la sonda directa falla durante 1 min) y **dependencia caída** (el servicio dice que su base o su broker están en DOWN, pero la sonda los ve UP). Se explican en las secciones 7 C y 7 D. Cada una evalúa los 7 servicios por separado, así que el correo dice cuál falla. El canal es **email** por **Mailhog**, que ya estaba desde el Reto 4: no necesita tokens; un webhook de Discord o Telegram sería un secreto que no puede ir en el repo. La regla 4, contenedor reiniciado, no la hicimos porque necesita cAdvisor; el PDF pide mínimo 2."
 
 **Mostrar:** Grafana → ☰ → **Alerting** → **Alert rules**: las 4 reglas en la carpeta TalentFlow.
 
@@ -443,7 +443,7 @@ docker compose up -d departamentos-service
 ### C. Apagar una base de datos (lo que preguntó el profesor)
 
 **Decir, antes de ejecutar:**
-> "Una base de datos caída es distinta de un servicio caído. El proceso sigue vivo, Prometheus sigue leyendo su `/metrics` y `up` sigue en 1, así que *Servicio caído* no se entera. Prometheus no lee `/health`, solo métricas. Por eso el Gateway, que ya consulta el `/health` de todos, lo publica como una métrica, `talentflow_health_check`: 1 si la dependencia está UP y 0 si no, por servicio y por dependencia. Sobre esa métrica hay una alerta, **Dependencia caída**, y un panel en el dashboard."
+> "Una base de datos caída es distinta de un servicio caído. El proceso sigue vivo, Prometheus sigue leyendo su `/metrics` y `up` sigue en 1, así que *Servicio caído* no se entera. Por eso cada base de datos tiene una **sonda directa**: el Blackbox Exporter abre una conexión TCP a su puerto cada 15 s, sin pasar por el servicio. Si falla, avisa **Base de datos caída**. Además, el Gateway publica lo que cada servicio dice de sus dependencias en su `/health` (`talentflow_health_check`). Las dos miradas se ven juntas en la tabla *Salud por servicio*."
 
 **Ejecutar:**
 
@@ -461,13 +461,18 @@ curl -s -o /dev/null -w '/health/servicios -> HTTP %{http_code}\n' localhost:808
 /health/servicios -> HTTP 503
 ```
 
-**Mostrar,** en orden (unos 90 s en total):
+**Mostrar,** en orden (unos 2 min en total):
 
-1. **Prometheus** `/targets`: departamentos sigue en **UP**. "Por eso hacía falta otra métrica."
-2. **Prometheus** → arriba, **Query** → escribir `talentflow_health_check{service="departamentos-service"}` → **Execute**: `check="database"` vale **0** y `check="status"` vale **0**.
-3. **Grafana**, dashboard: el panel **Dependencias de cada servicio (BD y broker)** muestra `departamentos-service · database` en **rojo**. El recuadro de arriba, *Estado de cada servicio*, sigue verde: el proceso está vivo.
-4. **Grafana** → Alerting → Alert rules: *Dependencia caída* pasa de *Pending* a *Firing*.
-5. **Mailhog**: llega **"[FIRING:1] Dependencia caída database … departamentos-service"** (~1 min 30 s después del `stop`). El correo dice qué dependencia y de qué servicio, y a qué URL mirar.
+1. **Prometheus** `/targets`: `departamentos-service` sigue en **UP**. "El proceso está vivo: por eso hace falta otra métrica."
+2. **Prometheus** → **Query** → `probe_success{job="dependencias"}` → **Execute**: la sonda `database-departamentos:3306` vale **0** y las demás **1**.
+3. **Grafana**, dashboard, tabla **Salud por servicio**, fila `departamentos-service`:
+
+   | Microservicio (proceso) | Base de datos (sonda directa) | Base de datos (según el servicio) | Broker (según el servicio) |
+   |---|---|---|---|
+   | **UP** | **DOWN** | **DOWN** | NO USA |
+
+4. **Grafana** → Alerting → Alert rules: *Base de datos caída* pasa de *Pending* a *Firing*. *Dependencia caída* **no** se dispara: la sonda confirma que la base está caída de verdad, y no se manda un segundo correo por lo mismo.
+5. **Mailhog**: llega **"[FIRING:1] Base de datos caída database dependencias departamentos-service"** (~1 min 40 s después del `stop`).
 6. **Jaeger**: la traza de `GET /health/servicios` tiene la llamada a `departamentos-service` en **rojo** con 503.
 
 **Ejecutar** para restaurar:
@@ -476,10 +481,45 @@ curl -s -o /dev/null -w '/health/servicios -> HTTP %{http_code}\n' localhost:808
 docker compose start database-departamentos
 ```
 
-**Se espera:** en ~1 min, el correo **"[RESOLVED] Dependencia caída …"** y el panel otra vez verde.
+**Se espera:** a los ~15 s, la tabla otra vez en verde; al minuto, el correo **"[RESOLVED] Base de datos caída …"**. Al volver la base no llega ninguna falsa alarma: la sonda y el servicio la ven a la vez.
 
 Si pregunta por qué no se usó la alerta de errores 5xx:
-> "Antes de este cambio llegaba un correo *Alta tasa de errores 5xx*, pero por casualidad: el healthcheck de Docker llama `/health` cada 5 s y cada 503 contaba como error. El motivo del correo era equivocado. Ahora la regla de 5xx no cuenta `/health`, y la base de datos caída tiene su propia alerta con el nombre correcto."
+> "Antes llegaba un correo *Alta tasa de errores 5xx*, pero por casualidad: el healthcheck de Docker llama `/health` cada 5 s y cada 503 contaba como error. El motivo del correo era equivocado. Ahora la regla de 5xx no cuenta `/health`, y la base de datos caída tiene su propia alerta con el nombre correcto."
+
+### D. Microservicio caído con su base de datos sana (y los otros casos)
+
+**Decir:**
+> "El `/health` de un servicio dice cómo está su base de datos. Pero si el servicio se cae, nadie puede preguntarle, y antes no sabíamos si la base seguía viva. La sonda directa no depende del servicio: con el servicio caído, la base sigue apareciendo **UP** o **DOWN** por su cuenta."
+
+**Ejecutar:**
+
+```bash
+docker compose stop departamentos-service
+```
+
+**Mostrar** (a los ~2 min): la tabla **Salud por servicio**, fila `departamentos-service`:
+
+| Microservicio (proceso) | Base de datos (sonda directa) | Base de datos (según el servicio) |
+|---|---|---|
+| **DOWN** | **UP** | **SIN DATOS** |
+
+> "*SIN DATOS* significa que el servicio no responde, así que no puede decir nada de su base. La sonda directa sí: la base está sana. Solo llega **Servicio caído**; no llega ninguna alerta de base de datos."
+
+**Restaurar:** `docker compose start departamentos-service`.
+
+**Los cuatro casos** (verificados el 2026-11-12; evidencia en [`pruebas.md`](pruebas.md#9-salud-independiente-del-servicio-f15)):
+
+| Caso | Microservicio | BD (sonda directa) | BD (según el servicio) | Correo |
+|---|---|---|---|---|
+| Se cae la base de datos | UP | **DOWN** | DOWN | *Base de datos caída* |
+| Se cae el microservicio | **DOWN** | UP | SIN DATOS | *Servicio caído* |
+| Se caen los dos (`docker compose stop departamentos-service database-departamentos`) | **DOWN** | **DOWN** | SIN DATOS | Los dos: *Servicio caído* y *Base de datos caída* |
+| La base está viva pero el servicio no puede usarla (usuario de MySQL bloqueado) | UP | UP | **DOWN** | *Dependencia caída* |
+
+Para restaurar el caso de los dos, arrancar primero la base y después el servicio: `docker compose start database-departamentos` y luego `docker compose start departamentos-service`.
+
+Si pregunta qué revisa exactamente la sonda:
+> "Solo que el motor acepte conexiones en su puerto (TCP), sin usuario ni contraseña. Si las credenciales del servicio fallan, la sonda sigue en UP y lo detecta el `/health` del servicio: ese es el caso de *Dependencia caída*. Elegimos el Blackbox Exporter y no un exporter por base porque es un solo contenedor liviano, no necesita contraseñas y funciona en Mac (arm64)."
 
 ## 8. La pregunta: ¿qué servicio tardó más y cómo lo identificaron?
 

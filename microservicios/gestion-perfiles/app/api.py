@@ -23,6 +23,7 @@ _MENSAJES_VALIDACION = {
     "extra_forbidden": "No es un campo editable del perfil",
     "string_too_long": "Supera la longitud máxima permitida",
     "string_pattern_mismatch": "Formato no válido",
+    "model_type": "Debe ser un objeto",
     "string_type": "Debe ser un texto",
     "json_invalid": "Cuerpo JSON inválido",
 }
@@ -130,10 +131,12 @@ def crear_app(
     @app.put(
         "/perfiles/{empleadoId}",
         response_model=dominio.Perfil,
-        summary="Actualiza el perfil (teléfono, dirección, ciudad, biografía)",
+        summary="Actualiza el perfil (teléfono, dirección, ciudad, biografía, foto, redes, código postal)",
         description=(
-            "Actualización parcial: solo cambian los campos enviados. nombre y email no se "
-            "editan aquí: se sincronizan desde empleados-service (empleado.actualizado)."
+            "Actualización parcial: solo cambian los campos enviados. foto y las URL de "
+            "redesSociales solo aceptan http o https. redesSociales reemplaza el objeto "
+            "completo (las redes no enviadas quedan null). nombre y email no se editan aquí: "
+            "se sincronizan desde empleados-service (empleado.actualizado)."
         ),
         responses={
             400: {"description": "Campo no editable, formato inválido o cuerpo vacío"},

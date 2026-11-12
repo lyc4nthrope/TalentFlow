@@ -1113,6 +1113,7 @@ flowchart LR
 | Loki | `grafana/loki:3.6.19` | 3100 | Almacén de logs |
 | Promtail | `grafana/promtail:3.6.11` | — | Agente que envía los logs de los contenedores a Loki |
 | Jaeger | `jaegertracing/jaeger:2.20.0` | 16686 (UI) | Trazas; recibe OTLP en 4317/4318, solo dentro de la red |
+| Blackbox Exporter | `prom/blackbox-exporter:v0.29.1` | — | Sondas TCP directas a las 6 bases de datos y al broker (job `dependencias`, D22) |
 
 **Jaeger y no Zipkin (D1).** Jaeger recibe OTLP de forma nativa: los SDK de OpenTelemetry le envían las trazas con su exportador por defecto, sin traducir a otro formato. Zipkin necesitaría el exportador de Zipkin en cada uno de los 5 lenguajes. Además, Jaeger 2 está construido sobre el OpenTelemetry Collector, es un proyecto graduado de la CNCF y su UI muestra la cascada de spans y las dependencias entre servicios. Se fijó la 2.20.0 porque la 2.21 quitó el endpoint `/api/services` que usa la fuente de datos Jaeger de Grafana.
 
@@ -1161,7 +1162,7 @@ Consultas LogQL usadas, con su resultado real:
 
 | Fila | Paneles |
 |---|---|
-| Resumen del sistema | Estado de cada servicio (`up`, UP verde / DOWN rojo); **dependencias de cada servicio** (base de datos y broker, de `talentflow_health_check`); peticiones por segundo, % de 5xx y latencia p95 de todo el sistema |
+| Resumen del sistema | Estado de cada servicio (`up`, UP verde / DOWN rojo); tabla **Salud por servicio** (proceso, base de datos por sonda directa, base de datos y broker según el servicio; D22) y **Broker (sonda directa)**; peticiones por segundo, % de 5xx y latencia p95 de todo el sistema |
 | Comportamiento del tráfico | Tasa de peticiones, latencia promedio (`_sum / _count`), errores 4xx/5xx y latencia p95, por servicio |
 | Recursos y logs | CPU y memoria por servicio; logs de ERROR y WARN desde Loki |
 
@@ -1174,11 +1175,17 @@ Las consultas excluyen `/health`, que el healthcheck de Docker llama cada 5 s. L
 | Servicio caído | `up < 1` durante 1 minuto | critical |
 | Alta tasa de errores 5xx | más del 10 % de 5xx durante 2 minutos | warning |
 | Alta latencia | latencia promedio mayor a 2 s durante 2 minutos (sin `/health`) | warning |
-| Dependencia caída | la base de datos o el broker de un servicio en `DOWN` durante 1 minuto | critical |
+| Base de datos caída | la sonda TCP directa a la BD de un servicio falla durante 1 minuto | critical |
+| Broker caído | la sonda TCP directa a RabbitMQ falla durante 1 minuto | critical |
+| Dependencia caída | el servicio reporta su BD o su broker en `DOWN` **mientras la sonda directa la ve UP** (credenciales, red, pool) durante 1 minuto | critical |
 
 Cada regla evalúa los 7 servicios por separado (`by (job)`), así que el correo dice cuál falla.
 
-**Por qué hace falta *Dependencia caída*.** Si se cae la base de datos de un servicio, el proceso sigue vivo: Prometheus sigue leyendo su `/metrics` y `up` sigue en 1, así que *Servicio caído* no se entera. Prometheus no lee `/health`, solo métricas. Por eso el Gateway, que ya consulta el `/health` de todos, lo publica en su `/metrics` como `talentflow_health_check{service, check}` (1 = UP, 0 = DOWN), con `check` = `status`, `database` o `messageBroker`. La regla vigila cada dependencia y el correo dice cuál: *"Dependencia caída database departamentos-service"*. La regla de 5xx no cuenta `/health`: antes, el 503 del healthcheck de Docker la disparaba y el correo decía "errores 5xx" en vez de "base de datos caída". La regla 4 del PDF (*contenedor reiniciado*) queda fuera porque necesita las métricas de Docker (cAdvisor), que no están en el stack.
+**Por qué hace falta *Dependencia caída*.** Si se cae la base de datos de un servicio, el proceso sigue vivo: Prometheus sigue leyendo su `/metrics` y `up` sigue en 1, así que *Servicio caído* no se entera. Prometheus no lee `/health`, solo métricas. Por eso el Gateway, que ya consulta el `/health` de todos, lo publica en su `/metrics` como `talentflow_health_check{service, check}` (1 = UP, 0 = DOWN), con `check` = `status`, `database` o `messageBroker`. La regla vigila cada dependencia y el correo dice cuál: *"Dependencia caída database departamentos-service"*. La regla de 5xx no cuenta `/health`: antes, el 503 del healthcheck de Docker la disparaba y el correo decía "errores 5xx" en vez de "base de datos caída". 
+
+**Sondas directas (D22).** Con eso quedaba un hueco: si el servicio se cae, el Gateway ya no puede leer su `/health` y la serie `check="database"` desaparece, así que nadie sabe si su base de datos sigue viva. El **Blackbox Exporter** lo cierra: Prometheus le pide (job `dependencias`) abrir una conexión TCP a cada base de datos y al broker, con las mismas etiquetas `service` y `check`. Así, por cada microservicio se ve por separado si el proceso está vivo (`up`), si su base de datos acepta conexiones (`probe_success`) y qué reporta el propio servicio (`talentflow_health_check`). La tabla *Salud por servicio* del dashboard junta las tres. *Dependencia caída* solo avisa cuando el servicio dice DOWN y la sonda dice UP; si la dependencia está realmente caída avisan *Base de datos caída* o *Broker caído*, sin correos duplicados.
+
+La regla 4 del PDF (*contenedor reiniciado*) queda fuera porque necesita las métricas de Docker (cAdvisor), que no están en el stack.
 
 **Canal elegido: email**, con Mailhog como servidor SMTP de pruebas. Ya existía desde el Reto 4 y no expone ningún token: un webhook de Discord o Telegram es un secreto que no puede ir en el repositorio. Cómo quedó configurado, todo como código:
 

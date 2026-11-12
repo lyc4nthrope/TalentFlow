@@ -18,6 +18,12 @@ CREATE TABLE IF NOT EXISTS perfiles (
     direccion        VARCHAR(200)  NOT NULL DEFAULT '',
     ciudad           VARCHAR(100)  NOT NULL DEFAULT '',
     biografia        VARCHAR(1000) NOT NULL DEFAULT '',
+    -- Proyecto final (F2). En volúmenes anteriores las añade la migración del arranque
+    -- (MIGRACION en app/repositorio.py); deben coincidir.
+    foto             VARCHAR(500)  NOT NULL DEFAULT '',
+    codigo_postal    VARCHAR(10)   NOT NULL DEFAULT '',
+    -- {"linkedin": ..., "github": ..., "twitter": ...}; un PUT lo reemplaza entero.
+    redes_sociales   JSONB         NOT NULL DEFAULT '{}'::jsonb,
     fecha_creacion   TIMESTAMPTZ   NOT NULL DEFAULT now(),
     -- Baja lógica al consumir empleado.retirado: se archiva, no se borra.
     archivado        BOOLEAN       NOT NULL DEFAULT false,

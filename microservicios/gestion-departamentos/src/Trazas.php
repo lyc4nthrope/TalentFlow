@@ -1,10 +1,10 @@
 <?php
 
 /**
- * Trazas OpenTelemetry mínimas (Reto 8, D1 y D16). El servicio no usa Composer, así que no
+ * Trazas OpenTelemetry mínimas (Reto 8, D1 y D16). En producción no hay Composer, así que no
  * hay SDK: se continúa la traza del traceparent recibido (W3C) y, al terminar la petición,
  * se envía un span SERVER a Jaeger en OTLP/HTTP con JSON, el mismo protocolo de los otros
- * SDK. OTEL_SDK_DISABLED=true lo apaga. Infraestructura (D7): prueba en test/test_trazas.php.
+ * SDK. OTEL_SDK_DISABLED=true lo apaga. Infraestructura (D7): prueba en tests/TrazasTest.php.
  */
 final class Trazas
 {

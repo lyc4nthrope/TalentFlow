@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 import psycopg
 from psycopg import AsyncConnection, sql
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
 from app import dominio
@@ -15,8 +16,21 @@ logger = logging.getLogger("perfiles.repositorio")
 
 _COLUMNAS = sql.SQL(
     "id::text AS id, empleado_id, nombre, email, telefono, direccion, ciudad, biografia, "
-    "fecha_creacion, archivado, fecha_archivado"
+    "foto, redes_sociales, codigo_postal, fecha_creacion, archivado, fecha_archivado"
 )
+
+# Campo del API -> columna, solo donde el nombre cambia (camelCase vs snake_case).
+_COLUMNA_DE = {"redesSociales": "redes_sociales", "codigoPostal": "codigo_postal"}
+
+# Migración al arrancar (proyecto final, F2): los volúmenes creados antes de estas columnas
+# no vuelven a ejecutar init.sql. IF NOT EXISTS la hace idempotente y el candado de
+# transacción serializa varias réplicas que arrancan a la vez. Debe coincidir con init.sql.
+MIGRACION = """
+SELECT pg_advisory_xact_lock(hashtext('perfiles.migracion'));
+ALTER TABLE perfiles ADD COLUMN IF NOT EXISTS foto VARCHAR(500) NOT NULL DEFAULT '';
+ALTER TABLE perfiles ADD COLUMN IF NOT EXISTS codigo_postal VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE perfiles ADD COLUMN IF NOT EXISTS redes_sociales JSONB NOT NULL DEFAULT '{}'::jsonb;
+"""
 
 
 def _a_perfil(fila: dict) -> dominio.Perfil:
@@ -29,6 +43,9 @@ def _a_perfil(fila: dict) -> dominio.Perfil:
         direccion=fila["direccion"],
         ciudad=fila["ciudad"],
         biografia=fila["biografia"],
+        foto=fila["foto"],
+        redesSociales=fila["redes_sociales"],  # psycopg ya entrega el JSONB como dict
+        codigoPostal=fila["codigo_postal"],
         fechaCreacion=fila["fecha_creacion"],
         archivado=fila["archivado"],
         fechaArchivado=fila["fecha_archivado"],
@@ -38,6 +55,11 @@ def _a_perfil(fila: dict) -> dominio.Perfil:
 class RepositorioPostgres:
     def __init__(self, pool: AsyncConnectionPool):
         self._pool = pool
+
+    async def migrar(self) -> None:
+        """Añade las columnas nuevas si faltan. Seguro en cada arranque y con réplicas."""
+        async with self._pool.connection() as conexion, conexion.transaction():
+            await conexion.execute(MIGRACION)
 
     async def _una_vez(self, evento_id: str, efecto: Callable[[AsyncConnection], Awaitable[None]]) -> bool:
         """Registra el id del evento y aplica su efecto en UNA transacción: o quedan
@@ -116,12 +138,16 @@ class RepositorioPostgres:
             filas = await cursor.fetchall()
         return [_a_perfil(fila) for fila in filas]
 
-    async def actualizar(self, empleado_id: str, cambios: dict[str, str]) -> dominio.Perfil:
+    async def actualizar(self, empleado_id: str, cambios: dict[str, object]) -> dominio.Perfil:
         """Actualización parcial atómica: la condición NOT archivado va en el UPDATE,
         así un empleado.retirado concurrente no puede quedar "desarchivado"."""
+        # redesSociales se guarda entero (reemplazo, no mezcla): Jsonb lo envía como jsonb.
+        valores = {
+            campo: Jsonb(valor) if campo == "redesSociales" else valor for campo, valor in cambios.items()
+        }
         asignaciones = sql.SQL(", ").join(
-            sql.SQL("{} = {}").format(sql.Identifier(columna), sql.Placeholder(columna))
-            for columna in cambios
+            sql.SQL("{} = {}").format(sql.Identifier(_COLUMNA_DE.get(campo, campo)), sql.Placeholder(campo))
+            for campo in cambios
         )
         consulta = sql.SQL(
             "UPDATE perfiles SET {} WHERE empleado_id = {} AND NOT archivado RETURNING {}"
@@ -129,7 +155,7 @@ class RepositorioPostgres:
 
         async with self._pool.connection() as conexion:
             cursor = conexion.cursor(row_factory=dict_row)
-            await cursor.execute(consulta, {**cambios, "empleado_id": empleado_id})
+            await cursor.execute(consulta, {**valores, "empleado_id": empleado_id})
             fila = await cursor.fetchone()
 
         if fila:

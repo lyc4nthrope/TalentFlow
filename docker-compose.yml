@@ -648,6 +648,27 @@ services:
     networks:
       - microservices-network
 
+  # Sondas directas a las bases de datos y al broker (D22): Prometheus las pide aquí
+  # (job "dependencias"). Sin puerto en el host: solo Prometheus la consulta, por la red.
+  # La imagen por defecto trae busybox, así que tiene wget para el healthcheck.
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.29.1
+    container_name: blackbox-exporter
+    restart: unless-stopped
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    expose:
+      - "9115"
+    volumes:
+      - ./observability/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9115/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - microservices-network
+
   # Logs: almacén (Loki) y agente que los recolecta de los contenedores (Promtail).
   # La imagen de Loki es distroless (sin shell ni wget): sin healthcheck; su estado se ve
   # en http://localhost:3100/ready.

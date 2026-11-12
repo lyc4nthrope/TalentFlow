@@ -20,7 +20,8 @@ groups:
       datasourceUid: prometheus
       model:
         refId: A
-        expr: up{job!="prometheus"}
+        # Sin las sondas del Blackbox (job dependencias): sus BD tienen su propia alerta.
+        expr: up{job!~"prometheus|dependencias"}
         instant: true
         intervalMs: 1000
         maxDataPoints: 43200
@@ -121,11 +122,11 @@ groups:
       description: 'La latencia promedio de {{ $labels.job }} supera 2 s desde hace más de 2 minutos (sin contar /health). Valor actual: {{ humanizeDuration $values.A.Value }}. Revisar su traza en Jaeger
         para ver qué dependencia tarda.'
       dashboardUid: talentflow-observabilidad
-  # Reto 8, D21: una base de datos o el broker caídos no tumban el proceso (`up` sigue en 1),
-  # así que "Servicio caído" no los ve. El Gateway publica el /health de cada servicio como
-  # talentflow_health_check (D20); aquí se vigila cada dependencia por separado.
-  - uid: dependencia-caida
-    title: Dependencia caída
+  # Reto 8, D22: el estado de cada BD y del broker sale de una sonda TCP directa (Blackbox
+  # Exporter, job dependencias), no del /health del servicio: se sabe aunque el servicio
+  # dueño esté caído. Se cruza con talentflow_health_check (D20/D21) por la etiqueta service.
+  - uid: base-de-datos-caida
+    title: Base de datos caída
     condition: C
     data:
     - refId: A
@@ -135,7 +136,7 @@ groups:
       datasourceUid: prometheus
       model:
         refId: A
-        expr: talentflow_health_check{check!="status"}
+        expr: probe_success{job="dependencias",check="database"}
         instant: true
         intervalMs: 1000
         maxDataPoints: 43200
@@ -158,6 +159,84 @@ groups:
       severity: critical
       team: talentflow
     annotations:
-      summary: '{{ $labels.check }} de {{ $labels.service }} caída'
-      description: 'El /health de {{ $labels.service }} reporta {{ $labels.check }} en DOWN desde hace más de 1 minuto (el servicio sigue vivo, pero su dependencia no responde). Ver GET http://localhost:8080/health/{{ $labels.service }}. Si el servicio entero deja de responder, esta alerta se resuelve y avisa Servicio caído.'
+      summary: 'La base de datos de {{ $labels.service }} no responde'
+      description: 'La sonda TCP directa a {{ $labels.instance }} (base de datos de {{ $labels.service }}) falla desde hace más de 1 minuto. La sonda es independiente del servicio: vale aunque {{ $labels.service }} esté caído. Si el servicio también cae, llega además Servicio caído.'
+      dashboardUid: talentflow-observabilidad
+  - uid: broker-caido
+    title: Broker caído
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: probe_success{job="dependencias",check="messageBroker"}
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+    for: 1m
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: critical
+      team: talentflow
+    annotations:
+      summary: 'El broker de mensajería no responde'
+      description: 'La sonda TCP directa a {{ $labels.instance }} (RabbitMQ, AMQP) falla desde hace más de 1 minuto. Los eventos entre servicios no se publican ni se consumen.'
+      dashboardUid: talentflow-observabilidad
+  # Solo avisa cuando el servicio reporta su dependencia en DOWN pero la sonda directa la ve
+  # UP (credenciales, red o pool del servicio): si la dependencia está realmente caída ya
+  # avisan Base de datos caída o Broker caído, y no se duplica el correo. Suma = 0 solo en
+  # ese caso (servicio 0 + (1 - sonda 1)); con la dependencia caída da 1 y no dispara.
+  - uid: dependencia-caida
+    title: Dependencia caída
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: talentflow_health_check{check="database"} + on(service) group_left() (1 - probe_success{job="dependencias",check="database"}) or talentflow_health_check{check="messageBroker"} + on() group_left() (1 - probe_success{job="dependencias",check="messageBroker"})
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+    for: 1m
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: critical
+      team: talentflow
+    annotations:
+      summary: '{{ $labels.service }} no puede usar su {{ $labels.check }}'
+      description: 'El /health de {{ $labels.service }} reporta {{ $labels.check }} en DOWN desde hace más de 1 minuto, pero la sonda directa la ve UP: el problema está entre el servicio y su dependencia (credenciales, red, pool de conexiones). Ver GET http://localhost:8080/health/{{ $labels.service }}.'
       dashboardUid: talentflow-observabilidad

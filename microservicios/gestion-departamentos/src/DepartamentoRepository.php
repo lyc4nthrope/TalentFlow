@@ -1,6 +1,6 @@
 <?php
 
-class DepartamentoRepository
+class DepartamentoRepository implements RepositorioDepartamentos
 {
     private PDO $conexion;
 
@@ -37,9 +37,32 @@ class DepartamentoRepository
     public function listar(): array
     {
         $sentencia = $this->conexion->query(
-            'SELECT id, nombre, descripcion FROM departamentos ORDER BY creado_en ASC'
+            'SELECT id, nombre, descripcion FROM departamentos ORDER BY creado_en ASC, id ASC'
         );
 
         return $sentencia->fetchAll();
+    }
+
+    public function actualizar(string $id, array $datos): ?array
+    {
+        // Sin rowCount(): MySQL cuenta 0 filas si los valores no cambian.
+        $sentencia = $this->conexion->prepare(
+            'UPDATE departamentos SET nombre = :nombre, descripcion = :descripcion WHERE id = :id'
+        );
+        $sentencia->execute([
+            'id' => $id,
+            'nombre' => $datos['nombre'],
+            'descripcion' => $datos['descripcion'] ?? null,
+        ]);
+
+        return $this->buscarPorId($id);
+    }
+
+    public function eliminar(string $id): bool
+    {
+        $sentencia = $this->conexion->prepare('DELETE FROM departamentos WHERE id = :id');
+        $sentencia->execute(['id' => $id]);
+
+        return $sentencia->rowCount() > 0;
     }
 }

@@ -1,0 +1,17 @@
+{
+    "name": "talentflow/gestion-departamentos",
+    "description": "Microservicio de gestión de departamentos (PHP sin framework). Composer solo para las pruebas.",
+    "type": "project",
+    "require": {
+        "php": ">=8.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11"
+    },
+    "config": {
+        "platform": {
+            "php": "8.2"
+        },
+        "sort-packages": true
+    }
+}

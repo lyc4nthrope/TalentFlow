@@ -52,7 +52,9 @@ pipeline {
 
         // SonarQube (F4, D15): el análisis importa el reporte de cobertura de Test; las
         // exclusiones de cobertura son las mismas del Reto 6 (D11/D14), así la cobertura de
-        // SonarQube mide la misma lógica de negocio. SONAR_HABILITADO=false salta ambos stages.
+        // SonarQube mide la misma lógica de negocio. Deben coincidir con `omit` de pyproject.toml:
+        // el Reto 8 agregó metricas, trazas y logs solo allí y el Quality Gate quedó en 63 %.
+        // SONAR_HABILITADO=false salta ambos stages.
         stage('SonarQube') {
             when { environment name: 'SONAR_HABILITADO', value: 'true' }
             steps {
@@ -64,7 +66,7 @@ pipeline {
                           -Dsonar.sources=app \\
                           -Dsonar.tests=tests \\
                           -Dsonar.python.version=3.13 \\
-                          -Dsonar.coverage.exclusions=app/main.py,app/config.py,app/api.py,app/consumidor.py,app/repositorio.py \\
+                          -Dsonar.coverage.exclusions=app/main.py,app/config.py,app/api.py,app/consumidor.py,app/repositorio.py,app/metricas.py,app/trazas.py,app/logs.py \\
                           -Dsonar.python.coverage.reportPaths=reports/coverage.xml
                         '''
                     }

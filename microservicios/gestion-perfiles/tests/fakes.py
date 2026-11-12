@@ -74,7 +74,8 @@ class RepositorioEnMemoria:
             raise dominio.PerfilNoEncontrado(empleado_id)
         if actual.archivado:
             raise dominio.PerfilArchivado(empleado_id)
-        self.perfiles[empleado_id] = actual.model_copy(update=cambios)
+        # model_validate (no model_copy): redesSociales llega como dict y debe ser el modelo.
+        self.perfiles[empleado_id] = dominio.Perfil.model_validate({**actual.model_dump(), **cambios})
         return self.perfiles[empleado_id]
 
     async def ping(self):

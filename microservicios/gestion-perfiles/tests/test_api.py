@@ -62,9 +62,63 @@ def test_put_parcial_como_el_del_reto(cliente):
     assert perfil["direccion"] == "", "lo no enviado no cambia"
 
 
+def test_put_foto_redes_y_codigo_postal_y_se_leen_de_vuelta(cliente):
+    cuerpo = {
+        "foto": "https://cdn.empresa.com/fotos/E001.jpg",
+        "redesSociales": {
+            "linkedin": "https://www.linkedin.com/in/juan",
+            "github": "https://github.com/juan",
+        },
+        "codigoPostal": "630001",
+    }
+    assert cliente.put("/perfiles/E001", json=cuerpo).status_code == 200
+
+    perfil = cliente.get("/perfiles/E001").json()
+    assert perfil["foto"] == cuerpo["foto"]
+    assert perfil["codigoPostal"] == "630001"
+    assert perfil["redesSociales"] == {
+        "linkedin": "https://www.linkedin.com/in/juan",
+        "github": "https://github.com/juan",
+        "twitter": None,
+    }
+
+
+def test_put_redes_reemplaza_y_lo_omitido_no_cambia(cliente):
+    cliente.put(
+        "/perfiles/E001",
+        json={
+            "ciudad": "Armenia",
+            "redesSociales": {"linkedin": "https://linkedin.com/in/j", "github": "https://github.com/j"},
+        },
+    )
+
+    perfil = cliente.put("/perfiles/E001", json={"redesSociales": {"twitter": "https://x.com/j"}}).json()
+
+    assert perfil["redesSociales"] == {"linkedin": None, "github": None, "twitter": "https://x.com/j"}
+    assert perfil["ciudad"] == "Armenia", "los campos de primer nivel omitidos no cambian"
+
+
+def test_get_perfil_nuevo_trae_los_campos_nuevos_vacios(cliente):
+    perfil = cliente.get("/perfiles/E001").json()
+    assert (perfil["foto"], perfil["codigoPostal"]) == ("", "")
+    assert perfil["redesSociales"] == {"linkedin": None, "github": None, "twitter": None}
+
+
+def test_put_foto_invalida_400_con_mensaje_en_espanol(cliente):
+    respuesta = cliente.put("/perfiles/E001", json={"foto": "javascript:alert(1)"})
+    assert respuesta.status_code == 400
+    assert respuesta.json()["errors"] == [{"field": "foto", "message": "Debe ser una URL http o https"}]
+    assert cliente.get("/perfiles/E001").json()["foto"] == ""
+
+
 @pytest.mark.parametrize(
     ("cuerpo", "campo"),
     [
+        ({"foto": "ftp://servidor/foto.jpg"}, "foto"),
+        ({"redesSociales": {"facebook": "https://facebook.com/j"}}, "redesSociales.facebook"),
+        ({"redesSociales": {"github": "data:text/html,x"}}, "redesSociales.github"),
+        ({"redesSociales": "https://github.com/j"}, "redesSociales"),
+        ({"codigoPostal": "63000#"}, "codigoPostal"),
         ({"nombre": "Otro"}, "nombre"),  # replicado desde empleados: no editable aquí
         ({"email": "x@y.com"}, "email"),
         ({"salario": 1}, "salario"),  # desconocido: asignación masiva
@@ -117,6 +171,15 @@ def test_swagger_bajo_el_prefijo_del_servicio(cliente):
     assert cliente.get("/perfiles/docs").status_code == 200
     especificacion = cliente.get("/perfiles/openapi.json").json()
     assert {"/perfiles", "/perfiles/{empleadoId}"} <= set(especificacion["paths"])
+
+
+def test_swagger_documenta_los_campos_nuevos(cliente):
+    esquemas = cliente.get("/perfiles/openapi.json").json()["components"]["schemas"]
+    entrada = esquemas["ActualizacionPerfil"]["properties"]
+    assert {"foto", "redesSociales", "codigoPostal"} <= set(entrada)
+    assert "http" in entrada["foto"]["description"]
+    assert set(esquemas["RedesSocialesEntrada"]["properties"]) == {"linkedin", "github", "twitter"}
+    assert {"foto", "redesSociales", "codigoPostal"} <= set(esquemas["Perfil"]["properties"])
 
 
 def test_swagger_declara_bearer_global(cliente):

@@ -20,6 +20,11 @@ public record Vacaciones(
         return estado == EstadoVacaciones.PROGRAMADA && fechaInicio.isAfter(ahora);
     }
 
+    /** Mismas condiciones que cancelar: solo se cambian las fechas de lo que aún no empieza. */
+    public boolean esReprogramable(LocalDateTime ahora) {
+        return esCancelable(ahora);
+    }
+
     /** Períodos que ocupan fechas del empleado (los cancelados o finalizados no). */
     public boolean estaVigente() {
         return estado == EstadoVacaciones.PROGRAMADA || estado == EstadoVacaciones.EN_CURSO;
@@ -27,6 +32,10 @@ public record Vacaciones(
 
     public Vacaciones cancelada() {
         return conEstado(EstadoVacaciones.CANCELADA);
+    }
+
+    public Vacaciones conFechas(LocalDateTime nuevoInicio, LocalDateTime nuevoFin) {
+        return new Vacaciones(id, empleadoId, nuevoInicio, nuevoFin, estado, fechaCreacion);
     }
 
     /** Copia del período con otro estado (el record es inmutable). */

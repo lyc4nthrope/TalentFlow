@@ -154,6 +154,37 @@ Then('el empleado debe tener un solo período de vacaciones registrado', async f
   }
 });
 
+// --- Reprogramación (proyecto final, F2) --------------------------------------
+
+Given('que ese período fue cancelado', async function () {
+  const { id } = this.recurso('vacaciones existentes');
+  exigirCodigo(await this.enviar('DELETE', `/vacaciones/${encodeURIComponent(id)}`), 200, `Cancelar el período ${id}`);
+});
+
+// El período del escenario ("vacaciones") pasa a ser el reprogramado: los Entonces de
+// estado y de confirmación lo leen. Con un rechazo conserva sus fechas originales.
+When('reprogramo ese período para dentro de {int} días', async function (dias) {
+  const existente = this.recurso('vacaciones existentes');
+  const fechas = {
+    fechaInicio: fechaHoraEnDias(this, dias),
+    fechaFin: fechaHoraEnDias(this, dias + 4, '18:00:00'),
+  };
+  const respuesta = await this.peticion('PUT', `/vacaciones/${encodeURIComponent(existente.id)}`, { cuerpo: fechas });
+  this.recursos.set('vacaciones', respuesta.status === 200 ? { ...respuesta.body, ...fechas } : existente);
+  this.recursos.set('período solicitado', fechas);
+});
+
+Then('el período debe tener las fechas nuevas', async function () {
+  const { id } = this.recurso('vacaciones existentes');
+  const { fechaInicio, fechaFin } = this.recurso('período solicitado');
+  const periodo = await consultarPeriodo(this, id);
+  if (periodo.fechaInicio !== fechaInicio || periodo.fechaFin !== fechaFin || periodo.estado !== 'PROGRAMADA') {
+    throw new Error(
+      `Se esperaba el período ${id} PROGRAMADA del ${fechaInicio} al ${fechaFin} y GET /vacaciones/${id} trae ${extracto(periodo)}`
+    );
+  }
+});
+
 // --- Ciclo completo: suspensión y reactivación (D6, D7) -----------------------
 
 // "De inmediato" = unos segundos después de ahora, en la zona del servicio, y dura un

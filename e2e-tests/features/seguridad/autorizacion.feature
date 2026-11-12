@@ -28,12 +28,13 @@ Característica: Permisos según el rol del usuario
     Y la respuesta no debe revelar detalles internos
 
     Ejemplos:
-      | operación                             |
-      | registrar un empleado nuevo           |
-      | actualizar los datos de un empleado   |
-      | retirar a un empleado                 |
-      | crear un departamento                 |
-      | programar vacaciones para un empleado |
+      | operación                                 |
+      | registrar un empleado nuevo               |
+      | actualizar los datos de un empleado       |
+      | retirar a un empleado                     |
+      | crear un departamento                     |
+      | programar vacaciones para un empleado     |
+      | reprogramar las vacaciones de un empleado |
 
   Escenario: Un empleado con rol USER solo puede editar su propio perfil
     Dado que existe otro empleado registrado
@@ -50,10 +51,11 @@ Característica: Permisos según el rol del usuario
     Entonces la respuesta debe tener código <código>
 
     Ejemplos:
-      | operación                             | código |
-      | registrar un empleado nuevo           | 201    |
-      | actualizar los datos de un empleado   | 200    |
-      | retirar a un empleado                 | 200    |
-      | crear un departamento                 | 201    |
-      | programar vacaciones para un empleado | 201    |
-      | editar el perfil de un empleado       | 200    |
+      | operación                                 | código |
+      | registrar un empleado nuevo               | 201    |
+      | actualizar los datos de un empleado       | 200    |
+      | retirar a un empleado                     | 200    |
+      | crear un departamento                     | 201    |
+      | programar vacaciones para un empleado     | 201    |
+      | reprogramar las vacaciones de un empleado | 200    |
+      | editar el perfil de un empleado           | 200    |

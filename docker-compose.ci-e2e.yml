@@ -64,6 +64,8 @@ services:
   # activa los deja fuera de `up`.
   prometheus:
     profiles: !override ["observabilidad"]
+  blackbox-exporter:
+    profiles: !override ["observabilidad"]
   loki:
     profiles: !override ["observabilidad"]
   promtail:

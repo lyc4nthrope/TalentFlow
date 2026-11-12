@@ -293,4 +293,44 @@ class JdbcRepositorioVacacionesIT extends IntegracionPostgres {
         assertThat(carrera.segunda()).isFalse();
         assertThat(repositorio.buscarPorId(v.id())).map(Vacaciones::estado).contains(EstadoVacaciones.EN_CURSO);
     }
+
+    @Test
+    void reprogramarCambiaLasFechasSoloSiSigueProgramado() {
+        Vacaciones programada = repositorio.crear("E001", INICIO, FIN, CREACION);
+        Vacaciones cancelada = crear("E002", "2026-12-14T00:00", "2026-12-20T00:00");
+        forzarEstado(cancelada.id(), EstadoVacaciones.CANCELADA);
+        LocalDateTime nuevoInicio = LocalDateTime.parse("2027-01-11T08:00:00");
+        LocalDateTime nuevoFin = LocalDateTime.parse("2027-01-15T18:00:00");
+
+        assertThat(repositorio.reprogramar(programada.id(), nuevoInicio, nuevoFin)).isTrue();
+        assertThat(repositorio.reprogramar(cancelada.id(), nuevoInicio, nuevoFin)).isFalse();
+        assertThat(repositorio.reprogramar("V-2026-9999", nuevoInicio, nuevoFin)).isFalse();
+        assertThat(repositorio.buscarPorId(programada.id())).contains(programada.conFechas(nuevoInicio, nuevoFin));
+        assertThat(repositorio.buscarPorId(cancelada.id())).map(Vacaciones::fechaInicio)
+                .contains(LocalDateTime.parse("2026-12-14T00:00"));
+    }
+
+    @Test
+    void elSolapamientoAlReprogramarExcluyeAlPropioPeriodoPeroNoALosDemas() {
+        Vacaciones propio = repositorio.crear("E001", INICIO, FIN, CREACION);
+        Vacaciones otro = crear("E001", "2026-12-21T00:00", "2026-12-24T00:00");
+
+        assertThat(repositorio.buscarOtroVigenteSolapado(propio.id(), "E001", INICIO.plusDays(1), FIN)).isEmpty();
+        assertThat(repositorio.buscarOtroVigenteSolapado(propio.id(), "E001", INICIO, FIN.plusDays(2))).contains(otro);
+        assertThat(repositorio.buscarVigenteSolapado("E001", INICIO.plusDays(1), FIN)).contains(propio);
+    }
+
+    /** La restricción EXCLUDE también protege el UPDATE: se traduce como en crear. */
+    @Test
+    void reprogramarSobreOtroPeriodoVigenteLoRechazaLaBdComoSolicitudInvalida() {
+        Vacaciones propio = repositorio.crear("E001", INICIO, FIN, CREACION);
+        crear("E001", "2026-12-21T00:00", "2026-12-24T00:00");
+
+        assertThatThrownBy(() -> repositorio.reprogramar(propio.id(), INICIO, LocalDateTime.parse("2026-12-22T00:00")))
+                .isInstanceOfSatisfying(SolicitudInvalidaException.class,
+                        e -> assertThat(e.campo()).isEqualTo("fechaInicio"));
+        assertThatThrownBy(() -> repositorio.reprogramar(propio.id(), INICIO, INICIO))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("chk_fechas_coherentes");
+    }
 }
