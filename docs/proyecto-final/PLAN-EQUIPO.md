@@ -91,6 +91,22 @@ Cada objetivo es **una rama, un PR a `dev` y una revisión de la otra persona**.
 - <comandos nuevos, variables nuevas, contenedores que cambian> (o "Ninguno")
 ```
 
+### Compatibilidad con macOS (Valeria trabaja en Mac)
+
+Todo lo que se escriba debe funcionar en Linux **y** en macOS con Docker Desktop:
+
+| Tema | En macOS | Regla |
+|---|---|---|
+| **Imágenes Docker** | Apple Silicon es `arm64` | Antes de fijar una imagen nueva, comprobar que tenga `linux/arm64`: `docker buildx imagetools inspect <imagen>:<versión>` |
+| **bash** | Trae bash 3.2 | Sin arreglos asociativos, sin `${var,,}` ni `mapfile` |
+| **sed** | `sed -i` es de BSD y pide un argumento extra (`sed -i ''`) | No usar `sed -i` en scripts: escribir a un temporal y moverlo con `mv` |
+| **tr, stat, date, base64** | Son versiones BSD | `LC_ALL=C tr -dc …`; evitar `stat` y `date -d`; `openssl rand -base64 32` funciona igual |
+| **Memoria** | Docker Desktop limita la RAM | Darle de 6 a 8 GB. Probar sin el perfil `ci` cuando no haga falta; con réplicas (V6 y V7), apagar la observabilidad si no se está midiendo |
+| **Rutas y permisos** | El socket de Docker de Docker Desktop funciona como el de Linux (Jenkins y Promtail ya lo usan) | No usar rutas absolutas del host en scripts ni en el compose; usar `$PWD` o rutas relativas |
+| **Puertos** | AirPlay usa el 5000 y el 7000 | El registro local usa `localhost:5000`: está fijo en `5000:5000` (`docker-compose.yml`). Si choca, desactivar *AirPlay Receiver* en Ajustes del Sistema → General → AirDrop y Handoff |
+
+Para comprobar un script sin tener una Mac: `shellcheck` y `bash --posix`. En la revisión del PR, Valeria lo corre en su Mac.
+
 ---
 
 ## 3. Reparto y orden
@@ -317,6 +333,7 @@ Al cerrar cada ola: PR `dev → main`.
      - **Reconciliación de los `PENDIENTE`:** si corre en las dos réplicas, ¿duplica eventos? La deduplicación de los consumidores lo absorbe; probarlo y documentarlo.
      - **Correo duplicado:** que notificaciones no envíe dos veces el mismo correo con 2 réplicas, gracias a la deduplicación por la tabla `eventos_procesados`. Probarlo.
   5. Con 2 réplicas, RabbitMQ reparte los mensajes entre ellas (competing consumers). Verificar en la UI de RabbitMQ que cada cola tiene 2 consumidores.
+  6. **Política de reinicio:** `auth-service`, `notificaciones-service` y `perfiles-service` usan `restart: on-failure`. Si Docker se reinicia, salen con código 0 y no vuelven solos (pasó el 2026-11-12, ver `docs/reto-08/pruebas.md`, sección 9). Pasar los servicios de aplicación a `restart: unless-stopped`, como el Gateway.
 - **Criterios de aceptación:**
   - `docker compose ps` muestra 2 réplicas `healthy` de cada servicio.
   - Prometheus muestra 12 targets de esos servicios en UP.
