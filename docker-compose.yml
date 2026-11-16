@@ -416,6 +416,9 @@ services:
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
       SMTP_FROM: notificaciones@talentflow.local
+      PLANTILLAS_DIR: /app/plantillas
+    volumes:
+      - ./microservicios/notificaciones/plantillas:/app/plantillas:ro
     depends_on:
       database-notificaciones:
         condition: service_healthy

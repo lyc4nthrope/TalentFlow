@@ -22,6 +22,7 @@ import (
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/amqp"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/api"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/aplicacion"
+	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/dominio"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/metricas"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/postgres"
 	"github.com/lyc4nthrope/TalentFlow/microservicios/notificaciones/internal/smtp"
@@ -46,6 +47,11 @@ func main() {
 }
 
 func ejecutar(logger *slog.Logger) error {
+	plantillasDir := env("PLANTILLAS_DIR", "/app/plantillas")
+	if err := dominio.CargarPlantillas(plantillasDir); err != nil {
+		return fmt.Errorf("cargar plantillas de notificaciones desde %s: %w", plantillasDir, err)
+	}
+
 	ctx, detener := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer detener()
 

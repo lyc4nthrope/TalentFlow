@@ -3,11 +3,16 @@
 package dominio
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"text/template"
 	"time"
 )
 
@@ -94,6 +99,137 @@ var (
 	ErrDatosInvalidos = errors.New("carga útil inválida")
 )
 
+var (
+	plantillasMu       sync.RWMutex
+	plantillasPorEvento = map[string]struct {
+		asunto *template.Template
+		cuerpo *template.Template
+	}{}
+)
+
+func defaultPlantillasDir() string {
+	for _, dir := range []string{
+		"/app/plantillas",
+		filepath.Join(".", "plantillas"),
+		filepath.Join("..", "plantillas"),
+		filepath.Join("..", "..", "plantillas"),
+		filepath.Join("..", "..", "..", "plantillas"),
+	} {
+		info, err := os.Stat(dir)
+		if err == nil && info.IsDir() {
+			return dir
+		}
+	}
+	return "/app/plantillas"
+}
+
+func asegurarPlantillas() error {
+	plantillasMu.RLock()
+	cargadas := len(plantillasPorEvento) > 0
+	plantillasMu.RUnlock()
+	if cargadas {
+		return nil
+	}
+	return CargarPlantillas(defaultPlantillasDir())
+}
+
+func CargarPlantillas(dir string) error {
+	if strings.TrimSpace(dir) == "" {
+		dir = defaultPlantillasDir()
+	}
+	entradas, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("leer directorio de plantillas %q: %w", dir, err)
+	}
+	cargadas := make(map[string]struct {
+		asunto *template.Template
+		cuerpo *template.Template
+	}, len(entradas))
+	for _, entrada := range entradas {
+		if entrada.IsDir() || filepath.Ext(entrada.Name()) != ".tmpl" {
+			continue
+		}
+		path := filepath.Join(dir, entrada.Name())
+		contenido, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("leer plantilla %q: %w", path, err)
+		}
+		tmpl, err := template.New(entrada.Name()).Option("missingkey=error").Parse(string(contenido))
+		if err != nil {
+			return fmt.Errorf("plantilla %q tiene una sintaxis inválida: %w", path, err)
+		}
+		asunto := tmpl.Lookup("asunto")
+		if asunto == nil {
+			return fmt.Errorf("plantilla %q falta el bloque {{define \"asunto\"}}", path)
+		}
+		cuerpo := tmpl.Lookup("cuerpo")
+		if cuerpo == nil {
+			return fmt.Errorf("plantilla %q falta el bloque {{define \"cuerpo\"}}", path)
+		}
+		clave := strings.TrimSuffix(entrada.Name(), filepath.Ext(entrada.Name()))
+		cargadas[clave] = struct {
+			asunto *template.Template
+			cuerpo *template.Template
+		}{asunto: asunto, cuerpo: cuerpo}
+	}
+	if len(cargadas) == 0 {
+		return fmt.Errorf("no se encontraron plantillas .tmpl en %q", dir)
+	}
+
+	requeridas := []string{
+		EventoUsuarioCreado,
+		EventoUsuarioRecuperacion,
+		EventoCuentaActivada,
+		EventoCuentaDesactivada,
+		EventoVacacionesProgramadas,
+		EventoVacacionesIniciadas,
+	}
+	for _, nombre := range requeridas {
+		if _, ok := cargadas[nombre]; !ok {
+			return fmt.Errorf("falta la plantilla %q en %q", nombre, dir)
+		}
+	}
+
+	plantillasMu.Lock()
+	plantillasPorEvento = cargadas
+	plantillasMu.Unlock()
+	return nil
+}
+
+func Plantilla(nombre string, datos any) (string, error) {
+	return renderPlantilla(nombre, "cuerpo", datos)
+}
+
+func PlantillaAsunto(nombre string, datos any) (string, error) {
+	return renderPlantilla(nombre, "asunto", datos)
+}
+
+func renderPlantilla(nombre, bloque string, datos any) (string, error) {
+	if err := asegurarPlantillas(); err != nil {
+		return "", err
+	}
+	plantillasMu.RLock()
+	plantilla, ok := plantillasPorEvento[nombre]
+	plantillasMu.RUnlock()
+	if !ok {
+		return "", fmt.Errorf("%w: plantilla %q no existe", ErrDatosInvalidos, nombre)
+	}
+	var tmpl *template.Template
+	switch bloque {
+	case "asunto":
+		tmpl = plantilla.asunto
+	case "cuerpo":
+		tmpl = plantilla.cuerpo
+	default:
+		return "", fmt.Errorf("%w: bloque de plantilla %q no soportado", ErrDatosInvalidos, bloque)
+	}
+	var salida bytes.Buffer
+	if err := tmpl.Execute(&salida, datos); err != nil {
+		return "", fmt.Errorf("ejecutar plantilla %q (%s): %w", nombre, bloque, err)
+	}
+	return salida.String(), nil
+}
+
 // Cargas útiles, campo por campo según el Catálogo de Eventos. Solo se declaran los
 // campos que este servicio usa; el resto se ignora al decodificar.
 type usuarioCreado struct { // 3.4
@@ -157,9 +293,15 @@ func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time
 		}); err != nil {
 			return Notificacion{}, err
 		}
-		n := nueva(TipoSeguridad, d.Email, d.EmpleadoID, ahora,
-			"Bienvenido a TalentFlow: active su cuenta",
-			mensajeToken(enmascarar(d.TokenActivacion), d.ExpiraEn)+" Bienvenido a TalentFlow.")
+		asunto, err := PlantillaAsunto(EventoUsuarioCreado, map[string]any{"Token": d.TokenActivacion, "ExpiraEn": d.ExpiraEn})
+		if err != nil {
+			return Notificacion{}, err
+		}
+		mensaje, err := Plantilla(EventoUsuarioCreado, map[string]any{"Token": enmascarar(d.TokenActivacion), "ExpiraEn": d.ExpiraEn})
+		if err != nil {
+			return Notificacion{}, err
+		}
+		n := nueva(TipoSeguridad, d.Email, d.EmpleadoID, ahora, asunto, mensaje)
 		n.MensajeEntrega = mensajeToken(d.TokenActivacion, d.ExpiraEn) + " Bienvenido a TalentFlow."
 		return n, nil
 
@@ -173,9 +315,16 @@ func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time
 		}); err != nil {
 			return Notificacion{}, err
 		}
+		asunto, err := PlantillaAsunto(EventoUsuarioRecuperacion, map[string]any{"Token": d.TokenRecuperacion, "ExpiraEn": d.ExpiraEn})
+		if err != nil {
+			return Notificacion{}, err
+		}
+		mensaje, err := Plantilla(EventoUsuarioRecuperacion, map[string]any{"Token": enmascarar(d.TokenRecuperacion), "ExpiraEn": d.ExpiraEn})
+		if err != nil {
+			return Notificacion{}, err
+		}
 		// Sin empleadoId: el catálogo no lo incluye en este evento (D20).
-		n := nueva(TipoSeguridad, d.Email, "", ahora,
-			"Recuperación de contraseña", mensajeToken(enmascarar(d.TokenRecuperacion), d.ExpiraEn))
+		n := nueva(TipoSeguridad, d.Email, "", ahora, asunto, mensaje)
 		n.MensajeEntrega = mensajeToken(d.TokenRecuperacion, d.ExpiraEn)
 		return n, nil
 
@@ -187,16 +336,18 @@ func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time
 		if err := exigir(map[string]string{"empleadoId": d.EmpleadoID, "email": d.Email, "motivo": d.Motivo}); err != nil {
 			return Notificacion{}, err
 		}
-		var mensaje string
-		switch d.Motivo {
-		case MotivoFinVacaciones:
-			mensaje = "Bienvenido de regreso. Su cuenta fue reactivada."
-		case MotivoActivacionInicial:
-			mensaje = "Su cuenta fue activada. Ya puede iniciar sesión."
-		default:
+		if _, ok := map[string]bool{MotivoFinVacaciones: true, MotivoActivacionInicial: true}[d.Motivo]; !ok {
 			return Notificacion{}, fmt.Errorf("%w: motivo desconocido %q", ErrDatosInvalidos, d.Motivo)
 		}
-		return nueva(TipoCuenta, d.Email, d.EmpleadoID, ahora, "Estado de su cuenta", mensaje), nil
+		asunto, err := PlantillaAsunto(EventoCuentaActivada, map[string]any{"Motivo": d.Motivo})
+		if err != nil {
+			return Notificacion{}, err
+		}
+		mensaje, err := Plantilla(EventoCuentaActivada, map[string]any{"Motivo": d.Motivo})
+		if err != nil {
+			return Notificacion{}, err
+		}
+		return nueva(TipoCuenta, d.Email, d.EmpleadoID, ahora, asunto, mensaje), nil
 
 	case EventoCuentaDesactivada:
 		var d cuentaDesactivada
@@ -209,17 +360,22 @@ func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time
 		if d.Permanente == nil {
 			return Notificacion{}, fmt.Errorf("%w: faltan [permanente]", ErrDatosInvalidos)
 		}
-		var mensaje string
 		switch {
 		case d.Motivo == MotivoVacaciones && !*d.Permanente:
-			mensaje = "Su cuenta fue desactivada temporalmente por vacaciones."
 		case d.Motivo == MotivoRetiro && *d.Permanente:
-			mensaje = "Su cuenta fue desactivada de forma permanente por retiro."
 		default:
 			return Notificacion{}, fmt.Errorf("%w: motivo %q con permanente=%t no es válido",
 				ErrDatosInvalidos, d.Motivo, *d.Permanente)
 		}
-		return nueva(TipoCuenta, d.Email, d.EmpleadoID, ahora, "Estado de su cuenta", mensaje), nil
+		asunto, err := PlantillaAsunto(EventoCuentaDesactivada, map[string]any{"Motivo": d.Motivo})
+		if err != nil {
+			return Notificacion{}, err
+		}
+		mensaje, err := Plantilla(EventoCuentaDesactivada, map[string]any{"Motivo": d.Motivo})
+		if err != nil {
+			return Notificacion{}, err
+		}
+		return nueva(TipoCuenta, d.Email, d.EmpleadoID, ahora, asunto, mensaje), nil
 
 	case EventoVacacionesProgramadas:
 		var d vacacionesProgramadas
@@ -231,9 +387,23 @@ func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time
 		}); err != nil {
 			return Notificacion{}, err
 		}
-		return nueva(TipoVacaciones, d.Email, d.EmpleadoID, ahora, "Vacaciones programadas",
-			fmt.Sprintf("Sus vacaciones del %s al %s (%d días hábiles) quedaron programadas.",
-				d.FechaInicio, d.FechaFin, d.DiasHabiles)), nil
+		asunto, err := PlantillaAsunto(EventoVacacionesProgramadas, map[string]any{
+			"FechaInicio": d.FechaInicio,
+			"FechaFin":    d.FechaFin,
+			"DiasHabiles": d.DiasHabiles,
+		})
+		if err != nil {
+			return Notificacion{}, err
+		}
+		mensaje, err := Plantilla(EventoVacacionesProgramadas, map[string]any{
+			"FechaInicio": d.FechaInicio,
+			"FechaFin":    d.FechaFin,
+			"DiasHabiles": d.DiasHabiles,
+		})
+		if err != nil {
+			return Notificacion{}, err
+		}
+		return nueva(TipoVacaciones, d.Email, d.EmpleadoID, ahora, asunto, mensaje), nil
 
 	case EventoVacacionesIniciadas:
 		var d vacacionesIniciadas
@@ -246,9 +416,23 @@ func NotificacionDesdeEvento(tipoEvento string, data json.RawMessage, ahora time
 		}); err != nil {
 			return Notificacion{}, err
 		}
-		return nueva(TipoVacaciones, d.Email, d.EmpleadoID, ahora, "Inicio de sus vacaciones",
-			fmt.Sprintf("Sus vacaciones %s comenzaron (%s) y terminan el %s. Su cuenta queda inactiva durante el período.",
-				d.VacacionesID, d.FechaInicio, d.FechaFin)), nil
+		asunto, err := PlantillaAsunto(EventoVacacionesIniciadas, map[string]any{
+			"VacacionesID": d.VacacionesID,
+			"FechaInicio":  d.FechaInicio,
+			"FechaFin":     d.FechaFin,
+		})
+		if err != nil {
+			return Notificacion{}, err
+		}
+		mensaje, err := Plantilla(EventoVacacionesIniciadas, map[string]any{
+			"VacacionesID": d.VacacionesID,
+			"FechaInicio":  d.FechaInicio,
+			"FechaFin":     d.FechaFin,
+		})
+		if err != nil {
+			return Notificacion{}, err
+		}
+		return nueva(TipoVacaciones, d.Email, d.EmpleadoID, ahora, asunto, mensaje), nil
 
 	default:
 		return Notificacion{}, fmt.Errorf("%w: %s", ErrTipoNoSoportado, tipoEvento)

@@ -1,0 +1,1 @@
+{{define "asunto"}}Estado de su cuenta{{end}}{{define "cuerpo"}}{{if eq .Motivo "FIN_VACACIONES"}}Bienvenido de regreso. Su cuenta fue reactivada.{{else if eq .Motivo "ACTIVACION_INICIAL"}}Su cuenta fue activada. Ya puede iniciar sesión.{{end}}{{end}}

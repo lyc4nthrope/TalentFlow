@@ -178,6 +178,25 @@ func TestTextoAEntregarSinMensajeEntrega(t *testing.T) {
 	}
 }
 
+func TestCargaPlantillasYVerificaTokenDeActivacionSinPassword(t *testing.T) {
+	if err := CargarPlantillas(filepath.Join("..", "..", "plantillas")); err != nil {
+		t.Fatalf("cargar plantillas: %v", err)
+	}
+	texto, err := Plantilla("usuario.creado", map[string]any{
+		"Token":    "abc123xyz",
+		"ExpiraEn": "2026-02-10T15:30:00Z",
+	})
+	if err != nil {
+		t.Fatalf("renderizar plantilla: %v", err)
+	}
+	if !strings.Contains(texto, "abc123xyz") {
+		t.Fatalf("la plantilla de bienvenida debe incluir el token: %q", texto)
+	}
+	if strings.Contains(texto, "nueva contraseña") || strings.Contains(texto, "su contraseña es") {
+		t.Fatalf("la plantilla no debe enviar una contraseña real: %q", texto)
+	}
+}
+
 // Los mensajes de seguridad empiezan exactamente como el ejemplo del reto5.pdf.
 func TestLosMensajesDeSeguridadEmpiezanComoElPDF(t *testing.T) {
 	for _, evento := range []struct{ tipo, data string }{

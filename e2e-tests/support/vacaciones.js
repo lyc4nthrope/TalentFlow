@@ -27,8 +27,10 @@ function fechaHoraEnDias(mundo, dias, hora = '08:00:00') {
 async function programarPeriodo(mundo, { fechaInicio, fechaFin }, { alias = 'vacaciones', registrar = true } = {}) {
   const empleado = mundo.recurso('empleado');
   const enviar = registrar ? mundo.peticion.bind(mundo) : mundo.enviar.bind(mundo);
+  const token = await mundo.tokenDeAdmin();
   const respuesta = await enviar('POST', '/vacaciones', {
     cuerpo: { empleadoId: empleado.id, fechaInicio, fechaFin },
+    token,
   });
   mundo.recursos.set('período solicitado', { fechaInicio, fechaFin });
   if (respuesta.status === 201) mundo.recursos.set(alias, { ...respuesta.body, fechaInicio, fechaFin });

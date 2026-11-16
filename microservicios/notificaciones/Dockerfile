@@ -14,6 +14,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /notificacio
 # paquetes (menos superficie de ataque) y corre como usuario sin privilegios.
 FROM gcr.io/distroless/static-debian12:nonroot AS runner
 COPY --from=builder /notificaciones /notificaciones
+COPY ./plantillas /app/plantillas
 USER nonroot:nonroot
 EXPOSE 8084
 ENTRYPOINT ["/notificaciones"]

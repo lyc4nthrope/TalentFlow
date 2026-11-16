@@ -1,0 +1,1 @@
+{{define "asunto"}}Estado de su cuenta{{end}}{{define "cuerpo"}}{{if eq .Motivo "VACACIONES"}}Su cuenta fue desactivada temporalmente por vacaciones.{{else if eq .Motivo "RETIRO"}}Su cuenta fue desactivada de forma permanente por retiro.{{end}}{{end}}
