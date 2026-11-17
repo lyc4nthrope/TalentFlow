@@ -35,6 +35,13 @@ Característica: Registro de un empleado nuevo
     Cuando registro un empleado nuevo en ese departamento
     Entonces eventualmente debe existir su perfil con su nombre completo y su email
 
+  Escenario: Consultar el empleado completo combina los datos del empleado y su perfil
+    Cuando registro un empleado nuevo en ese departamento
+    Y eventualmente debe existir su perfil con su nombre completo y su email
+    Y consulto el empleado completo a través del gateway
+    Entonces la respuesta debe tener código 200
+    Y la respuesta debe incluir los datos completos del empleado y su perfil
+
   Escenario: No se registra un empleado en un departamento que no existe
     Cuando registro un empleado nuevo en un departamento que no existe
     Entonces la respuesta debe tener código 400

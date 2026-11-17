@@ -241,3 +241,35 @@ Then('el token de acceso debe tener el rol {string} e identificar al empleado', 
   if (contenido.email !== empleado.email) problemas.push(`email es "${contenido.email}" y se esperaba "${empleado.email}"`);
   if (problemas.length) throw new Error(`El token de acceso no es el del empleado: ${problemas.join('; ')}`);
 });
+// --- Composición en el Gateway (V4: GET /empleados/{id}/completo) -------------
+
+When('consulto el empleado completo a través del gateway', async function () {
+  const empleado = empleadoDelEscenario(this);
+  await this.peticion('GET', `/empleados/${encodeURIComponent(empleado.id)}/completo`);
+});
+
+Then('la respuesta debe incluir los datos completos del empleado y su perfil', function () {
+  const empleado = empleadoDelEscenario(this);
+  const { body } = this.ultimaRespuesta;
+  const problemas = [];
+
+  if (body?.empleado?.id !== empleado.id) {
+    problemas.push(`empleado.id es "${body?.empleado?.id}" y se esperaba "${empleado.id}"`);
+  }
+  if (body?.empleado?.email !== empleado.email) {
+    problemas.push(`empleado.email es "${body?.empleado?.email}" y se esperaba "${empleado.email}"`);
+  }
+  if (body?.perfil?.empleadoId !== empleado.id) {
+    problemas.push(`perfil.empleadoId es "${body?.perfil?.empleadoId}" y se esperaba "${empleado.id}"`);
+  }
+  if (body?.parcial !== false) {
+    problemas.push(`parcial es ${JSON.stringify(body?.parcial)} y se esperaba false`);
+  }
+  if (!Array.isArray(body?.faltantes) || body.faltantes.length !== 0) {
+    problemas.push(`faltantes es ${JSON.stringify(body?.faltantes)} y se esperaba []`);
+  }
+
+  if (problemas.length) {
+    throw new Error(`GET /empleados/${empleado.id}/completo incompleto: ${problemas.join('; ')}. Cuerpo: ${extracto(body)}`);
+  }
+});

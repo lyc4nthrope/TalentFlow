@@ -5,6 +5,7 @@ const { verificarToken, leerBearer } = require('./autenticacion');
 const { analizarRuta, esRutaPublica, decidirAcceso, servicioDeRuta } = require('./autorizacion');
 const { trace } = require('@opentelemetry/api');
 const { middlewareMetricas, rutaDelGateway } = require('./metricas');
+const { crearHandlerEmpleadoCompleto } = require('./composicion');
 
 // Cabeceras de identidad que el Gateway propaga a los servicios (Reto 5, D10). Nunca se
 // aceptan del cliente: se borran en toda petición y solo se agregan tras validar el token.
@@ -138,6 +139,18 @@ function crearApp({
         req.headers['x-user-email'] = usuario.email || '';
         next();
     });
+
+    const servicioEmpleados = servicios.find((s) => s.prefijo === '/empleados');
+    const servicioPerfiles = servicios.find((s) => s.prefijo === '/perfiles');
+    if (servicioEmpleados && servicioPerfiles) {
+        app.get(
+            '/empleados/:id/completo',
+            crearHandlerEmpleadoCompleto({
+                urlEmpleados: servicioEmpleados.url,
+                urlPerfiles: servicioPerfiles.url
+            })
+        );
+    }
 
     const manejarErrorProxy = (err, req, res) => {
         console.error(`[Gateway Error] ${err.message}`);

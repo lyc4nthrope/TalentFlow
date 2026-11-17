@@ -11,6 +11,7 @@ decide los permisos en un solo lugar** (opción 1 del PDF).
 | `autenticacion.js` | Valida el token de acceso: solo HS256, emisor `auth-service`, `exp` obligatorio, `sub` y `role` válidos |
 | `autorizacion.js` | Análisis seguro de la ruta, rutas públicas y matriz de permisos |
 | `salud.js` | `/health` agregado (Retos 3 y 4) |
+| composicion.js | Agrega `GET /empleados/{id}/completo` consultando empleados y perfiles en paralelo con degradación parcial |
 
 ## Orden de cada petición
 
@@ -38,6 +39,19 @@ decide los permisos en un solo lugar** (opción 1 del PDF).
 | `ADMIN` | Todo |
 | `USER` | `GET` y `HEAD` de cualquier recurso; `POST /auth/change-password`; `PUT /perfiles/{empleadoId}` **solo si** `empleadoId` es su propio `sub` |
 | Otro caso | **403** (un USER que edita el perfil de otro recibe 403, no 401) |
+
+## Composición: `GET /empleados/{id}/completo`
+
+Combina en una sola respuesta los datos del empleado (`empleados-service`) y su perfil (`perfiles-service`) mediante dos llamadas HTTP en paralelo (2 spans hermanos en Jaeger). Requiere token válido (`ADMIN` o `USER`, igual que `GET /empleados/{id}`), reenviando las cabeceras de autorización e identidad (`Authorization`, `X-User-Id`, `X-User-Role`, `X-User-Email`).
+
+### Respuestas
+
+| Caso | Código HTTP | Cuerpo |
+| --- | --- | --- |
+| Ambos servicios responden 200 | `200` | `{ "empleado": { ... }, "perfil": { ... }, "parcial": false, "faltantes": [] }` |
+| Empleado existe, pero `perfiles-service` falla, responde error o tarda > 2 s | `200` | `{ "empleado": { ... }, "perfil": null, "parcial": true, "faltantes": ["perfil"] }` |
+| El empleado no existe en `empleados-service` | `404` | `{ "error": "Not Found", "message": "Empleado no encontrado", "path": "..." }` |
+| `empleados-service` no responde o falla | `503` | `{ "error": "Service Unavailable", "message": "El servicio de empleados no está disponible temporalmente", "path": "..." }` |
 
 ## Pruebas
 
