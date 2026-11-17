@@ -19,13 +19,20 @@ import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
 import java.time.Clock;
+import javax.sql.DataSource;
+import net.javacrumbs.shedlock.core.LockProvider;
+import net.javacrumbs.shedlock.provider.jdbctemplate.JdbcTemplateLockProvider;
+import net.javacrumbs.shedlock.spring.annotation.EnableSchedulerLock;
 import java.time.ZoneId;
 import java.util.List;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -34,6 +41,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * infraestructura) con sus adaptadores de persistencia y mensajería.
  */
 @Configuration
+@EnableSchedulerLock(defaultLockAtMostFor = "PT50S")
 public class Configuracion {
 
     /**
@@ -103,6 +111,33 @@ public class Configuracion {
             JdbcRepositorioEmpleados empleados, RabbitPublicadorEventos publicador, Transacciones transacciones,
             Clock reloj) {
         return new ProcesadorCicloVacaciones(vacaciones, empleados, publicador, transacciones, reloj);
+    }
+
+    @Bean
+    LockProvider lockProvider(DataSource dataSource) {
+        return new JdbcTemplateLockProvider(
+                JdbcTemplateLockProvider.Configuration.builder()
+                        .withJdbcTemplate(new JdbcTemplate(dataSource))
+                        .usingDbTime()
+                        .build());
+    }
+
+    /**
+     * Garantiza que la tabla shedlock exista aunque el volumen de PostgreSQL ya estuviera creado
+     * antes de V8 (init.sql solo corre con el volumen vacío, sección 1 punto 2).
+     */
+    @Bean
+    @ConditionalOnProperty(name = "vacaciones.shedlock.migrar-al-arrancar", havingValue = "true", matchIfMissing = true)
+    ApplicationRunner migracionShedLock(JdbcClient jdbc) {
+        return args -> jdbc.sql("""
+                CREATE TABLE IF NOT EXISTS shedlock (
+                    name        VARCHAR(64)  NOT NULL,
+                    lock_until  TIMESTAMP    NOT NULL,
+                    locked_at   TIMESTAMP    NOT NULL,
+                    locked_by   VARCHAR(255) NOT NULL,
+                    PRIMARY KEY (name)
+                )
+                """).update();
     }
 
     @Bean

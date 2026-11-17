@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
  */
 @SpringBootTest(properties = {
         "vacaciones.cron=-", // el scheduler no corre durante la prueba
+        "vacaciones.shedlock.migrar-al-arrancar=false",
         "spring.rabbitmq.listener.simple.auto-startup=false"
 })
 @AutoConfigureMockMvc

@@ -43,3 +43,12 @@ CREATE TABLE IF NOT EXISTS eventos_procesados (
     id            VARCHAR(100) PRIMARY KEY,
     procesado_en  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+
+-- Bloqueo distribuido de ShedLock para coordinar el scheduler entre réplicas (V8).
+CREATE TABLE IF NOT EXISTS shedlock (
+    name        VARCHAR(64)  NOT NULL,
+    lock_until  TIMESTAMP    NOT NULL,
+    locked_at   TIMESTAMP    NOT NULL,
+    locked_by   VARCHAR(255) NOT NULL,
+    PRIMARY KEY (name)
+);

@@ -21,6 +21,7 @@
         <java.version>17</java.version>
         <springdoc.version>2.9.1</springdoc.version>
         <jacoco.version>0.8.14</jacoco.version>
+        <shedlock.version>6.3.0</shedlock.version>
     </properties>
 
     <dependencies>
@@ -43,6 +44,17 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
+        </dependency>
+        <!-- Reto Final (V8): bloqueo distribuido para que solo una réplica ejecute el scheduler -->
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+            <version>${shedlock.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+            <version>${shedlock.version}</version>
         </dependency>
         <!-- RabbitMQ (Spring AMQP) -->
         <dependency>
