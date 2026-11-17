@@ -39,6 +39,26 @@ decide los permisos en un solo lugar** (opción 1 del PDF).
 | `USER` | `GET` y `HEAD` de cualquier recurso; `POST /auth/change-password`; `PUT /perfiles/{empleadoId}` **solo si** `empleadoId` es su propio `sub` |
 | Otro caso | **403** (un USER que edita el perfil de otro recibe 403, no 401) |
 
+## Timeouts y reintentos
+
+El Gateway configura `timeout` y `proxyTimeout` con la variable `GATEWAY_PROXY_TIMEOUT_MS`.
+El valor por defecto es `10000` ms. Si el servicio tarda más que ese plazo, responde con
+**504 Gateway Timeout** y el formato normal del Gateway:
+
+```json
+{
+  "error": "Gateway Timeout",
+  "message": "El servicio solicitado no respondió a tiempo.",
+  "path": "/empleados"
+}
+```
+
+Si el servicio está caído o no logra abrir la conexión, la respuesta sigue siendo **503
+Service Unavailable**. El motivo es que el proxy no reintenta peticiones en cascada: un
+`POST` no idempotente podría duplicar un alta si se repite. Los reintentos viven donde la
+operación sí es idempotente (por ejemplo, las llamadas desde `empleados` hacia
+`departamentos` en el Reto 3), no dentro del Gateway.
+
 ## Pruebas
 
 ```bash
@@ -47,7 +67,8 @@ npm test
 
 Levantan servicios falsos en puertos libres y comprueban qué se reenvía y con qué
 cabeceras: la matriz completa (401 / 403 / reenvío), la propiedad del perfil, las rutas
-públicas, las rutas manipuladas y el reemplazo de las cabeceras de identidad.
+públicas, las rutas manipuladas y el reemplazo de las cabeceras de identidad. También se
+comprueba la diferenciación de **504** por timeout frente a **503** por servicio caído.
 
 La instalación de la imagen usa el `package-lock.json` propio del Gateway (`npm ci`): las
 versiones deben coincidir con las del lock raíz del repositorio (workspaces).

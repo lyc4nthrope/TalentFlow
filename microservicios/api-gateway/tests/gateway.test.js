@@ -432,6 +432,34 @@ describe('API Gateway: autenticación, autorización y enrutamiento', () => {
             }
         });
 
+        it('si el servicio responde tarde, 504 en JSON', async () => {
+            const lento = http.createServer((req, res) => {
+                setTimeout(() => {
+                    res.writeHead(200, { 'content-type': 'application/json' });
+                    res.end(JSON.stringify({ ok: true }));
+                }, 200);
+            });
+            const puertoLento = await escuchar(lento);
+            const app = crearApp({
+                jwtSecret: SECRETO,
+                jwtIssuer: EMISOR,
+                proxyTimeoutMs: 50,
+                servicios: [{ nombre: 'lento', prefijo: '/empleados', url: `http://127.0.0.1:${puertoLento}` }],
+                salud: async () => ({})
+            });
+            const s = app.listen(0, '127.0.0.1');
+            await new Promise((r) => s.once('listening', r));
+            try {
+                const r = await pedir(s.address().port, 'GET', '/empleados', ADMIN);
+                assert.equal(r.status, 504);
+                assert.equal(r.cuerpo.error, 'Gateway Timeout');
+                assert.equal(r.cuerpo.message, 'El servicio solicitado no respondió a tiempo.');
+            } finally {
+                s.close();
+                lento.close();
+            }
+        });
+
         it('si el servicio no responde, 503 en JSON', async () => {
             const app = crearApp({
                 jwtSecret: SECRETO,

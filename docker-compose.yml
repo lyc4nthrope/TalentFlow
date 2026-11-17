@@ -271,6 +271,7 @@ services:
       OTEL_SERVICE_NAME: api-gateway
       PORT: 8080
       METRICS_PORT: 9464
+      GATEWAY_PROXY_TIMEOUT_MS: ${GATEWAY_PROXY_TIMEOUT_MS:-10000}
       EMPLEADOS_SERVICE_URL: http://empleados-service:8081
       DEPARTAMENTOS_SERVICE_URL: http://departamentos-service:8082
       NOTIFICACIONES_SERVICE_URL: http://notificaciones-service:8084

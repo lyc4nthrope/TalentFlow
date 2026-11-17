@@ -4,6 +4,10 @@ const { crearApp } = require('./app');
 const { crearMetricas, crearAppMetricas, registrarMetricasSalud } = require('./metricas');
 
 const PORT = process.env.PORT || 8080;
+const parseTimeout = (valor, defecto) => {
+    const numero = Number(valor);
+    return Number.isFinite(numero) && numero > 0 ? numero : defecto;
+};
 // Reto 5, D11/D21: el secreto es obligatorio y no tiene valor por defecto en el código.
 // Lo inyecta Compose (el mismo que recibe auth-service); sin él, el Gateway no arranca.
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -14,6 +18,7 @@ if (!JWT_SECRET || JWT_SECRET.trim() === '') {
 }
 // El emisor no es un secreto: tiene valor por defecto.
 const JWT_ISSUER = process.env.JWT_ISSUER || 'auth-service';
+const GATEWAY_PROXY_TIMEOUT_MS = parseTimeout(process.env.GATEWAY_PROXY_TIMEOUT_MS, 10000);
 
 // Tabla única de servicios detrás del Gateway: de aquí salen tanto las rutas como el
 // /health agregado. Agregar un servicio = agregar una fila. Todos usan expose: en Compose
@@ -31,7 +36,13 @@ const SERVICIOS = [
 const metricas = crearMetricas();
 // Reto 8, D20: la salud de cada servicio y de su BD y broker, como métrica para Prometheus.
 registrarMetricasSalud(metricas.registro, SERVICIOS);
-crearApp({ jwtSecret: JWT_SECRET, jwtIssuer: JWT_ISSUER, servicios: SERVICIOS, metricas }).listen(PORT, () => {
+crearApp({
+    jwtSecret: JWT_SECRET,
+    jwtIssuer: JWT_ISSUER,
+    servicios: SERVICIOS,
+    metricas,
+    proxyTimeoutMs: GATEWAY_PROXY_TIMEOUT_MS
+}).listen(PORT, () => {
     console.log(`API Gateway ejecutandose en el puerto ${PORT}`);
 });
 

@@ -32,10 +32,14 @@ function crearApp({
     salud = saludDelSistema,
     saludDe = leerSaludDe,
     saludTodos = saludDeTodos,
-    metricas
+    metricas,
+    proxyTimeoutMs = 10000
 }) {
     const app = express();
     const prefijos = servicios.map((s) => s.prefijo);
+    const proxyTimeout = Number.isFinite(Number(proxyTimeoutMs)) && Number(proxyTimeoutMs) > 0
+        ? Number(proxyTimeoutMs)
+        : 10000;
 
     // Reto 8, D5: se mide toda petición, incluidas las rechazadas (400/401/403/404).
     if (metricas) app.use(middlewareMetricas(metricas, prefijos));
@@ -139,6 +143,18 @@ function crearApp({
         next();
     });
 
+    const responderGatewayTimeout = (req, res) => {
+        if (res.headersSent || res.writableEnded) {
+            return;
+        }
+        req._gatewayTimedOut = true;
+        res.status(504).json({
+            error: 'Gateway Timeout',
+            message: 'El servicio solicitado no respondió a tiempo.',
+            path: req.originalUrl
+        });
+    };
+
     const manejarErrorProxy = (err, req, res) => {
         console.error(`[Gateway Error] ${err.message}`);
         // Si el servicio ya había empezado a responder, no se puede cambiar el estado: se
@@ -146,6 +162,16 @@ function crearApp({
         if (res.headersSent) {
             res.destroy();
             return;
+        }
+        const codigo = err && err.code;
+        const esTimeout = !!err && (
+            codigo === 'ECONNRESET' ||
+            codigo === 'ETIMEDOUT' ||
+            codigo === 'ESOCKETTIMEDOUT' ||
+            /timeout/i.test(err.message)
+        );
+        if (esTimeout) {
+            return responderGatewayTimeout(req, res);
         }
         res.status(503).json({
             error: 'Service Unavailable',
@@ -158,11 +184,28 @@ function crearApp({
     // el cliente quedaría esperando el resto para siempre. Se corta también su conexión.
     const cortarSiQuedaIncompleta = (proxyRes, req, res) => {
         proxyRes.on('close', () => {
+            if (req._gatewayTimedOut) {
+                return;
+            }
             if (!proxyRes.complete && !res.writableEnded) {
                 console.error(`[Gateway Error] respuesta incompleta del servicio: ${req.originalUrl}`);
                 res.destroy();
             }
         });
+    };
+
+    const configurarTimeoutPedido = (req, res, next) => {
+        const timeoutPedido = setTimeout(() => {
+            if (res.headersSent || res.writableEnded) {
+                return;
+            }
+            responderGatewayTimeout(req, res);
+        }, proxyTimeout);
+
+        const limpiarTimeout = () => clearTimeout(timeoutPedido);
+        res.once('close', limpiarTimeout);
+        res.once('finish', limpiarTimeout);
+        next();
     };
 
     // Nota: se monta en '/' (sin prefijo) y se usa pathFilter en vez de mount-path,
@@ -171,12 +214,24 @@ function crearApp({
     // como /empleados/:id (verificado: producía /empleadosE001 en vez de /empleados/E001).
     // El filtro respeta los límites de segmento: /empleadosX no es /empleados.
     for (const { prefijo, url } of servicios) {
+        app.use((req, res, next) => {
+            if (req.path !== prefijo && !req.path.startsWith(`${prefijo}/`)) {
+                return next();
+            }
+            return configurarTimeoutPedido(req, res, next);
+        });
         app.use(
             createProxyMiddleware({
                 target: url,
                 changeOrigin: true,
+                proxyTimeout,
+                timeout: proxyTimeout,
                 pathFilter: (ruta) => ruta === prefijo || ruta.startsWith(`${prefijo}/`),
-                on: { error: manejarErrorProxy, proxyRes: cortarSiQuedaIncompleta }
+                on: {
+                    error: manejarErrorProxy,
+                    econnreset: manejarErrorProxy,
+                    proxyRes: cortarSiQuedaIncompleta
+                }
             })
         );
     }

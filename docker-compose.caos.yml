@@ -4,7 +4,10 @@
 #   Activar:    docker compose -f docker-compose.yml -f docker-compose.caos.yml up -d departamentos-service
 #   Desactivar: docker compose up -d departamentos-service
 services:
+  api-gateway:
+    environment:
+      GATEWAY_PROXY_TIMEOUT_MS: ${GATEWAY_PROXY_TIMEOUT_MS:-10000}
   departamentos-service:
     environment:
-      CAOS_LATENCIA_MS: 2500
+      CAOS_LATENCIA_MS: ${CAOS_LATENCIA_MS:-15000}
       CAOS_PROBABILIDAD: 1
