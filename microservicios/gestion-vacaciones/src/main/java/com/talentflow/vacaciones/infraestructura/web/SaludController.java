@@ -69,6 +69,9 @@ public class SaludController {
                     return false;
                 }
             }, chequeos).get(TIMEOUT_BD_MS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false; // no respondió a tiempo
         } catch (Exception e) {
             return false; // no respondió a tiempo
         }
